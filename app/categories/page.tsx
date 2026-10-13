@@ -145,19 +145,41 @@ export default function CategoriesPage() {
   const [status, setStatus] = useState<"Active" | "Inactive">("Active");
 
   // Subcategories Multi-Add & Edit Form State
-  const [subcategoriesList, setSubcategoriesList] = useState<Array<{ _id?: string; name: string }>>([]);
+  const [subcategoriesList, setSubcategoriesList] = useState<Array<{ _id?: string; name: string; imageUrl?: string; iconUrl?: string }>>([]);
   const [subCategoryInput, setSubCategoryInput] = useState("");
+  const [subCategoryImageUrl, setSubCategoryImageUrl] = useState("");
   const [editingSubcatIndex, setEditingSubcatIndex] = useState<number | null>(null);
   const [editingSubcatName, setEditingSubcatName] = useState("");
+  const [editingSubcatImageUrl, setEditingSubcatImageUrl] = useState("");
   const [isSubcategoryLoading, setIsSubcategoryLoading] = useState<boolean>(false);
+
+  const handleSubcategoryImageUpload = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const result = e.target?.result as string;
+      setSubCategoryImageUrl(result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleEditSubcategoryImageUpload = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const result = e.target?.result as string;
+      setEditingSubcatImageUrl(result);
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleAddSubcategoryTag = () => {
     if (!subCategoryInput.trim()) return;
     const tag = subCategoryInput.trim();
+    const img = subCategoryImageUrl.trim();
     if (!subcategoriesList.some((s) => s.name.toLowerCase() === tag.toLowerCase())) {
-      setSubcategoriesList([...subcategoriesList, { name: tag }]);
+      setSubcategoriesList([...subcategoriesList, { name: tag, imageUrl: img || undefined, iconUrl: img || undefined }]);
     }
     setSubCategoryInput("");
+    setSubCategoryImageUrl("");
   };
 
   const handleRemoveSubcategoryTag = (index: number) => {
@@ -167,22 +189,28 @@ export default function CategoriesPage() {
   const handleStartEditSubcategory = (index: number) => {
     setEditingSubcatIndex(index);
     setEditingSubcatName(subcategoriesList[index]?.name || "");
+    setEditingSubcatImageUrl(subcategoriesList[index]?.imageUrl || subcategoriesList[index]?.iconUrl || "");
   };
 
   const handleSaveSubcategoryInline = (index: number) => {
     if (!editingSubcatName.trim()) {
       setEditingSubcatIndex(null);
       setEditingSubcatName("");
+      setEditingSubcatImageUrl("");
       return;
     }
     const updated = [...subcategoriesList];
+    const img = editingSubcatImageUrl.trim();
     updated[index] = {
       ...updated[index],
       name: editingSubcatName.trim(),
+      imageUrl: img || undefined,
+      iconUrl: img || undefined,
     };
     setSubcategoriesList(updated);
     setEditingSubcatIndex(null);
     setEditingSubcatName("");
+    setEditingSubcatImageUrl("");
   };
 
   const fetchSubcategoriesForCategory = async (catId: string) => {
@@ -191,9 +219,11 @@ export default function CategoriesPage() {
     try {
       const subRes = await getSubcategoriesApi(catId, true);
       if (subRes && subRes.success && Array.isArray(subRes.data)) {
-        const fetchedSubs: Array<{ _id?: string; name: string }> = subRes.data.map((item: any) => ({
+        const fetchedSubs: Array<{ _id?: string; name: string; imageUrl?: string; iconUrl?: string }> = subRes.data.map((item: any) => ({
           _id: item._id || item.id,
           name: item.name || item.subCategoryName || "",
+          imageUrl: item.imageUrl || item.iconUrl || item.icon || "",
+          iconUrl: item.iconUrl || item.imageUrl || item.icon || "",
         }));
         setSubcategoriesList(fetchedSubs);
       }
@@ -213,8 +243,10 @@ export default function CategoriesPage() {
     setStatus("Active");
     setSubcategoriesList([]);
     setSubCategoryInput("");
+    setSubCategoryImageUrl("");
     setEditingSubcatIndex(null);
     setEditingSubcatName("");
+    setEditingSubcatImageUrl("");
     setIsDrawerOpen(true);
   };
 
@@ -227,10 +259,21 @@ export default function CategoriesPage() {
     setStatus(cat.status);
     setEditingSubcatIndex(null);
     setEditingSubcatName("");
+    setEditingSubcatImageUrl("");
+    setSubCategoryImageUrl("");
 
-    const initialSubs: Array<{ _id?: string; name: string }> = (cat as any).subCategoriesObj && (cat as any).subCategoriesObj.length > 0
-      ? (cat as any).subCategoriesObj
-      : (cat.subcategories || []).map((s) => (typeof s === "string" ? { name: s } : s));
+    const initialSubs: Array<{ _id?: string; name: string; imageUrl?: string; iconUrl?: string }> = (cat as any).subCategoriesObj && (cat as any).subCategoriesObj.length > 0
+      ? (cat as any).subCategoriesObj.map((s: any) =>
+          typeof s === "string"
+            ? { name: s }
+            : {
+                _id: s._id,
+                name: s.name || s.subCategoryName || "",
+                imageUrl: s.imageUrl || s.iconUrl || "",
+                iconUrl: s.iconUrl || s.imageUrl || "",
+              }
+        )
+      : (cat.subcategories || []).map((s) => (typeof s === "string" ? { name: s } : { name: (s as any).name, imageUrl: (s as any).imageUrl, iconUrl: (s as any).iconUrl }));
 
     setSubcategoriesList(initialSubs);
     setSubCategoryInput("");
@@ -266,24 +309,33 @@ export default function CategoriesPage() {
     let updatedSubs = [...subcategoriesList];
     if (editingSubcatIndex !== null && editingSubcatIndex >= 0 && editingSubcatIndex < updatedSubs.length) {
       if (editingSubcatName.trim()) {
+        const img = editingSubcatImageUrl.trim();
         updatedSubs[editingSubcatIndex] = {
           ...updatedSubs[editingSubcatIndex],
           name: editingSubcatName.trim(),
+          imageUrl: img || undefined,
+          iconUrl: img || undefined,
         };
       }
     }
 
     if (subCategoryInput.trim()) {
       const tag = subCategoryInput.trim();
+      const img = subCategoryImageUrl.trim();
       if (!updatedSubs.some((s) => s.name.toLowerCase() === tag.toLowerCase())) {
-        updatedSubs.push({ name: tag });
+        updatedSubs.push({ name: tag, imageUrl: img || undefined, iconUrl: img || undefined });
       }
     }
 
     const finalSlug = slug.trim() || catName.trim().toLowerCase().replace(/\s+/g, "-");
     const subCatsPayload = updatedSubs
       .filter((item) => item.name && item.name.trim())
-      .map((item) => (item._id ? { _id: item._id, name: item.name.trim() } : { name: item.name.trim() }));
+      .map((item) => ({
+        ...(item._id ? { _id: item._id } : {}),
+        name: item.name.trim(),
+        ...(item.imageUrl ? { imageUrl: item.imageUrl.trim() } : {}),
+        ...(item.iconUrl ? { iconUrl: item.iconUrl.trim() } : {}),
+      }));
 
     if (editingCategory) {
       if (editingCategory.id.length === 24) {
@@ -368,18 +420,37 @@ export default function CategoriesPage() {
       key: "subcategories",
       header: "Subcategories",
       accessor: (row) => {
-        const subs = row.subcategories || ["Repair", "Servicing", "Installation"];
+        const subsObj = (row.subCategoriesObj && row.subCategoriesObj.length > 0)
+          ? row.subCategoriesObj
+          : (row.subcategories || []).map((s) => ({ name: s }));
+        if (subsObj.length === 0) {
+          return <span className="text-xs text-slate-400 italic">None</span>;
+        }
         return (
-          <div className="flex flex-wrap gap-1 items-center max-w-xs">
-            {subs.map((s) => (
-              <span
-                key={s}
-                className="px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 dark:bg-purple-950 dark:text-purple-300 font-extrabold text-[10px] border border-purple-200 dark:border-purple-800 flex items-center gap-1"
-              >
-                <Layers className="w-2.5 h-2.5" />
-                {s}
-              </span>
-            ))}
+          <div className="flex flex-wrap gap-1.5 items-center max-w-sm">
+            {subsObj.map((sub, idx) => {
+              const imgUrl = (sub as any).imageUrl || (sub as any).iconUrl;
+              return (
+                <span
+                  key={(sub as any)._id || sub.name || idx}
+                  className="px-2 py-0.5 rounded-lg bg-purple-50 text-purple-700 dark:bg-purple-950 dark:text-purple-300 font-extrabold text-[10px] border border-purple-200 dark:border-purple-800 flex items-center gap-1.5 shadow-2xs"
+                >
+                  {imgUrl ? (
+                    <img
+                      src={imgUrl}
+                      alt={sub.name}
+                      className="w-3.5 h-3.5 rounded object-cover border border-purple-300 dark:border-purple-700 shrink-0"
+                      onError={(e) => {
+                        (e.currentTarget as HTMLElement).style.display = "none";
+                      }}
+                    />
+                  ) : (
+                    <Layers className="w-2.5 h-2.5 shrink-0" />
+                  )}
+                  <span>{sub.name}</span>
+                </span>
+              );
+            })}
           </div>
         );
       },
@@ -682,7 +753,11 @@ export default function CategoriesPage() {
                           onChange={(e) => {
                             const file = e.target.files?.[0];
                             if (file) {
-                              setPrimaryIconUrl(URL.createObjectURL(file));
+                              const reader = new FileReader();
+                              reader.onload = (ev) => {
+                                setPrimaryIconUrl(ev.target?.result as string);
+                              };
+                              reader.readAsDataURL(file);
                             }
                           }}
                         />
@@ -710,32 +785,102 @@ export default function CategoriesPage() {
 
                   </div>
 
-                  <div className="space-y-1.5">
+                  <div className="space-y-3">
                     <label className="text-[11px] font-extrabold text-purple-900 dark:text-purple-300 block">
                       + Add New Subcategory
                     </label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={subCategoryInput}
-                        onChange={(e) => setSubCategoryInput(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            handleAddSubcategoryTag();
-                          }
-                        }}
-                        placeholder="Type subcategory name (e.g. Split AC)..."
-                        className="flex-1 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold text-xs outline-none focus:border-purple-500"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleAddSubcategoryTag}
-                        className="px-3.5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold text-xs shadow-xs flex items-center gap-1 cursor-pointer shrink-0"
-                      >
-                        <Plus className="w-4 h-4" />
-                        Add
-                      </button>
+                    <div className="space-y-2">
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={subCategoryInput}
+                          onChange={(e) => setSubCategoryInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              handleAddSubcategoryTag();
+                            }
+                          }}
+                          placeholder="Type subcategory name (e.g. Split AC)..."
+                          className="flex-1 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold text-xs outline-none focus:border-purple-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleAddSubcategoryTag}
+                          className="px-4 py-2.5 bg-purple-100 hover:bg-purple-200 dark:bg-purple-950/70 dark:hover:bg-purple-900/70 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-800 rounded-xl font-extrabold text-xs shadow-2xs flex items-center gap-1.5 cursor-pointer shrink-0 transition-colors"
+                        >
+                          <Plus className="w-4 h-4" />
+                          Add
+                        </button>
+                      </div>
+
+                      {/* Subcategory Image Upload / URL Option */}
+                      <div className="p-3 rounded-xl bg-white/80 dark:bg-slate-800/80 border border-purple-100 dark:border-purple-900/40 space-y-2">
+                        <span className="text-[10px] font-extrabold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+                          Subcategory Image / Icon (Optional)
+                        </span>
+                        <div className="flex items-center gap-3">
+                          {/* Preview Box */}
+                          <div className="relative w-12 h-12 rounded-xl border-2 border-dashed border-purple-300 dark:border-purple-700 bg-purple-50 dark:bg-purple-950/40 flex items-center justify-center overflow-hidden shrink-0 group">
+                            {subCategoryImageUrl ? (
+                              <>
+                                <img
+                                  src={subCategoryImageUrl}
+                                  alt="Subcategory preview"
+                                  className="w-full h-full object-cover"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setSubCategoryImageUrl("")}
+                                  className="absolute inset-0 bg-slate-950/60 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity cursor-pointer"
+                                  title="Remove image"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
+                              </>
+                            ) : (
+                              <ImageIcon className="w-5 h-5 text-purple-400" />
+                            )}
+                          </div>
+
+                          {/* Upload File & URL Inputs */}
+                          <div className="flex-1 space-y-1.5">
+                            <div className="flex items-center gap-2">
+                              <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/60 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 font-bold text-[11px] transition-colors">
+                                <Upload className="w-3.5 h-3.5" />
+                                <span>Upload File</span>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) handleSubcategoryImageUpload(file);
+                                    e.target.value = "";
+                                  }}
+                                />
+                              </label>
+                              {subCategoryImageUrl && (
+                                <button
+                                  type="button"
+                                  onClick={() => setSubCategoryImageUrl("")}
+                                  className="text-[11px] text-red-500 hover:text-red-700 dark:hover:text-red-400 font-bold flex items-center gap-1 cursor-pointer"
+                                >
+                                  <X className="w-3 h-3" />
+                                  Clear
+                                </button>
+                              )}
+                            </div>
+                            <input
+                              type="text"
+                              value={subCategoryImageUrl}
+                              onChange={(e) => setSubCategoryImageUrl(e.target.value)}
+                              placeholder="Or paste image URL (https://...)"
+                              className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-[11px] outline-none focus:border-purple-500"
+                            />
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
@@ -745,7 +890,7 @@ export default function CategoriesPage() {
                         Subcategories ({subcategoriesList.length}):
                       </span>
                       <span className="text-[10px] text-slate-400 font-medium italic">
-                        Click edit to rename inline
+                        Click edit to customize name or image
                       </span>
                     </div>
 
@@ -754,10 +899,39 @@ export default function CategoriesPage() {
                         subcategoriesList.map((item, idx) => (
                           <div
                             key={item._id || `${item.name}-${idx}`}
-                            className="inline-flex items-center"
+                            className="w-full sm:w-auto inline-flex items-center"
                           >
                             {editingSubcatIndex === idx ? (
-                              <div className="flex items-center gap-1 bg-white dark:bg-slate-800 border-2 border-purple-500 rounded-xl p-1 shadow-sm">
+                              <div className="w-full sm:min-w-[320px] p-3 bg-white dark:bg-slate-800 border-2 border-purple-500 rounded-2xl shadow-sm space-y-2.5">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[11px] font-extrabold text-purple-900 dark:text-purple-300">
+                                    Edit Subcategory
+                                  </span>
+                                  <div className="flex items-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSaveSubcategoryInline(idx)}
+                                      className="px-2.5 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer"
+                                      title="Save"
+                                    >
+                                      <Check className="w-3.5 h-3.5" />
+                                      <span>Save</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setEditingSubcatIndex(null);
+                                        setEditingSubcatName("");
+                                        setEditingSubcatImageUrl("");
+                                      }}
+                                      className="px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-slate-700 dark:hover:text-white text-xs font-bold transition-colors cursor-pointer"
+                                      title="Cancel"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+
                                 <input
                                   type="text"
                                   value={editingSubcatName}
@@ -768,38 +942,84 @@ export default function CategoriesPage() {
                                       handleSaveSubcategoryInline(idx);
                                     } else if (e.key === "Escape") {
                                       setEditingSubcatIndex(null);
+                                      setEditingSubcatName("");
+                                      setEditingSubcatImageUrl("");
                                     }
                                   }}
                                   autoFocus
-                                  className="min-w-[120px] max-w-[200px] p-1 text-xs font-bold bg-transparent text-slate-900 dark:text-white outline-none"
+                                  placeholder="Subcategory Name..."
+                                  className="w-full p-2 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-purple-500"
                                 />
-                                <button
-                                  type="button"
-                                  onClick={() => handleSaveSubcategoryInline(idx)}
-                                  className="p-1 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 transition-colors cursor-pointer"
-                                  title="Save rename"
-                                >
-                                  <Check className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setEditingSubcatIndex(null)}
-                                  className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white cursor-pointer"
-                                  title="Cancel"
-                                >
-                                  <X className="w-3.5 h-3.5" />
-                                </button>
+
+                                <div className="flex items-center gap-2 pt-1 border-t border-slate-100 dark:border-slate-800">
+                                  <div className="relative w-9 h-9 rounded-lg border border-purple-200 dark:border-purple-700 bg-purple-50 dark:bg-purple-950/40 flex items-center justify-center overflow-hidden shrink-0">
+                                    {editingSubcatImageUrl ? (
+                                      <img
+                                        src={editingSubcatImageUrl}
+                                        alt="Editing preview"
+                                        className="w-full h-full object-cover"
+                                      />
+                                    ) : (
+                                      <ImageIcon className="w-4 h-4 text-purple-400" />
+                                    )}
+                                  </div>
+
+                                  <div className="flex-1 flex items-center gap-1.5">
+                                    <label className="cursor-pointer inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 font-bold text-[10px] shrink-0 transition-colors">
+                                      <Upload className="w-3 h-3" />
+                                      <span>Change</span>
+                                      <input
+                                        type="file"
+                                        accept="image/*"
+                                        className="hidden"
+                                        onChange={(e) => {
+                                          const file = e.target.files?.[0];
+                                          if (file) handleEditSubcategoryImageUpload(file);
+                                          e.target.value = "";
+                                        }}
+                                      />
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={editingSubcatImageUrl}
+                                      onChange={(e) => setEditingSubcatImageUrl(e.target.value)}
+                                      placeholder="Or paste URL..."
+                                      className="flex-1 px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-[10px] outline-none focus:border-purple-500"
+                                    />
+                                    {editingSubcatImageUrl && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setEditingSubcatImageUrl("")}
+                                        className="p-1 text-red-500 hover:text-red-700 cursor-pointer"
+                                        title="Remove image"
+                                      >
+                                        <X className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
                               </div>
                             ) : (
-                              <span className="px-2.5 py-1 rounded-xl bg-white dark:bg-slate-800 border border-purple-200 dark:border-purple-800 text-purple-900 dark:text-purple-200 font-extrabold text-xs flex items-center gap-1.5 shadow-xs group">
-                                <Layers className="w-3 h-3 text-purple-500" />
+                              <span className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-purple-200 dark:border-purple-800 text-purple-900 dark:text-purple-200 font-extrabold text-xs flex items-center gap-2 shadow-xs group">
+                                {item.imageUrl || item.iconUrl ? (
+                                  <img
+                                    src={item.imageUrl || item.iconUrl}
+                                    alt={item.name}
+                                    className="w-5 h-5 rounded-md object-cover border border-purple-200 dark:border-purple-700 shrink-0"
+                                    onError={(e) => {
+                                      (e.currentTarget as HTMLElement).style.display = "none";
+                                    }}
+                                  />
+                                ) : (
+                                  <Layers className="w-3.5 h-3.5 text-purple-500 shrink-0" />
+                                )}
                                 <span>{item.name}</span>
 
                                 <button
                                   type="button"
                                   onClick={() => handleStartEditSubcategory(idx)}
                                   className="text-slate-400 hover:text-purple-600 dark:hover:text-purple-300 transition-colors ml-0.5 cursor-pointer"
-                                  title="Edit/Rename subcategory"
+                                  title="Edit subcategory name & image"
                                 >
                                   <Edit className="w-3 h-3" />
                                 </button>

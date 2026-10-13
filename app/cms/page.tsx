@@ -148,12 +148,22 @@ export default function CmsPage() {
   });
   const [isAddActionModalOpen, setIsAddActionModalOpen] = useState<boolean>(false);
   const [newActionInput, setNewActionInput] = useState<string>("");
+  const [actionImageUrl, setActionImageUrl] = useState<string>("");
   const [targetOfferingIndexForAction, setTargetOfferingIndexForAction] = useState<number | null>(null);
   const [actionCategoryId, setActionCategoryId] = useState<string>("");
   const [actionSubCategoryId, setActionSubCategoryId] = useState<string>("");
   const [actionFormError, setActionFormError] = useState<string>("");
   const [deletingActionId, setDeletingActionId] = useState<string | null>(null);
   const [deleteActionModal, setDeleteActionModal] = useState<{ open: boolean; id: string; name: string } | null>(null);
+
+  const handleActionImageUpload = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const result = e.target?.result as string;
+      setActionImageUrl(result);
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Enhanced Services state — live API data only (no manual mock data)
   const initialCachedServices = getStoredModuleData<ServiceItem[]>("cms_services");
@@ -163,120 +173,140 @@ export default function CmsPage() {
   const [activeTab, setActiveTab] = useState<"services" | "addons" | "pincodes">("services");
   const [isLoading, setIsLoading] = useState<boolean>(() => !initialCachedServices || initialCachedServices.length === 0);
 
-  const fetchServicesFromBackend = async (catsList?: ApiCategory[], force: boolean = false) => {
-    if (!force && isModuleCacheFresh("cms_services", 30000) && services.length > 0) {
+  // Category Filter Flow State
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>("All Categories");
+  const [selectedCategoryIdFilter, setSelectedCategoryIdFilter] = useState<string>("");
+
+  const fetchServicesFromBackend = async (
+    catsList?: ApiCategory[],
+    force: boolean = false,
+    categoryId?: string
+  ) => {
+    const activeCatId = categoryId !== undefined ? categoryId : selectedCategoryIdFilter;
+    if (!force && !activeCatId && isModuleCacheFresh("cms_services", 30000) && services.length > 0) {
       setIsLoading(false);
       return;
     }
     // Keep the table mounted during background refreshes so its search and
     // pagination state survive package edits.
-    if (services.length === 0) {
+    if (services.length === 0 || activeCatId) {
       setIsLoading(true);
     }
     try {
       const catsToUse = (catsList && catsList.length > 0) ? catsList : categoriesFromApi;
-      const pkgRes = await getPackagesApi({ limit: 100 });
+      const params: any = { limit: 100, forceRefresh: force || Boolean(activeCatId) };
+      if (activeCatId && activeCatId !== "all" && activeCatId !== "") {
+        params.categoryId = activeCatId;
+      }
+
+      const pkgRes = await getPackagesApi(params);
       const rawPkgList = pkgRes?.data?.packages || (Array.isArray(pkgRes?.data) ? pkgRes.data : (Array.isArray(pkgRes) ? pkgRes : []));
 
       let rawList = rawPkgList;
 
-      if (Array.isArray(rawList) && rawList.length > 0) {
-        const validOffers = rawList.filter((s: any) => {
-          const catObj = s.category;
-          const subCatObj = catObj?.subCategory;
-          const actObj = subCatObj?.serviceAction;
-          const catName = safeStr(s.categoryName) || safeStr(catObj?.categoryName) || safeStr(s.category);
-          const pkgTitle = safeStr(s.packageName) || safeStr(s.serviceName) || safeStr(actObj?.serviceName) || safeStr(s.title);
-          return (catName && catName.trim().length > 0) || (pkgTitle && pkgTitle.trim().length > 0 && pkgTitle !== "Service");
-        });
+      if (Array.isArray(rawList)) {
+        if (rawList.length === 0) {
+          setServices([]);
+        } else {
+          const validOffers = rawList.filter((s: any) => {
+            const catObj = s.category;
+            const subCatObj = catObj?.subCategory;
+            const actObj = subCatObj?.serviceAction;
+            const catName = safeStr(s.categoryName) || safeStr(catObj?.categoryName) || safeStr(s.category);
+            const pkgTitle = safeStr(s.packageName) || safeStr(s.serviceName) || safeStr(actObj?.serviceName) || safeStr(s.title);
+            return (catName && catName.trim().length > 0) || (pkgTitle && pkgTitle.trim().length > 0 && pkgTitle !== "Service");
+          });
 
-        const mapped: ServiceItem[] = validOffers.map((s: any) => {
-          const nestedPackage = s.package && typeof s.package === "object" ? s.package : {};
-          const includePoints = s.includeInPackage ?? nestedPackage.includeInPackage;
-          const excludePoints = s.excludeFromPackage ?? nestedPackage.excludeFromPackage;
-          const actObj = typeof s.serviceActionId === "object" && s.serviceActionId !== null ? s.serviceActionId : (typeof s.serviceAction === "object" && s.serviceAction !== null ? s.serviceAction : null);
+          const mapped: ServiceItem[] = validOffers.map((s: any) => {
+            const nestedPackage = s.package && typeof s.package === "object" ? s.package : {};
+            const includePoints = s.includeInPackage ?? nestedPackage.includeInPackage;
+            const excludePoints = s.excludeFromPackage ?? nestedPackage.excludeFromPackage;
+            const actObj = typeof s.serviceActionId === "object" && s.serviceActionId !== null ? s.serviceActionId : (typeof s.serviceAction === "object" && s.serviceAction !== null ? s.serviceAction : null);
 
-          // Extract category & subcategory IDs stored in serviceActionId reference
-          let categoryIdStr = typeof actObj?.categoryId === "object" ? (actObj.categoryId?._id || "") : (typeof actObj?.categoryId === "string" ? actObj.categoryId : (s.categoryId?._id || s.categoryId || ""));
-          let subCategoryIdStr = typeof actObj?.subCategoryId === "object" ? (actObj.subCategoryId?._id || "") : (typeof actObj?.subCategoryId === "string" ? actObj.subCategoryId : (s.subCategoryId?._id || s.subCategoryId || ""));
+            // Extract category & subcategory IDs stored in serviceActionId reference
+            let categoryIdStr = typeof actObj?.categoryId === "object" ? (actObj.categoryId?._id || "") : (typeof actObj?.categoryId === "string" ? actObj.categoryId : (s.categoryId?._id || s.categoryId || ""));
+            let subCategoryIdStr = typeof actObj?.subCategoryId === "object" ? (actObj.subCategoryId?._id || "") : (typeof actObj?.subCategoryId === "string" ? actObj.subCategoryId : (s.subCategoryId?._id || s.subCategoryId || ""));
 
-          const actionVal = actObj?.serviceAction || actObj?.name || (typeof s.serviceAction === "string" ? s.serviceAction : (s.systemType?.[0] || ""));
+            const actionVal = actObj?.serviceAction || actObj?.name || (typeof s.serviceAction === "string" ? s.serviceAction : (s.systemType?.[0] || ""));
 
-          // Fallback lookup via serviceActionsFromApi if categoryIdStr missing
-          if (!categoryIdStr && (s.serviceActionId || actionVal)) {
-            const saId = typeof s.serviceActionId === "object" ? s.serviceActionId?._id : s.serviceActionId;
-            const foundSa = serviceActionsFromApi.find(
-              (sa: any) => (saId && sa._id === saId) || (actionVal && (sa.serviceAction === actionVal || sa.name === actionVal))
-            );
-            if (foundSa) {
-              categoryIdStr = typeof foundSa.categoryId === "object" ? (foundSa.categoryId?._id || "") : (typeof foundSa.categoryId === "string" ? foundSa.categoryId : "");
-              subCategoryIdStr = typeof foundSa.subCategoryId === "object" ? (foundSa.subCategoryId?._id || "") : (typeof foundSa.subCategoryId === "string" ? foundSa.subCategoryId : "");
+            // Fallback lookup via serviceActionsFromApi if categoryIdStr missing
+            if (!categoryIdStr && (s.serviceActionId || actionVal)) {
+              const saId = typeof s.serviceActionId === "object" ? s.serviceActionId?._id : s.serviceActionId;
+              const foundSa = serviceActionsFromApi.find(
+                (sa: any) => (saId && sa._id === saId) || (actionVal && (sa.serviceAction === actionVal || sa.name === actionVal))
+              );
+              if (foundSa) {
+                categoryIdStr = typeof foundSa.categoryId === "object" ? (foundSa.categoryId?._id || "") : (typeof foundSa.categoryId === "string" ? foundSa.categoryId : "");
+                subCategoryIdStr = typeof foundSa.subCategoryId === "object" ? (foundSa.subCategoryId?._id || "") : (typeof foundSa.subCategoryId === "string" ? foundSa.subCategoryId : "");
+              }
             }
+
+            // Match category in catsToUse by ID or Name
+            const foundCategory = catsToUse.find(
+              (c) => (categoryIdStr && c._id === categoryIdStr) || (c.categoryName && c.categoryName.toLowerCase().trim() === safeStr(actObj?.categoryId?.categoryName || s.categoryName || s.category).toLowerCase().trim())
+            );
+            const categoryNameStr = foundCategory ? foundCategory.categoryName : (safeStr(actObj?.categoryId?.categoryName) || safeStr(s.categoryName) || safeStr(s.category) || "");
+
+            // Match subcategory in foundCategory by ID or Name
+            const foundSub = foundCategory?.subCategories?.find(
+              (sub: any) => (subCategoryIdStr && sub._id === subCategoryIdStr) || (sub.name && sub.name.toLowerCase().trim() === safeStr(actObj?.subCategoryId?.name || s.subCategoryName || s.subcategory).toLowerCase().trim())
+            );
+            const subCategoryNameStr = foundSub ? foundSub.name : (safeStr(actObj?.subCategoryId?.name) || safeStr(s.subCategoryName) || safeStr(s.subcategory) || "");
+
+            const titleStr = (
+              safeStr(s.packageName) ||
+              safeStr(s.serviceName) ||
+              safeStr(actObj?.serviceName) ||
+              safeStr(actObj?.serviceAction) ||
+              safeStr(s.title) ||
+              "Service Package"
+            );
+
+            const priceVal = s.price !== undefined ? Number(s.price) : 699;
+            const origPriceVal = s.originalPrice !== undefined ? Number(s.originalPrice) : Math.round(priceVal * 1.3);
+            const durationVal = typeof s.duration === "number" ? `${s.duration} mins` : (s.duration || "45 mins");
+            const subtitleVal = s.subtitle ? safeStr(s.subtitle) : "";
+            const descriptionVal = s.description ? safeStr(s.description) : `Expert ${titleStr} service with 30-day HelpMate guarantee`;
+
+            const rawImg = s.imageUrl || s.thumbnailUrl || "";
+            const thumbVal = rawImg;
+
+            const rawAddons = s.addons || [];
+            const mappedAddons = Array.isArray(rawAddons)
+              ? rawAddons.map((a: any) => typeof a === "object" && a !== null ? { id: a._id || a.id, title: a.addonName || a.title || "Spare Part", price: a.price, unit: a.unit, category: a.category, imageUrl: a.imageUrl || a.thumbnailUrl || "", status: a.status ? "Active" : "Inactive" } : { id: String(a), title: "Spare Part", price: 199, unit: "Per Unit", category: "General", imageUrl: "", status: "Active" })
+              : [];
+
+            return {
+              id: s._id,
+              categoryId: categoryIdStr,
+              subCategoryId: subCategoryIdStr,
+              category: categoryNameStr,
+              subcategory: subCategoryNameStr,
+              title: titleStr,
+              subtitle: subtitleVal,
+              description: descriptionVal,
+              price: priceVal,
+              originalPrice: origPriceVal,
+              includeInPackage: safeStringArray(includePoints),
+              excludeFromPackage: safeStringArray(excludePoints),
+              duration: durationVal,
+              rating: 5.0,
+              reviewsCount: 1,
+              isInspectionBased: false,
+              systemType: [actionVal],
+              serviceAction: actionVal,
+              thumbnailUrl: thumbVal,
+              addons: mappedAddons as any,
+              status: s.status !== false ? "Active" : "Inactive",
+              createdBy: "Admin Coordinator",
+              createdDate: "Just Now",
+            };
+          });
+          setServices(mapped);
+          if (!activeCatId) {
+            setCachedModuleData("cms_services", mapped);
           }
-
-          // Match category in catsToUse by ID or Name
-          const foundCategory = catsToUse.find(
-            (c) => (categoryIdStr && c._id === categoryIdStr) || (c.categoryName && c.categoryName.toLowerCase().trim() === safeStr(actObj?.categoryId?.categoryName || s.categoryName || s.category).toLowerCase().trim())
-          );
-          const categoryNameStr = foundCategory ? foundCategory.categoryName : (safeStr(actObj?.categoryId?.categoryName) || safeStr(s.categoryName) || safeStr(s.category) || "");
-
-          // Match subcategory in foundCategory by ID or Name
-          const foundSub = foundCategory?.subCategories?.find(
-            (sub: any) => (subCategoryIdStr && sub._id === subCategoryIdStr) || (sub.name && sub.name.toLowerCase().trim() === safeStr(actObj?.subCategoryId?.name || s.subCategoryName || s.subcategory).toLowerCase().trim())
-          );
-          const subCategoryNameStr = foundSub ? foundSub.name : (safeStr(actObj?.subCategoryId?.name) || safeStr(s.subCategoryName) || safeStr(s.subcategory) || "");
-
-          const titleStr = (
-            safeStr(s.packageName) ||
-            safeStr(s.serviceName) ||
-            safeStr(actObj?.serviceName) ||
-            safeStr(actObj?.serviceAction) ||
-            safeStr(s.title) ||
-            "Service Package"
-          );
-
-          const priceVal = s.price !== undefined ? Number(s.price) : 699;
-          const origPriceVal = s.originalPrice !== undefined ? Number(s.originalPrice) : Math.round(priceVal * 1.3);
-          const durationVal = typeof s.duration === "number" ? `${s.duration} mins` : (s.duration || "45 mins");
-          const subtitleVal = s.subtitle ? safeStr(s.subtitle) : "";
-          const descriptionVal = s.description ? safeStr(s.description) : `Expert ${titleStr} service with 30-day HelpMate guarantee`;
-
-          const rawImg = s.imageUrl || s.thumbnailUrl || "";
-          const thumbVal = rawImg;
-
-          const rawAddons = s.addons || [];
-          const mappedAddons = Array.isArray(rawAddons)
-            ? rawAddons.map((a: any) => typeof a === "object" && a !== null ? { id: a._id || a.id, title: a.addonName || a.title || "Spare Part", price: a.price, unit: a.unit, category: a.category, imageUrl: a.imageUrl || a.thumbnailUrl || "", status: a.status ? "Active" : "Inactive" } : { id: String(a), title: "Spare Part", price: 199, unit: "Per Unit", category: "General", imageUrl: "", status: "Active" })
-            : [];
-
-          return {
-            id: s._id,
-            categoryId: categoryIdStr,
-            subCategoryId: subCategoryIdStr,
-            category: categoryNameStr,
-            subcategory: subCategoryNameStr,
-            title: titleStr,
-            subtitle: subtitleVal,
-            description: descriptionVal,
-            price: priceVal,
-            originalPrice: origPriceVal,
-            includeInPackage: safeStringArray(includePoints),
-            excludeFromPackage: safeStringArray(excludePoints),
-            duration: durationVal,
-            rating: 5.0,
-            reviewsCount: 1,
-            isInspectionBased: false,
-            systemType: [actionVal],
-            serviceAction: actionVal,
-            thumbnailUrl: thumbVal,
-            addons: mappedAddons as any,
-            status: s.status !== false ? "Active" : "Inactive",
-            createdBy: "Admin Coordinator",
-            createdDate: "Just Now",
-          };
-        });
-        setServices(mapped);
-        setCachedModuleData("cms_services", mapped);
+        }
       }
     } catch (err) {
       console.error("fetchServicesFromBackend error:", err);
@@ -488,8 +518,13 @@ export default function CmsPage() {
   // Selected Service Details & Add-ons Modal State
   const [selectedService, setSelectedService] = useState<ServiceItem | null>(null);
 
-  // Category Filter Flow State
-  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState("All Categories");
+  // Category Filter Flow Actions
+  const handleSelectCategoryFilter = async (catId: string, catName: string) => {
+    setSelectedCategoryIdFilter(catId);
+    setSelectedCategoryFilter(catName);
+    setIsLoading(true);
+    await fetchServicesFromBackend(categoriesFromApi, true, catId);
+  };
 
   const categoriesList = [
     "All Categories",
@@ -1614,9 +1649,11 @@ export default function CmsPage() {
   };
 
   // Dynamic Filtering by Category
-  const filteredServices = selectedCategoryFilter === "All Categories"
+  const filteredServices = selectedCategoryIdFilter
     ? services
-    : services.filter((s) => s.category === selectedCategoryFilter);
+    : selectedCategoryFilter === "All Categories"
+      ? services
+      : services.filter((s) => s.category === selectedCategoryFilter);
 
   return (
     <div className="space-y-6">
@@ -1694,19 +1731,44 @@ export default function CmsPage() {
           <span className="font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-wider text-[10px] shrink-0 flex items-center gap-1">
             <Filter className="w-3 h-3" /> Category Flow:
           </span>
-          {categoriesList.map((cat) => (
-            <button
-              key={cat}
-              type="button"
-              onClick={() => setSelectedCategoryFilter(cat)}
-              className={`px-3 py-1.5 rounded-xl font-bold transition-all shrink-0 cursor-pointer ${selectedCategoryFilter === cat
+          <button
+            type="button"
+            onClick={() => handleSelectCategoryFilter("", "All Categories")}
+            className={`px-3 py-1.5 rounded-xl font-bold transition-all shrink-0 cursor-pointer ${
+              !selectedCategoryIdFilter || selectedCategoryFilter === "All Categories"
                 ? "bg-brand-500 text-white shadow-lux"
-                : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100"
+                : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
+            }`}
+          >
+            All Categories
+          </button>
+          {categoriesFromApi.map((cat) => {
+            const isSelected = selectedCategoryIdFilter === cat._id;
+            return (
+              <button
+                key={cat._id}
+                type="button"
+                onClick={() => handleSelectCategoryFilter(isSelected ? "" : cat._id, isSelected ? "All Categories" : cat.categoryName)}
+                className={`px-3 py-1.5 rounded-xl font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 ${
+                  isSelected
+                    ? "bg-brand-500 text-white shadow-lux"
+                    : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
                 }`}
-            >
-              {cat}
-            </button>
-          ))}
+              >
+                {cat.iconUrl ? (
+                  <img
+                    src={cat.iconUrl}
+                    alt={cat.categoryName}
+                    className="w-3.5 h-3.5 rounded object-contain shrink-0"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLElement).style.display = "none";
+                    }}
+                  />
+                ) : null}
+                <span>{cat.categoryName}</span>
+              </button>
+            );
+          })}
         </div>
       )}
 
@@ -3242,18 +3304,23 @@ export default function CmsPage() {
                 }
 
                 const cleanAction = newActionInput.trim();
+                const cleanImg = actionImageUrl.trim() || undefined;
                 let res;
                 if (editingActionObj) {
                   res = await updateServiceActionApi(editingActionObj._id, {
                     categoryId: actionCategoryId,
                     subCategoryId: actionSubCategoryId || undefined,
                     serviceAction: cleanAction,
+                    imageUrl: cleanImg,
+                    thumbnailUrl: cleanImg,
                   });
                 } else {
                   res = await createServiceActionApi({
                     categoryId: actionCategoryId,
                     subCategoryId: actionSubCategoryId || undefined,
                     serviceAction: cleanAction,
+                    imageUrl: cleanImg,
+                    thumbnailUrl: cleanImg,
                   });
                 }
 
@@ -3269,6 +3336,7 @@ export default function CmsPage() {
                     handleUpdateOfferingRow(targetOfferingIndexForAction, "type", cleanAction);
                   }
                   setNewActionInput("");
+                  setActionImageUrl("");
                   setActionCategoryId("");
                   setActionSubCategoryId("");
                   setEditingActionObj(null);
@@ -3300,6 +3368,7 @@ export default function CmsPage() {
                   onClick={() => {
                     setEditingActionObj(null);
                     setNewActionInput("");
+                    setActionImageUrl("");
                     setActionCategoryId("");
                     setActionSubCategoryId("");
                     setActionFormError("");
@@ -3366,6 +3435,74 @@ export default function CmsPage() {
                     }));
                   })()}
                 />
+
+                {/* 4. Action Image / Thumbnail (Optional) */}
+                <div className="p-3.5 rounded-2xl bg-purple-50/60 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800/60 space-y-2.5">
+                  <span className="text-[11px] font-extrabold text-purple-900 dark:text-purple-300 block">
+                    Service Action Image / Icon (Optional)
+                  </span>
+                  <div className="flex items-center gap-3">
+                    {/* Thumbnail Preview */}
+                    <div className="relative w-14 h-14 rounded-2xl border-2 border-dashed border-purple-300 dark:border-purple-700 bg-white dark:bg-slate-800 flex items-center justify-center overflow-hidden shrink-0 group shadow-2xs">
+                      {actionImageUrl ? (
+                        <>
+                          <img
+                            src={actionImageUrl}
+                            alt="Action Preview"
+                            className="w-full h-full object-cover"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setActionImageUrl("")}
+                            className="absolute inset-0 bg-slate-950/60 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity cursor-pointer"
+                            title="Remove image"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </>
+                      ) : (
+                        <ImageIcon className="w-5 h-5 text-purple-400" />
+                      )}
+                    </div>
+
+                    {/* File Upload & URL Inputs */}
+                    <div className="flex-1 space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-purple-200 dark:border-purple-800 bg-white dark:bg-slate-800 hover:bg-purple-50 dark:hover:bg-slate-700 text-purple-700 dark:text-purple-300 font-bold text-[11px] transition-colors shadow-2xs">
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>Upload File</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) handleActionImageUpload(file);
+                              e.target.value = "";
+                            }}
+                          />
+                        </label>
+                        {actionImageUrl && (
+                          <button
+                            type="button"
+                            onClick={() => setActionImageUrl("")}
+                            className="text-[11px] text-red-500 hover:text-red-700 dark:hover:text-red-400 font-bold flex items-center gap-1 cursor-pointer"
+                          >
+                            <X className="w-3 h-3" />
+                            Clear
+                          </button>
+                        )}
+                      </div>
+                      <input
+                        type="text"
+                        value={actionImageUrl}
+                        onChange={(e) => setActionImageUrl(e.target.value)}
+                        placeholder="Or paste action image URL (https://...)"
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-[11px] outline-none focus:border-purple-500"
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* Action Buttons */}
@@ -3383,6 +3520,7 @@ export default function CmsPage() {
                     onClick={() => {
                       setEditingActionObj(null);
                       setNewActionInput("");
+                      setActionImageUrl("");
                       setActionCategoryId("");
                       setActionSubCategoryId("");
                       setActionFormError("");
@@ -3407,6 +3545,7 @@ export default function CmsPage() {
                   ) : (
                     serviceActionsFromApi.map((act) => {
                       const actName = act.name || act.serviceAction || "Unnamed Action";
+                      const actImg = act.imageUrl || act.thumbnailUrl || (act as any).iconUrl;
                       const catObj = typeof act.categoryId === "object" ? act.categoryId : categoriesFromApi.find((c) => c._id === act.categoryId);
                       const catName = act.categoryName || catObj?.categoryName || "";
 
@@ -3420,21 +3559,40 @@ export default function CmsPage() {
                           key={act._id}
                           className="p-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-between shadow-xs gap-2 hover:border-slate-300 dark:hover:border-slate-600 transition-colors"
                         >
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-extrabold text-xs text-slate-900 dark:text-white">
-                              {actName}
-                            </span>
-                            {catName && (
-                              <span className="px-2 py-0.5 rounded-md bg-brand-50 text-brand-700 dark:bg-brand-950/70 text-[10px] font-extrabold border border-brand-200 dark:border-brand-800">
-                                {catName}
-                              </span>
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            {/* Thumbnail or Icon */}
+                            {actImg ? (
+                              <img
+                                src={actImg}
+                                alt={actName}
+                                className="w-8 h-8 rounded-lg object-cover border border-purple-200 dark:border-purple-800 shrink-0"
+                                onError={(e) => {
+                                  (e.currentTarget as HTMLElement).style.display = "none";
+                                }}
+                              />
+                            ) : (
+                              <div className="w-8 h-8 rounded-lg bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0 border border-purple-100 dark:border-purple-900/40">
+                                <Wrench className="w-3.5 h-3.5" />
+                              </div>
                             )}
-                            {subCatName && (
-                              <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 dark:bg-purple-950/70 text-[10px] font-extrabold border border-purple-200 dark:border-purple-800">
-                                {subCatName}
+
+                            <div className="flex items-center gap-2 flex-wrap min-w-0">
+                              <span className="font-extrabold text-xs text-slate-900 dark:text-white truncate">
+                                {actName}
                               </span>
-                            )}
+                              {catName && (
+                                <span className="px-2 py-0.5 rounded-md bg-brand-50 text-brand-700 dark:bg-brand-950/70 text-[10px] font-extrabold border border-brand-200 dark:border-brand-800 shrink-0">
+                                  {catName}
+                                </span>
+                              )}
+                              {subCatName && (
+                                <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 dark:bg-purple-950/70 text-[10px] font-extrabold border border-purple-200 dark:border-purple-800 shrink-0">
+                                  {subCatName}
+                                </span>
+                              )}
+                            </div>
                           </div>
+
                           <div className="flex items-center gap-1 shrink-0">
                             <button
                               type="button"
@@ -3443,10 +3601,11 @@ export default function CmsPage() {
                                 setNewActionInput(actName);
                                 setActionCategoryId(typeof act.categoryId === "object" ? act.categoryId?._id : (act.categoryId || ""));
                                 setActionSubCategoryId(typeof act.subCategoryId === "object" ? act.subCategoryId?._id : (act.subCategoryId || ""));
+                                setActionImageUrl(act.imageUrl || act.thumbnailUrl || (act as any).iconUrl || "");
                                 setActionFormError("");
                               }}
                               className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-950/30 rounded-lg cursor-pointer transition-colors"
-                              title="Edit Service Action"
+                              title="Edit Service Action & Image"
                             >
                               <Edit className="w-3.5 h-3.5" />
                             </button>
@@ -3472,6 +3631,7 @@ export default function CmsPage() {
                   onClick={() => {
                     setEditingActionObj(null);
                     setNewActionInput("");
+                    setActionImageUrl("");
                     setIsAddActionModalOpen(false);
                   }}
                   className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 font-bold text-xs text-slate-700 dark:text-slate-300 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"

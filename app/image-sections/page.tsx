@@ -26,6 +26,7 @@ import {
   Tag,
   Upload,
   Loader2,
+  Zap,
 } from "lucide-react";
 import { Portal } from "@/components/Portal";
 import { initialServices, ServiceItem } from "@/lib/mockData";
@@ -36,6 +37,9 @@ import {
   removeTrendingPackageApi,
   ApiTrendingPackage,
   ApiTrendingCatalogItem,
+  getAdminQuickServicesApi,
+  updateAdminQuickServicesApi,
+  ApiQuickServiceItem,
   getWebsiteZonesApi,
   addWebsiteZoneApi,
   updateWebsiteZoneApi,
@@ -101,6 +105,14 @@ interface TrendingHeader {
   viewAllLink: string;
 }
 
+interface QuickHeader {
+  badge: string;
+  title: string;
+  subtitle: string;
+  viewAllText: string;
+  viewAllLink: string;
+}
+
 const initialWhereWeServeHeader: WhereWeServeHeader = {
   badge: "WHERE WE SERVE",
   title: "Varanasi's Neighborhoods We Cover",
@@ -114,6 +126,161 @@ const initialTrendingHeader: TrendingHeader = {
   viewAllText: "View all trending packages →",
   viewAllLink: "/services",
 };
+
+const initialQuickHeader: QuickHeader = {
+  badge: "QUICK SERVICES",
+  title: "Instant 15–30 Min Doorstep Services",
+  subtitle: "Fast-dispatch verified technicians for urgent home repairs, deep cleaning, and appliance fixes across Varanasi.",
+  viewAllText: "Explore all quick services →",
+  viewAllLink: "/services",
+};
+
+const initialQuickServices: TrendingServiceCard[] = [
+  {
+    id: "quick-1",
+    packageId: "quick-ac-jet",
+    title: "Power Jet AC Service",
+    category: "AC Repair & Service",
+    durationMins: 45,
+    rating: 4.9,
+    reviewsCount: 142,
+    description: "Deep power-jet coil flush, gas pressure check, and filter sanitization for rapid ice-cool airflow.",
+    discountPercentage: "25% OFF",
+    price: "599",
+    originalPrice: "799",
+    imageUrl: "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=600&auto=format&fit=crop&q=80",
+    bookCtaText: "Book Now →",
+    bookCtaLink: "/services",
+    isActive: true,
+    sortOrder: 1,
+  },
+  {
+    id: "quick-2",
+    packageId: "quick-deep-clean",
+    title: "Deep Home Clean",
+    category: "Home Cleaning",
+    durationMins: 180,
+    rating: 4.95,
+    reviewsCount: 218,
+    description: "Complete living room, kitchen, and balcony deep sanitization with industrial vacuuming & stain treatment.",
+    discountPercentage: "24% OFF",
+    price: "1899",
+    originalPrice: "2499",
+    imageUrl: "https://images.unsplash.com/photo-1581578731548-c64695cc6952?w=600&auto=format&fit=crop&q=80",
+    bookCtaText: "Book Now →",
+    bookCtaLink: "/services",
+    isActive: true,
+    sortOrder: 2,
+  },
+  {
+    id: "quick-3",
+    packageId: "quick-switchboard",
+    title: "Switchboard & Wiring Fix",
+    category: "Electrician",
+    durationMins: 30,
+    rating: 4.88,
+    reviewsCount: 89,
+    description: "Fast fix for burned sockets, loose connections, short circuits, and MCB breaker tripping issues.",
+    discountPercentage: "33% OFF",
+    price: "199",
+    originalPrice: "299",
+    imageUrl: "https://images.unsplash.com/photo-1621905252507-b35492cc74b4?w=600&auto=format&fit=crop&q=80",
+    bookCtaText: "Book Now →",
+    bookCtaLink: "/services",
+    isActive: true,
+    sortOrder: 3,
+  },
+  {
+    id: "quick-4",
+    packageId: "quick-bathroom-clean",
+    title: "Bathroom Deep Scrub",
+    category: "Home Cleaning",
+    durationMins: 60,
+    rating: 4.86,
+    reviewsCount: 110,
+    description: "Intensive hard water scale removal, anti-fungal tile scrubbing, tap descaling, and high-shine mirror polish.",
+    discountPercentage: "25% OFF",
+    price: "449",
+    originalPrice: "599",
+    imageUrl: "https://images.unsplash.com/photo-1584622650111-993a426fbf0a?w=600&auto=format&fit=crop&q=80",
+    bookCtaText: "Book Now →",
+    bookCtaLink: "/services",
+    isActive: true,
+    sortOrder: 4,
+  },
+  {
+    id: "quick-5",
+    packageId: "quick-tap-leakage",
+    title: "Tap Leakage & Valve Fix",
+    category: "Plumber",
+    durationMins: 30,
+    rating: 4.84,
+    reviewsCount: 76,
+    description: "Quick replacement of dripping spindles, pipe washers, angle valves, and mixer cartridges.",
+    discountPercentage: "40% OFF",
+    price: "149",
+    originalPrice: "249",
+    imageUrl: "https://images.unsplash.com/photo-1585704032915-c3400ca199e7?w=600&auto=format&fit=crop&q=80",
+    bookCtaText: "Book Now →",
+    bookCtaLink: "/services",
+    isActive: true,
+    sortOrder: 5,
+  },
+  {
+    id: "quick-6",
+    packageId: "quick-sofa-shampoo",
+    title: "Sofa Shampoo & Sanitization",
+    category: "Home Cleaning",
+    durationMins: 90,
+    rating: 4.92,
+    reviewsCount: 164,
+    description: "Dry vacuuming followed by deep enzyme shampoo foam extraction to remove stubborn stains and allergens.",
+    discountPercentage: "27% OFF",
+    price: "799",
+    originalPrice: "1099",
+    imageUrl: "https://images.unsplash.com/photo-1493663284031-b7e3aefcae8e?w=600&auto=format&fit=crop&q=80",
+    bookCtaText: "Book Now →",
+    bookCtaLink: "/services",
+    isActive: true,
+    sortOrder: 6,
+  },
+  {
+    id: "quick-7",
+    packageId: "quick-ro-water",
+    title: "RO Water Purifier Service",
+    category: "Appliances",
+    durationMins: 45,
+    rating: 4.9,
+    reviewsCount: 95,
+    description: "Complete TDS check, sediment filter cleaning, carbon filter inspection, and pump pressure testing.",
+    discountPercentage: "27% OFF",
+    price: "399",
+    originalPrice: "549",
+    imageUrl: "https://images.unsplash.com/photo-1544816155-12df9643f363?w=600&auto=format&fit=crop&q=80",
+    bookCtaText: "Book Now →",
+    bookCtaLink: "/services",
+    isActive: true,
+    sortOrder: 7,
+  },
+  {
+    id: "quick-8",
+    packageId: "quick-drain-unclog",
+    title: "Drain & Sink Unclogging",
+    category: "Plumber",
+    durationMins: 35,
+    rating: 4.87,
+    reviewsCount: 82,
+    description: "High-pressure mechanical snake clearing for blocked kitchen sinks, bathroom floor traps, and drain pipes.",
+    discountPercentage: "33% OFF",
+    price: "299",
+    originalPrice: "449",
+    imageUrl: "https://images.unsplash.com/photo-1504148455328-c376907d081c?w=600&auto=format&fit=crop&q=80",
+    bookCtaText: "Book Now →",
+    bookCtaLink: "/services",
+    isActive: true,
+    sortOrder: 8,
+  },
+];
 
 const initialZones: ZoneCard[] = [
   {
@@ -290,7 +457,7 @@ const initialTrendingServices: TrendingServiceCard[] = [
   },
 ];
 
-type TabType = "zones" | "trending";
+type TabType = "zones" | "trending" | "quick";
 
 export default function ImageSectionsPage() {
   const [activeTab, setActiveTab] = useState<TabType>("zones");
@@ -298,8 +465,10 @@ export default function ImageSectionsPage() {
   const [zones, setZones] = useState<ZoneCard[]>(initialZones);
   const [serviceCards, setServiceCards] = useState<ServiceCard[]>(initialServiceCards);
   const [trendingServices, setTrendingServices] = useState<TrendingServiceCard[]>([]);
+  const [quickServices, setQuickServices] = useState<TrendingServiceCard[]>([]);
   const [isZonesLoading, setIsZonesLoading] = useState(false);
   const [isTrendingLoading, setIsTrendingLoading] = useState(false);
+  const [isQuickLoading, setIsQuickLoading] = useState(false);
   const [isCatalogPickerOpen, setIsCatalogPickerOpen] = useState(false);
   const [catalogSearch, setCatalogSearch] = useState("");
   const [catalogPackages, setCatalogPackages] = useState<ApiTrendingCatalogItem[]>([]);
@@ -389,11 +558,66 @@ export default function ImageSectionsPage() {
     }
   };
 
+  const fetchQuickServices = async () => {
+    setIsQuickLoading(true);
+    try {
+      const res = await getAdminQuickServicesApi(true);
+      if (res && res.success && Array.isArray(res.data)) {
+        let catalogList: ApiTrendingCatalogItem[] = catalogPackages;
+        if (!catalogList || catalogList.length === 0) {
+          const catRes = await getTrendingCatalogPackagesApi({ limit: 100 });
+          if (catRes && catRes.success && Array.isArray(catRes.data)) {
+            catalogList = catRes.data;
+            setCatalogPackages(catRes.data);
+          }
+        }
+        const catalogMap = new Map((catalogList || []).map((c) => [c.packageId, c]));
+
+        const mapped: TrendingServiceCard[] = res.data.map((item: ApiQuickServiceItem, index: number) => {
+          const pkgId = item.packageId;
+          const catItem = catalogMap.get(pkgId);
+          const originalPrice = catItem?.originalPrice || item.price || 0;
+          const price = item.price || 0;
+          const discountPercentage =
+            originalPrice > price && originalPrice > 0
+              ? `${Math.round(((originalPrice - price) / originalPrice) * 100)}% OFF`
+              : "EXPRESS";
+
+          return {
+            id: pkgId,
+            packageId: pkgId,
+            title: item.packageName || catItem?.packageName || "Quick Service",
+            category: catItem?.category?.name || "Quick Service",
+            durationMins: catItem?.duration || 30,
+            rating: 4.9,
+            reviewsCount: 100,
+            description: `Express 15-30 min doorstep service for ${item.packageName || catItem?.packageName || "this package"}.`,
+            discountPercentage,
+            price: String(price),
+            originalPrice: String(originalPrice),
+            imageUrl: formatImageUrl(catItem?.imageUrl || catItem?.thumbnailUrl) || "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=600&auto=format&fit=crop&q=80",
+            bookCtaText: "Book Now →",
+            bookCtaLink: "/services",
+            isActive: true,
+            sortOrder: index + 1,
+          };
+        });
+        setQuickServices(mapped);
+      }
+    } catch (err) {
+      console.error("Failed to fetch quick services:", err);
+    } finally {
+      setIsQuickLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (activeTab === "zones") {
       fetchZones();
     } else if (activeTab === "trending") {
       fetchTrendingPackages();
+    } else if (activeTab === "quick") {
+      fetchQuickServices();
     }
   }, [activeTab]);
 
@@ -439,6 +663,10 @@ export default function ImageSectionsPage() {
   const [trendingHeader, setTrendingHeader] = useState<TrendingHeader>(initialTrendingHeader);
   const [editingTrendingHeader, setEditingTrendingHeader] = useState(false);
   const [trendingHeaderDraft, setTrendingHeaderDraft] = useState<TrendingHeader>(initialTrendingHeader);
+
+  const [quickHeader, setQuickHeader] = useState<QuickHeader>(initialQuickHeader);
+  const [editingQuickHeader, setEditingQuickHeader] = useState(false);
+  const [quickHeaderDraft, setQuickHeaderDraft] = useState<QuickHeader>(initialQuickHeader);
 
   const [previewZone, setPreviewZone] = useState<ZoneCard | null>(null);
   const [deleteModal, setDeleteModal] = useState<{ open: boolean; id: string; type: TabType; name: string } | null>(null);
@@ -556,6 +784,11 @@ export default function ImageSectionsPage() {
       const targetPkgId = item?.packageId || deleteModal.id;
       await handleRemovePackageFromTrending(targetPkgId);
     }
+    if (deleteModal.type === "quick") {
+      const item = quickServices.find((q) => q.id === deleteModal.id || q.packageId === deleteModal.id);
+      const targetPkgId = item?.packageId || deleteModal.id;
+      await handleRemovePackageFromQuickServices(targetPkgId);
+    }
     setDeleteModal(null);
   };
 
@@ -569,15 +802,59 @@ export default function ImageSectionsPage() {
     setEditingTrendingHeader(false);
   };
 
+  const saveQuickHeader = () => {
+    setQuickHeader(quickHeaderDraft);
+    setEditingQuickHeader(false);
+  };
+
+  const handleAddPackageToQuickServices = async (catItem: ApiTrendingCatalogItem) => {
+    const currentPkgIds = quickServices.map((q) => q.packageId || q.id).filter(Boolean);
+    if (currentPkgIds.includes(catItem.packageId)) return;
+    if (currentPkgIds.length >= 6) {
+      alert("Maximum 6 quick services are allowed.");
+      return;
+    }
+
+    try {
+      const updatedIds = [...currentPkgIds, catItem.packageId];
+      const res = await updateAdminQuickServicesApi(updatedIds);
+      if (res && res.success) {
+        await fetchQuickServices();
+      } else {
+        alert(res?.message || "Failed to add package to quick services.");
+      }
+    } catch (err) {
+      console.error("Error adding package to quick services:", err);
+    }
+  };
+
+  const handleRemovePackageFromQuickServices = async (packageId: string) => {
+    try {
+      const currentPkgIds = quickServices
+        .map((q) => q.packageId || q.id)
+        .filter((id) => id && id !== packageId);
+      const res = await updateAdminQuickServicesApi(currentPkgIds);
+      if (res && res.success) {
+        await fetchQuickServices();
+      } else {
+        alert(res?.message || "Failed to remove package from quick services.");
+      }
+    } catch (err) {
+      console.error("Error removing package from quick services:", err);
+    }
+  };
+
   const filteredZones = zones.filter((z) => !searchQuery || z.name.toLowerCase().includes(searchQuery.toLowerCase()) || z.city.toLowerCase().includes(searchQuery.toLowerCase()));
   const filteredServices = serviceCards.filter((s) => !searchQuery || s.title.toLowerCase().includes(searchQuery.toLowerCase()));
   const filteredTrending = trendingServices.filter((t) => !searchQuery || t.title.toLowerCase().includes(searchQuery.toLowerCase()) || t.category.toLowerCase().includes(searchQuery.toLowerCase()));
+  const filteredQuick = quickServices.filter((q) => !searchQuery || q.title.toLowerCase().includes(searchQuery.toLowerCase()) || q.category.toLowerCase().includes(searchQuery.toLowerCase()));
 
   const inputCls = "w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-brand-500";
 
   const tabs: { id: TabType; label: string; icon: React.ElementType; count: number }[] = [
     { id: "zones", label: "Where We Serve (Zones)", icon: MapPin, count: zones.length },
     { id: "trending", label: "Trending Best Sellers", icon: Flame, count: trendingServices.length },
+    { id: "quick", label: "Quick Services", icon: Zap, count: quickServices.length },
   ];
 
   return (
@@ -623,7 +900,7 @@ export default function ImageSectionsPage() {
             }}
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs cursor-pointer shadow-sm transition-colors shrink-0">
             <Plus className="w-3.5 h-3.5" />
-            {activeTab === "zones" ? "Add Zone" : "Select Service from Catalog"}
+            {activeTab === "zones" ? "Add Zone" : activeTab === "quick" ? "Select Quick Service" : "Select Service from Catalog"}
           </button>
         </div>
       </div>
@@ -897,6 +1174,200 @@ export default function ImageSectionsPage() {
         </div>
       )}
 
+      {/* TAB 3: QUICK SERVICES */}
+      {activeTab === "quick" && (
+        <div className="space-y-6">
+
+          {/* SECTION HEADER TEXT EDITOR */}
+          <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <FileText className="w-4 h-4 text-amber-500" />
+                <span className="font-black text-sm text-slate-900 dark:text-white">Section Header Text</span>
+                <span className="text-[10px] text-slate-400 hidden sm:inline">— controls badge, title, subtitle, and view all link of Quick Services on website</span>
+              </div>
+              {!editingQuickHeader ? (
+                <button type="button" onClick={() => { setQuickHeaderDraft(quickHeader); setEditingQuickHeader(true); }}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-brand-600 cursor-pointer transition-colors">
+                  <Edit2 className="w-3 h-3" /> Edit Section Text
+                </button>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => setEditingQuickHeader(false)}
+                    className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 cursor-pointer transition-colors">Cancel</button>
+                  <button type="button" onClick={saveQuickHeader}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold bg-brand-600 hover:bg-brand-700 text-white cursor-pointer transition-colors">
+                    <Save className="w-3 h-3" />Save
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {!editingQuickHeader ? (
+              <div className="px-5 py-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                <div>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-0.5">Badge Text</p>
+                  <span className="text-xs font-extrabold text-amber-600 dark:text-amber-400 uppercase tracking-wider">{quickHeader.badge}</span>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-0.5">Section Title</p>
+                  <p className="text-xs font-black text-slate-900 dark:text-white">{quickHeader.title}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-0.5">Subtitle</p>
+                  <p className="text-xs font-medium text-slate-600 dark:text-slate-400 line-clamp-1">{quickHeader.subtitle}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-0.5">View All Link</p>
+                  <span className="text-xs font-bold text-brand-600">{quickHeader.viewAllText}</span>
+                </div>
+              </div>
+            ) : (
+              <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">Badge Text</label>
+                  <input type="text" value={quickHeaderDraft.badge} onChange={(e) => setQuickHeaderDraft({ ...quickHeaderDraft, badge: e.target.value })} className={inputCls} placeholder="QUICK SERVICES" />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">Section Title</label>
+                  <input type="text" value={quickHeaderDraft.title} onChange={(e) => setQuickHeaderDraft({ ...quickHeaderDraft, title: e.target.value })} className={inputCls} placeholder="Instant 15-30 Min Doorstep Services" />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">Subtitle</label>
+                  <input type="text" value={quickHeaderDraft.subtitle} onChange={(e) => setQuickHeaderDraft({ ...quickHeaderDraft, subtitle: e.target.value })} className={inputCls} placeholder="Fast-dispatch verified technicians..." />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">View All Button Text</label>
+                  <input type="text" value={quickHeaderDraft.viewAllText} onChange={(e) => setQuickHeaderDraft({ ...quickHeaderDraft, viewAllText: e.target.value })} className={inputCls} placeholder="Explore all quick services →" />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ADMIN CARDS EDIT GRID & SELECTION FOR QUICK SERVICES */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                  Quick Service Packages ({quickServices.length}/6)
+                </span>
+                {quickServices.length >= 6 ? (
+                  <span className="text-[10px] font-extrabold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 px-2.5 py-0.5 rounded-full border border-amber-200 dark:border-amber-800">
+                    Max 6/6 Slots Filled
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
+                    {6 - quickServices.length} Slots Available
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCatalogPickerOpen(true)}
+                disabled={quickServices.length >= 6}
+                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shadow-xs ${
+                  quickServices.length >= 6
+                    ? "bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed border border-slate-200 dark:border-slate-700"
+                    : "bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 hover:bg-amber-100/80 cursor-pointer"
+                }`}
+              >
+                <Zap className="w-3.5 h-3.5 fill-current" />
+                <span>+ Pick From Catalog</span>
+              </button>
+            </div>
+
+            {isQuickLoading ? (
+              <div className="flex items-center justify-center py-20 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800">
+                <Loader2 className="w-6 h-6 animate-spin text-amber-500 mr-2" />
+                <span className="text-xs font-bold text-slate-500">Loading quick services...</span>
+              </div>
+            ) : quickServices.length === 0 ? (
+              <div className="text-center py-16 bg-white dark:bg-slate-900 rounded-3xl border border-dashed border-slate-300 dark:border-slate-800 space-y-3">
+                <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 mx-auto flex items-center justify-center">
+                  <Zap className="w-6 h-6 fill-amber-500 text-amber-500" />
+                </div>
+                <h4 className="text-sm font-black text-slate-900 dark:text-white">No Quick Services Configured</h4>
+                <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                  Pick up to 6 express doorstep packages from your service catalog to display in the Quick Services section.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setIsCatalogPickerOpen(true)}
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold cursor-pointer"
+                >
+                  Select from Catalog
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredQuick.map((item, idx) => (
+                  <div key={item.id || item.packageId || idx} className="rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden bg-white dark:bg-slate-900 shadow-sm hover:shadow-md transition-all">
+                    <div className="relative h-36 bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                      <img
+                        src={formatImageUrl(item.imageUrl) || "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=600&q=80"}
+                        alt={item.title}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=600&q=80";
+                        }}
+                      />
+                      <div className="absolute top-2 left-2 bg-black/60 text-white text-[9px] font-black px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <Zap className="w-2.5 h-2.5 text-amber-400 fill-amber-400" />
+                        {item.discountPercentage}
+                      </div>
+                      <div className="absolute top-2 right-2 text-[9px] font-black px-2 py-0.5 rounded-full bg-emerald-500 text-white">LIVE</div>
+                    </div>
+
+                    <div className="p-3 space-y-1.5">
+                      <div className="flex items-center justify-between text-[10px] font-bold text-slate-400">
+                        <span>{item.category} • {item.durationMins} mins</span>
+                        <span className="text-amber-500 font-bold">★ {item.rating}</span>
+                      </div>
+
+                      <h4 className="font-black text-xs text-slate-900 dark:text-white leading-snug line-clamp-1">{item.title}</h4>
+                      <p className="text-[10px] text-slate-500 line-clamp-2">{item.description}</p>
+
+                      <div className="flex items-center justify-between pt-1">
+                        <span className="font-black text-xs text-brand-600 dark:text-brand-400">₹{item.price} {item.originalPrice && Number(item.originalPrice) > Number(item.price) && <span className="text-slate-400 line-through text-[10px]">₹{item.originalPrice}</span>}</span>
+                        <span className="text-[10px] text-slate-400 font-mono">Slot #{item.sortOrder || idx + 1}</span>
+                      </div>
+                    </div>
+
+                    <div className="px-3 pb-3 flex items-center gap-1.5 pt-1 border-t border-slate-100 dark:border-slate-800">
+                      <button
+                        type="button"
+                        onClick={() => setDeleteModal({ open: true, id: item.packageId || item.id, type: "quick", name: item.title })}
+                        className="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-600 hover:text-white transition-colors cursor-pointer text-[10px] font-extrabold ml-auto flex items-center gap-1"
+                        title="Remove from Quick Services"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" /> Remove
+                      </button>
+                    </div>
+                  </div>
+                ))}
+
+                {quickServices.length < 6 && (
+                  <button
+                    type="button"
+                    onClick={() => setIsCatalogPickerOpen(true)}
+                    className="rounded-2xl border-2 border-dashed border-amber-300 dark:border-amber-700 bg-amber-50/40 dark:bg-amber-950/20 h-56 flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-amber-500 hover:bg-amber-100/50 transition-all text-center p-4"
+                  >
+                    <div className="w-12 h-12 rounded-2xl bg-amber-500 text-white flex items-center justify-center shadow-lux">
+                      <Zap className="w-6 h-6 fill-white" />
+                    </div>
+                    <span className="text-xs font-black text-slate-900 dark:text-white">Select Quick Service from Catalog</span>
+                    <span className="text-[10px] font-semibold text-slate-500 max-w-[180px]">
+                      {6 - quickServices.length} more express slots available
+                    </span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+        </div>
+      )}
+
 
 
 
@@ -1130,12 +1601,26 @@ export default function ImageSectionsPage() {
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
             <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden border border-slate-200 dark:border-slate-800 flex flex-col max-h-[85vh] animate-in fade-in zoom-in-95 duration-200">
               {/* Header */}
-              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-gradient-to-r from-amber-500 to-rose-600 text-white">
+              <div className={`flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-800 text-white ${
+                activeTab === "quick"
+                  ? "bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600"
+                  : "bg-gradient-to-r from-amber-500 to-rose-600"
+              }`}>
                 <div className="flex items-center gap-2.5">
-                  <Flame className="w-5 h-5 fill-white text-white" />
+                  {activeTab === "quick" ? (
+                    <Zap className="w-5 h-5 fill-white text-white" />
+                  ) : (
+                    <Flame className="w-5 h-5 fill-white text-white" />
+                  )}
                   <div>
-                    <h3 className="font-extrabold text-white text-base">Select Service from Catalog</h3>
-                    <p className="text-xs text-amber-100">Choose existing services to feature in website Trending Best Sellers</p>
+                    <h3 className="font-extrabold text-white text-base">
+                      {activeTab === "quick" ? "Select Quick Service from Catalog" : "Select Service from Catalog"}
+                    </h3>
+                    <p className="text-xs text-amber-100">
+                      {activeTab === "quick"
+                        ? "Choose existing services to feature in website Quick Services (15-30 min arrival)"
+                        : "Choose existing services to feature in website Trending Best Sellers"}
+                    </p>
                   </div>
                 </div>
                 <button
@@ -1174,7 +1659,11 @@ export default function ImageSectionsPage() {
                   </div>
                 ) : (
                   catalogPackages.map((catItem) => {
-                    const isAlreadyTrending = trendingServices.some((t) => t.packageId === catItem.packageId);
+                    const isSelected =
+                      activeTab === "quick"
+                        ? quickServices.some((q) => q.packageId === catItem.packageId)
+                        : trendingServices.some((t) => t.packageId === catItem.packageId);
+
                     return (
                       <div
                         key={catItem.packageId}
@@ -1214,20 +1703,36 @@ export default function ImageSectionsPage() {
                         <button
                           type="button"
                           onClick={() => {
-                            if (isAlreadyTrending) {
-                              handleRemovePackageFromTrending(catItem.packageId);
+                            if (activeTab === "quick") {
+                              if (isSelected) {
+                                handleRemovePackageFromQuickServices(catItem.packageId);
+                              } else {
+                                handleAddPackageToQuickServices(catItem);
+                              }
                             } else {
-                              handleAddPackageToTrending(catItem.packageId);
+                              if (isSelected) {
+                                handleRemovePackageFromTrending(catItem.packageId);
+                              } else {
+                                handleAddPackageToTrending(catItem.packageId);
+                              }
                             }
                           }}
                           className={`px-4 py-2 rounded-xl font-extrabold text-xs transition-all flex items-center gap-1.5 cursor-pointer shrink-0 ${
-                            isAlreadyTrending
+                            isSelected
                               ? "bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-600 hover:text-white"
                               : "bg-amber-500 hover:bg-amber-600 text-white shadow-lux"
                           }`}
                         >
-                          <Flame className={`w-3.5 h-3.5 ${isAlreadyTrending ? "text-rose-600" : "fill-white text-white"}`} />
-                          <span>{isAlreadyTrending ? "Remove from Trending" : "+ Add to Trending"}</span>
+                          {activeTab === "quick" ? (
+                            <Zap className={`w-3.5 h-3.5 ${isSelected ? "text-rose-600" : "fill-white text-white"}`} />
+                          ) : (
+                            <Flame className={`w-3.5 h-3.5 ${isSelected ? "text-rose-600" : "fill-white text-white"}`} />
+                          )}
+                          <span>
+                            {isSelected
+                              ? (activeTab === "quick" ? "Remove from Quick" : "Remove from Trending")
+                              : (activeTab === "quick" ? "+ Add to Quick Services" : "+ Add to Trending")}
+                          </span>
                         </button>
                       </div>
                     );
@@ -1242,7 +1747,7 @@ export default function ImageSectionsPage() {
                   onClick={() => setIsCatalogPickerOpen(false)}
                   className="px-5 py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-xl font-extrabold text-xs shadow-lux cursor-pointer"
                 >
-                  Done Managing Trending
+                  {activeTab === "quick" ? "Done Managing Quick Services" : "Done Managing Trending"}
                 </button>
               </div>
             </div>
@@ -1252,3 +1757,4 @@ export default function ImageSectionsPage() {
     </div>
   );
 }
+

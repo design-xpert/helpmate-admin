@@ -79,6 +79,25 @@ export function handleGlobalLogout() {
   }
 }
 
+export function dataURLtoBlob(dataUrl?: string): Blob | null {
+  if (!dataUrl || typeof dataUrl !== "string" || !dataUrl.startsWith("data:")) return null;
+  try {
+    const parts = dataUrl.split(",");
+    if (parts.length < 2) return null;
+    const mimeMatch = parts[0].match(/:(.*?);/);
+    const mime = mimeMatch ? mimeMatch[1] : "image/jpeg";
+    const bstr = atob(parts[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new Blob([u8arr], { type: mime });
+  } catch {
+    return null;
+  }
+}
+
 export async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
   if (typeof window !== "undefined") {
     const token = localStorage.getItem("helpmate_admin_token");
@@ -346,7 +365,7 @@ export interface ApiCategory {
   categoryName: string;
   slug: string;
   iconUrl?: string;
-  subCategories: { _id?: string; name: string }[];
+  subCategories: { _id?: string; name: string; imageUrl?: string; iconUrl?: string }[];
   status: boolean;
   createdAt?: string;
   updatedAt?: string;
@@ -385,6 +404,8 @@ export interface ApiServiceActionHierarchy {
 export interface ApiSubCategoryHierarchy {
   _id?: string;
   name?: string;
+  imageUrl?: string;
+  iconUrl?: string;
   serviceAction?: ApiServiceActionHierarchy;
 }
 
@@ -398,7 +419,7 @@ export interface ApiCategoryHierarchy {
 export interface ApiService {
   _id: string;
   category?: ApiCategoryHierarchy;
-  categoryId: string | { _id: string; categoryName: string; subCategories?: { _id: string; name: string }[] };
+  categoryId: string | { _id: string; categoryName: string; subCategories?: { _id: string; name: string; imageUrl?: string; iconUrl?: string }[] };
   categoryName?: string;
   subCategoryId: string;
   subCategoryName?: string;
@@ -477,17 +498,26 @@ export async function getSubcategoriesApi(categoryId: string, forceRefresh?: boo
 }
 
 
+export interface SubCategoryPayloadItem {
+  _id?: string;
+  name: string;
+  imageUrl?: string;
+  iconUrl?: string;
+  iconFile?: File;
+  status?: boolean;
+}
+
+export interface CategoryPayload {
+  categoryName: string;
+  slug: string;
+  iconUrl?: string;
+  iconFile?: File;
+  subCategories?: SubCategoryPayloadItem[];
+  status?: boolean;
+}
+
 export async function createCategoryApi(
-  payload:
-    | FormData
-    | {
-      categoryName: string;
-      slug: string;
-      iconUrl?: string;
-      iconFile?: File;
-      subCategories?: Array<{ _id?: string; name: string }>;
-      status?: boolean;
-    }
+  payload: FormData | CategoryPayload
 ) {
   clearApiCache("getCategoriesApi");
   clearApiCache("getCategoryDropdownApi");
@@ -496,30 +526,44 @@ export async function createCategoryApi(
     if (typeof FormData !== "undefined" && payload instanceof FormData) {
       body = payload;
     } else {
-      const objPayload = payload as {
-        categoryName: string;
-        slug: string;
-        iconUrl?: string;
-        iconFile?: File;
-        subCategories?: Array<{ _id?: string; name: string }>;
-        status?: boolean;
-      };
+      const objPayload = payload as CategoryPayload;
       const formData = new FormData();
-      formData.append("categoryName", objPayload.categoryName || "");
-      formData.append("slug", objPayload.slug || "");
+      formData.append("categoryName", objPayload.categoryName?.trim() || "");
+      formData.append("slug", objPayload.slug?.trim().toLowerCase() || "");
       formData.append("status", String(objPayload.status !== false));
-      if (objPayload.subCategories) {
-        formData.append("subCategories", JSON.stringify(objPayload.subCategories));
+
+      if (objPayload.subCategories && Array.isArray(objPayload.subCategories)) {
+        // Strip non-essential fields from subCategories JSON (only keep name, and status if provided)
+        // Backend addCategory rejects unknown fields like _id, imageUrl, iconUrl
+        const cleanSubCats = objPayload.subCategories.map((sub) => ({
+          name: sub.name.trim(),
+          ...(sub.status !== undefined ? { status: sub.status } : {}),
+        }));
+        formData.append("subCategories", JSON.stringify(cleanSubCats));
+
+        // Subcategory icons on POST: backend requires index format: subCategoryIcon_0, subCategoryIcon_1...
+        objPayload.subCategories.forEach((sub, index) => {
+          if (sub.iconFile instanceof File) {
+            formData.append(`subCategoryIcon_${index}`, sub.iconFile);
+          } else {
+            const img = sub.imageUrl || sub.iconUrl;
+            if (img && typeof img === "string" && img.startsWith("data:")) {
+              const blob = dataURLtoBlob(img);
+              if (blob) {
+                formData.append(`subCategoryIcon_${index}`, blob, `subcategory_${index}.jpg`);
+              }
+            }
+          }
+        });
       }
 
+      // Category icon
       if (objPayload.iconFile instanceof File) {
         formData.append("icon", objPayload.iconFile);
-      } else if (objPayload.iconUrl) {
+      } else if (objPayload.iconUrl && typeof objPayload.iconUrl === "string" && objPayload.iconUrl.startsWith("data:")) {
         const blob = dataURLtoBlob(objPayload.iconUrl);
         if (blob) {
           formData.append("icon", blob, "category_icon.jpg");
-        } else {
-          formData.append("iconUrl", objPayload.iconUrl);
         }
       }
       body = formData;
@@ -538,16 +582,7 @@ export async function createCategoryApi(
 
 export async function updateCategoryApi(
   id: string,
-  payload:
-    | FormData
-    | {
-      categoryName: string;
-      slug: string;
-      iconUrl?: string;
-      iconFile?: File;
-      subCategories?: Array<{ _id?: string; name: string }>;
-      status?: boolean;
-    }
+  payload: FormData | CategoryPayload
 ) {
   clearApiCache("getCategoriesApi");
   clearApiCache("getCategoryDropdownApi");
@@ -556,30 +591,55 @@ export async function updateCategoryApi(
     if (typeof FormData !== "undefined" && payload instanceof FormData) {
       body = payload;
     } else {
-      const objPayload = payload as {
-        categoryName: string;
-        slug: string;
-        iconUrl?: string;
-        iconFile?: File;
-        subCategories?: Array<{ _id?: string; name: string }>;
-        status?: boolean;
-      };
+      const objPayload = payload as CategoryPayload;
       const formData = new FormData();
-      formData.append("categoryName", objPayload.categoryName || "");
-      formData.append("slug", objPayload.slug || "");
+      formData.append("categoryName", objPayload.categoryName?.trim() || "");
+      formData.append("slug", objPayload.slug?.trim().toLowerCase() || "");
       formData.append("status", String(objPayload.status !== false));
-      if (objPayload.subCategories) {
-        formData.append("subCategories", JSON.stringify(objPayload.subCategories));
+
+      if (objPayload.subCategories && Array.isArray(objPayload.subCategories)) {
+        // In updateCategory: items can have _id (if 24-hex ObjectId) and name (and optional status)
+        // Backend updateCategory rejects unknown fields like imageUrl, iconUrl
+        const cleanSubCats = objPayload.subCategories.map((sub) => {
+          const item: any = { name: sub.name.trim() };
+          if (sub._id && /^[a-f\d]{24}$/i.test(sub._id)) {
+            item._id = sub._id;
+          }
+          if (sub.status !== undefined) {
+            item.status = sub.status;
+          }
+          return item;
+        });
+        formData.append("subCategories", JSON.stringify(cleanSubCats));
+
+        // Subcategory icons on PUT:
+        // If sub._id exists and is valid 24-hex string, use subCategoryIcon_${sub._id}
+        // Otherwise use subCategoryIcon_${index}
+        objPayload.subCategories.forEach((sub, index) => {
+          const isMongoId = sub._id && /^[a-f\d]{24}$/i.test(sub._id);
+          const fieldName = isMongoId ? `subCategoryIcon_${sub._id}` : `subCategoryIcon_${index}`;
+
+          if (sub.iconFile instanceof File) {
+            formData.append(fieldName, sub.iconFile);
+          } else {
+            const img = sub.imageUrl || sub.iconUrl;
+            if (img && typeof img === "string" && img.startsWith("data:")) {
+              const blob = dataURLtoBlob(img);
+              if (blob) {
+                formData.append(fieldName, blob, `subcategory_${sub._id || index}.jpg`);
+              }
+            }
+          }
+        });
       }
 
+      // Category icon
       if (objPayload.iconFile instanceof File) {
         formData.append("icon", objPayload.iconFile);
-      } else if (objPayload.iconUrl) {
+      } else if (objPayload.iconUrl && typeof objPayload.iconUrl === "string" && objPayload.iconUrl.startsWith("data:")) {
         const blob = dataURLtoBlob(objPayload.iconUrl);
         if (blob) {
           formData.append("icon", blob, "category_icon.jpg");
-        } else {
-          formData.append("iconUrl", objPayload.iconUrl);
         }
       }
       body = formData;
@@ -791,18 +851,21 @@ export async function toggleServiceStatusApi(id: string, status?: boolean) {
 
 // ─── ADDON / SPARE PART APIS ───
 
-export async function getAddonsApi(params?: { search?: string; category?: string; status?: string; forceRefresh?: boolean }) {
-  const cacheKey = `getAddonsApi:${JSON.stringify({ search: params?.search, category: params?.category, status: params?.status })}`;
+export async function getAddonsApi(params?: { search?: string; category?: string; categoryId?: string; subCategoryId?: string; status?: string; limit?: number; forceRefresh?: boolean }) {
+  const catId = params?.categoryId || params?.category;
+  const cacheKey = `getAddonsApi:${JSON.stringify({ search: params?.search, categoryId: catId, subCategoryId: params?.subCategoryId, status: params?.status, limit: params?.limit })}`;
   const cached = getFromCache(cacheKey, params?.forceRefresh);
   if (cached) return cached;
   try {
     const query = new URLSearchParams();
     if (params?.search) query.append("search", params.search);
-    if (params?.category) query.append("category", params.category);
+    if (catId) query.append("categoryId", catId);
+    if (params?.subCategoryId) query.append("subCategoryId", params.subCategoryId);
     if (params?.status) query.append("status", params.status);
+    query.append("limit", String(params?.limit || 100));
 
     const res = await authFetch(`${API_BASE_URL}/api/addon?${query.toString()}`);
-    const data = await res.json();
+    const data = await safeJsonResponse(res);
     if (data && data.success !== false) {
       apiCache.set(cacheKey, data);
     }
@@ -814,23 +877,65 @@ export async function getAddonsApi(params?: { search?: string; category?: string
 }
 
 export async function getAddonDropdownApi(params?: { categoryId?: string; subCategoryId?: string; forceRefresh?: boolean }) {
-  const cacheKey = `getAddonDropdownApi:${JSON.stringify({ categoryId: params?.categoryId, subCategoryId: params?.subCategoryId })}`;
+  const cleanCatId = (params?.categoryId || "").trim();
+  const cleanSubCatId = (params?.subCategoryId || "").trim();
+
+  // If no categoryId is provided, fetch all addons with high limit
+  if (!cleanCatId) {
+    return getAddonsApi({ forceRefresh: params?.forceRefresh, limit: 100 });
+  }
+
+  const cacheKey = `getAddonDropdownApi:${JSON.stringify({ categoryId: cleanCatId, subCategoryId: cleanSubCatId })}`;
   const cached = getFromCache(cacheKey, params?.forceRefresh);
   if (cached) return cached;
+
   try {
     const query = new URLSearchParams();
-    if (params?.categoryId) query.append("categoryId", params.categoryId);
-    if (params?.subCategoryId) query.append("subCategoryId", params.subCategoryId);
-
-    const res = await authFetch(`/api/addon/dropdown?${query.toString()}`);
-    const data = await res.json();
-    if (data && data.success !== false) {
-      apiCache.set(cacheKey, data);
+    query.append("categoryId", cleanCatId);
+    if (cleanSubCatId && /^[a-f\d]{24}$/i.test(cleanSubCatId)) {
+      query.append("subCategoryId", cleanSubCatId);
     }
-    return data;
+
+    const res = await authFetch(`${API_BASE_URL}/api/addon/dropdown?${query.toString()}`);
+    const data = await safeJsonResponse(res);
+
+    if (data && data.success && Array.isArray(data.data) && data.data.length > 0) {
+      apiCache.set(cacheKey, data);
+      return data;
+    }
+
+    // Fallback: If dropdown endpoint failed or returned empty (e.g. backend dropdown strictly requires status:true or subCategoryId:null),
+    // fetch from getAddonsApi with categoryId:
+    const fallbackRes = await getAddonsApi({
+      categoryId: cleanCatId,
+      subCategoryId: cleanSubCatId || undefined,
+      limit: 100,
+      forceRefresh: params?.forceRefresh,
+    });
+
+    if (fallbackRes && fallbackRes.success && Array.isArray(fallbackRes.data)) {
+      const filtered = cleanSubCatId
+        ? fallbackRes.data.filter((item: any) => {
+            const sId = typeof item.subCategoryId === "object" ? item.subCategoryId?._id : item.subCategoryId;
+            return !sId || String(sId) === cleanSubCatId;
+          })
+        : fallbackRes.data;
+
+      const fallbackResult = {
+        success: true,
+        message: "Addon dropdown fetched successfully.",
+        data: filtered,
+      };
+      if (filtered.length > 0) {
+        apiCache.set(cacheKey, fallbackResult);
+      }
+      return fallbackResult;
+    }
+
+    return data || { success: true, message: "Addon dropdown fetched successfully.", data: [] };
   } catch (error) {
     console.error("getAddonDropdownApi error:", error);
-    return { success: false, message: "Failed to fetch addon dropdown options." };
+    return getAddonsApi({ categoryId: cleanCatId, limit: 100, forceRefresh: params?.forceRefresh });
   }
 }
 
@@ -847,6 +952,7 @@ export async function createAddonApi(payload: {
   status?: boolean;
 }) {
   clearApiCache("getAddonsApi");
+  clearApiCache("getAddonDropdownApi");
   try {
     const bodyPayload = {
       ...payload,
@@ -857,7 +963,7 @@ export async function createAddonApi(payload: {
       method: "POST",
       body: JSON.stringify(bodyPayload),
     });
-    return await res.json();
+    return await safeJsonResponse(res);
   } catch (error) {
     console.error("createAddonApi error:", error);
     return { success: false, message: "Failed to create spare part add-on." };
@@ -880,6 +986,7 @@ export async function updateAddonApi(
   }
 ) {
   clearApiCache("getAddonsApi");
+  clearApiCache("getAddonDropdownApi");
   try {
     const bodyPayload = {
       ...payload,
@@ -891,10 +998,10 @@ export async function updateAddonApi(
         : {}),
     };
     const res = await authFetch(`${API_BASE_URL}/api/addon/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(payload),
+      method: "PATCH",
+      body: JSON.stringify(bodyPayload),
     });
-    return await res.json();
+    return await safeJsonResponse(res);
   } catch (error) {
     console.error("updateAddonApi error:", error);
     return { success: false, message: "Failed to update spare part add-on." };
@@ -903,11 +1010,12 @@ export async function updateAddonApi(
 
 export async function deleteAddonApi(id: string) {
   clearApiCache("getAddonsApi");
+  clearApiCache("getAddonDropdownApi");
   try {
     const res = await authFetch(`${API_BASE_URL}/api/addon/${id}`, {
       method: "DELETE",
     });
-    return await res.json();
+    return await safeJsonResponse(res);
   } catch (error) {
     console.error("deleteAddonApi error:", error);
     return { success: false, message: "Failed to delete spare part add-on." };
@@ -1062,48 +1170,91 @@ export async function getServiceActionDropdownApi(params?: { categoryId?: string
   }
 }
 
-export async function createServiceActionApi(payload: {
+export interface ServiceActionPayload {
   categoryId?: string;
   subCategoryId?: string;
   serviceAction?: string;
   name?: string;
   description?: string;
+  imageUrl?: string;
+  thumbnailUrl?: string;
+  iconUrl?: string;
+  iconFile?: File;
   status?: boolean;
-}) {
+}
+
+export async function createServiceActionApi(payload: ServiceActionPayload | FormData) {
   clearApiCache("getServiceActionsApi");
   clearApiCache("getServiceActionDropdownApi");
   try {
-    const bodyPayload: any = {
-      categoryId: payload.categoryId,
-      serviceAction: payload.serviceAction || payload.name,
-    };
-    if (payload.subCategoryId) {
-      bodyPayload.subCategoryId = payload.subCategoryId;
+    let body: any;
+    if (typeof FormData !== "undefined" && payload instanceof FormData) {
+      body = payload;
+    } else {
+      const obj = payload as ServiceActionPayload;
+      const formData = new FormData();
+      if (obj.categoryId) formData.append("categoryId", obj.categoryId);
+      if (obj.subCategoryId && obj.subCategoryId.trim()) formData.append("subCategoryId", obj.subCategoryId.trim());
+      const actionName = obj.serviceAction || obj.name;
+      if (actionName) formData.append("serviceAction", actionName.trim());
+      if (obj.status !== undefined) formData.append("status", String(obj.status));
+
+      const imgInput = obj.iconFile || obj.imageUrl || obj.thumbnailUrl || obj.iconUrl;
+      if (imgInput instanceof File) {
+        formData.append("icon", imgInput);
+      } else if (typeof imgInput === "string" && imgInput.startsWith("data:")) {
+        const blob = dataURLtoBlob(imgInput);
+        if (blob) {
+          formData.append("icon", blob, "service_action_icon.jpg");
+        }
+      }
+      body = formData;
     }
+
     const res = await authFetch(`${API_BASE_URL}/api/service-actions`, {
       method: "POST",
-      body: JSON.stringify(bodyPayload),
+      body,
     });
-    return await res.json();
+    return await safeJsonResponse(res);
   } catch (error) {
     console.error("createServiceActionApi error:", error);
     return { success: false, message: "Failed to create service action." };
   }
 }
 
-export async function updateServiceActionApi(id: string, payload: { categoryId?: string; subCategoryId?: string; name?: string; serviceAction?: string; description?: string; status?: boolean }) {
+export async function updateServiceActionApi(id: string, payload: ServiceActionPayload | FormData) {
   clearApiCache("getServiceActionsApi");
   clearApiCache("getServiceActionDropdownApi");
   try {
-    const bodyPayload: any = { ...payload };
-    if (bodyPayload.subCategoryId === "" || bodyPayload.subCategoryId === undefined) {
-      delete bodyPayload.subCategoryId;
+    let body: any;
+    if (typeof FormData !== "undefined" && payload instanceof FormData) {
+      body = payload;
+    } else {
+      const obj = payload as ServiceActionPayload;
+      const formData = new FormData();
+      if (obj.categoryId) formData.append("categoryId", obj.categoryId);
+      if (obj.subCategoryId && obj.subCategoryId.trim()) formData.append("subCategoryId", obj.subCategoryId.trim());
+      const actionName = obj.serviceAction || obj.name;
+      if (actionName) formData.append("serviceAction", actionName.trim());
+      if (obj.status !== undefined) formData.append("status", String(obj.status));
+
+      const imgInput = obj.iconFile || obj.imageUrl || obj.thumbnailUrl || obj.iconUrl;
+      if (imgInput instanceof File) {
+        formData.append("icon", imgInput);
+      } else if (typeof imgInput === "string" && imgInput.startsWith("data:")) {
+        const blob = dataURLtoBlob(imgInput);
+        if (blob) {
+          formData.append("icon", blob, "service_action_icon.jpg");
+        }
+      }
+      body = formData;
     }
+
     const res = await authFetch(`${API_BASE_URL}/api/service-action/${id}`, {
       method: "PUT",
-      body: JSON.stringify(bodyPayload),
+      body,
     });
-    return await res.json();
+    return await safeJsonResponse(res);
   } catch (error) {
     console.error("updateServiceActionApi error:", error);
     return { success: false, message: "Failed to update service action." };
@@ -1330,23 +1481,7 @@ export function cleanImagePayload(imgUrl?: string): string {
   return formatImageUrl(imgUrl);
 }
 
-function dataURLtoBlob(dataUrl?: string): Blob | null {
-  if (!dataUrl || typeof dataUrl !== "string" || !dataUrl.startsWith("data:")) return null;
-  try {
-    const parts = dataUrl.split(",");
-    const mimeMatch = parts[0].match(/:(.*?);/);
-    const mime = mimeMatch ? mimeMatch[1] : "image/jpeg";
-    const bstr = atob(parts[1]);
-    let n = bstr.length;
-    const u8arr = new Uint8Array(n);
-    while (n--) {
-      u8arr[n] = bstr.charCodeAt(n);
-    }
-    return new Blob([u8arr], { type: mime });
-  } catch {
-    return null;
-  }
-}
+
 
 export async function createPackageApi(
   payload:
@@ -2712,6 +2847,49 @@ export async function removeTrendingPackageApi(packageId: string) {
   } catch (error) {
     console.error("removeTrendingPackageApi error:", error);
     return { success: false, message: "Failed to remove package from trending." };
+  }
+}
+
+// ─── QUICK SERVICES APIS ───
+
+export interface ApiQuickServiceItem {
+  packageId: string;
+  packageName: string;
+  price: number;
+}
+
+export async function getAdminQuickServicesApi(forceRefresh?: boolean) {
+  const cacheKey = `getAdminQuickServicesApi`;
+  const cached = getFromCache(cacheKey, forceRefresh);
+  if (cached) return cached;
+
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/admin/website/quick-services`);
+    const data = await safeJsonResponse(res);
+    if (data && data.success !== false) {
+      apiCache.set(cacheKey, data);
+    }
+    return data;
+  } catch (error) {
+    console.error("getAdminQuickServicesApi error:", error);
+    return { success: false, message: "Failed to fetch admin quick services." };
+  }
+}
+
+export async function updateAdminQuickServicesApi(packageIds: string[]) {
+  clearApiCache("getAdminQuickServicesApi");
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/admin/website/quick-services`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ packageIds }),
+    });
+    return await safeJsonResponse(res);
+  } catch (error) {
+    console.error("updateAdminQuickServicesApi error:", error);
+    return { success: false, message: "Failed to update quick services." };
   }
 }
 
