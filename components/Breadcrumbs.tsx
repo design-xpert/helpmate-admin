@@ -130,7 +130,8 @@ function BreadcrumbsContent() {
           <ChevronRight className="w-3 h-3 text-slate-300 dark:text-slate-600 shrink-0" />
           {item.isLast ? (
             <span
-              className={`font-bold ${
+              title={item.name}
+              className={`font-bold truncate max-w-[120px] sm:max-w-[160px] lg:max-w-[220px] inline-block align-bottom ${
                 item.isId
                   ? "font-mono text-brand-600 dark:text-brand-400"
                   : "text-slate-900 dark:text-white"
@@ -141,7 +142,8 @@ function BreadcrumbsContent() {
           ) : (
             <Link
               href={item.href}
-              className="hover:text-brand-600 dark:hover:text-brand-400 transition-colors font-semibold text-slate-600 dark:text-slate-300"
+              title={item.name}
+              className="hover:text-brand-600 dark:hover:text-brand-400 transition-colors font-semibold text-slate-600 dark:text-slate-300 truncate max-w-[90px] sm:max-w-[130px] inline-block align-bottom"
             >
               {item.name}
             </Link>

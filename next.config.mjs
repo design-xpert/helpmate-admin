@@ -1,4 +1,5 @@
 /** @type {import('next').NextConfig} */
+const API_BACKEND = process.env.NEXT_PUBLIC_API_URL;
 const nextConfig = {
   reactStrictMode: true,
   images: {
@@ -14,15 +15,15 @@ const nextConfig = {
     return [
       {
         source: "/api/media/:path*",
-        destination: "https://helpmate-api.kvtmedia.com/api/media/:path*",
+        destination: `${API_BACKEND}/api/media/:path*`,
       },
       {
         source: "/uploads/:path*",
-        destination: "https://helpmate-api.kvtmedia.com/uploads/:path*",
+        destination: `${API_BACKEND}/uploads/:path*`,
       },
       {
         source: "/api/:path*",
-        destination: "https://helpmate-api.kvtmedia.com/api/:path*",
+        destination: `${API_BACKEND}/api/:path*`,
       },
     ];
   },

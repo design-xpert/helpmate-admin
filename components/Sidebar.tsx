@@ -34,6 +34,7 @@ import {
   Crown,
   Target,
   UserPlus,
+  Layers,
 } from "lucide-react";
 import { useRbac } from "@/context/RbacContext";
 import { Portal } from "@/components/Portal";
@@ -232,8 +233,8 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
           href: "/banners",
         },
         {
-          title: "Where we Serve",
-          icon: ImageIcon,
+          title: "Website Sections CMS",
+          icon: Layers,
           href: "/image-sections",
         },
         {

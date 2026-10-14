@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { Wrench, Image as ImageIcon } from "lucide-react";
-import { formatImageUrl } from "@/lib/api";
+import { formatImageUrl, getTitleInitials } from "@/lib/api";
 
 interface TableImageProps {
   src?: string;
@@ -29,6 +29,13 @@ export function TableImage({
   const IconComponent = fallbackIcon === "wrench" ? Wrench : ImageIcon;
 
   if (!formattedUrl || hasError) {
+    if (alt && alt !== "Image" && alt.trim()) {
+      return (
+        <div className={`${containerClassName} bg-gradient-to-br from-[#48073d] to-[#801C6E] text-white font-black text-xs select-none tracking-wider`}>
+          {getTitleInitials(alt)}
+        </div>
+      );
+    }
     return (
       <div className={containerClassName}>
         <IconComponent className="w-5 h-5 text-slate-400" />

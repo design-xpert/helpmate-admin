@@ -916,9 +916,9 @@ export async function getAddonDropdownApi(params?: { categoryId?: string; subCat
     if (fallbackRes && fallbackRes.success && Array.isArray(fallbackRes.data)) {
       const filtered = cleanSubCatId
         ? fallbackRes.data.filter((item: any) => {
-            const sId = typeof item.subCategoryId === "object" ? item.subCategoryId?._id : item.subCategoryId;
-            return !sId || String(sId) === cleanSubCatId;
-          })
+          const sId = typeof item.subCategoryId === "object" ? item.subCategoryId?._id : item.subCategoryId;
+          return !sId || String(sId) === cleanSubCatId;
+        })
         : fallbackRes.data;
 
       const fallbackResult = {
@@ -1285,6 +1285,38 @@ export async function deleteServiceActionApi(id: string) {
 
 // ─── PACKAGE APIS ───
 
+export interface ApiPackageItem {
+  _id: string;
+  packageId?: string;
+  packageName: string;
+  subtitle?: string;
+  description?: string;
+  price: number;
+  originalPrice?: number;
+  duration?: number | string;
+  imageUrl?: string;
+  thumbnailUrl?: string;
+  serviceActionId?: {
+    _id: string;
+    serviceAction?: string;
+    name?: string;
+    categoryId?: string;
+    subCategoryId?: string;
+  } | string | null;
+  serviceAction?: {
+    id?: string;
+    name?: string;
+  };
+  category?: {
+    id?: string;
+    name?: string;
+  };
+  addons?: any[];
+  status?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export async function getPackagesApi(params?: {
   search?: string;
   limit?: number;
@@ -1370,12 +1402,16 @@ export async function getPackageDropdownApi(params?: string | {
   }
 }
 
-export function formatImageUrl(imgUrl?: any): string {
-  if (!imgUrl) return "";
+export function formatImageUrl(imgUrl?: any, packageId?: string): string {
+  if (!imgUrl && !packageId) return "";
   let rawStr = "";
   if (typeof imgUrl === "string") {
     rawStr = imgUrl;
   } else if (typeof imgUrl === "object" && imgUrl !== null) {
+    const pkgId = imgUrl._id || imgUrl.packageId || imgUrl.id;
+    if (pkgId && (imgUrl.imageUrl || imgUrl.thumbnailUrl || imgUrl.image)) {
+      return `/api/media/package/${pkgId}/image`;
+    }
     rawStr =
       imgUrl.passportPhotoUrl ||
       imgUrl.url ||
@@ -1385,13 +1421,23 @@ export function formatImageUrl(imgUrl?: any): string {
       imgUrl.path ||
       "";
   }
+  if (!rawStr && packageId) {
+    return `/api/media/package/${packageId}/image`;
+  }
   if (!rawStr || typeof rawStr !== "string") return "";
   let trimmed = rawStr.trim();
-  if (!trimmed) return "";
+  if (!trimmed) {
+    return packageId ? `/api/media/package/${packageId}/image` : "";
+  }
 
   // Data URLs (base64) and blob URLs don't need transformation
   if (trimmed.startsWith("data:") || trimmed.startsWith("blob:")) {
     return trimmed;
+  }
+
+  // If a package ID is provided or in URL and rawStr is an internal MinIO path
+  if (packageId && (trimmed.startsWith("helpMate/packages") || trimmed.includes("packages/"))) {
+    return `/api/media/package/${packageId}/image`;
   }
 
   // 1. Google Drive file view links to direct image source
@@ -1426,15 +1472,16 @@ export function formatImageUrl(imgUrl?: any): string {
     return trimmed.substring(idx);
   }
 
-  // 5. Convert any localhost or 127.0.0.1 domain to production
-  trimmed = trimmed.replace(/https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/gi, "https://helpmate-api.kvtmedia.com");
-
-  // 6. Handle relative URLs by prepending production API base
+  // If it's a relative URL or internal path like helpMate/packages/...
   if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
+    if (trimmed.includes("packages") && packageId) {
+      return `/api/media/package/${packageId}/image`;
+    }
+    const base = API_BASE_URL.replace(/\/api\/?$/, "");
     if (!trimmed.startsWith("/")) {
       trimmed = `/${trimmed}`;
     }
-    trimmed = `https://helpmate-api.kvtmedia.com${trimmed}`;
+    trimmed = `${base}${trimmed}`;
   }
 
   // 7. Safely encode space characters and unescaped symbols
@@ -1443,6 +1490,31 @@ export function formatImageUrl(imgUrl?: any): string {
   } catch {
     return trimmed;
   }
+}
+
+/**
+ * Extracts initials from a title or name.
+ * If two or more words are present, returns the first letter of the first word and the first letter of the second word.
+ * If only one word is present, returns the first letter of that word.
+ * E.g., "Deep Cleaning" -> "DC", "AC Repair" -> "AR", "Tap & Pipe" -> "TP", "Plumbing" -> "P"
+ */
+export function getTitleInitials(title?: string, fallback: string = "HM"): string {
+  if (!title || typeof title !== "string") return fallback;
+  const words = title
+    .trim()
+    .split(/[\s\-_/]+/)
+    .map((w) => w.replace(/[^a-zA-Z0-9]/g, ""))
+    .filter(Boolean);
+
+  if (words.length >= 2) {
+    const first = words[0].charAt(0);
+    const second = words[1].charAt(0);
+    return (first + second).toUpperCase();
+  }
+  if (words.length === 1) {
+    return (words[0].charAt(0) || fallback).toUpperCase();
+  }
+  return fallback.toUpperCase();
 }
 
 export function ensureAddonsArray(rawAddons: any): string[] {
@@ -2785,6 +2857,7 @@ export interface ApiTrendingCatalogItem {
   originalPrice: number;
   discountPercentage: number;
   duration: number;
+  description?: string;
   imageUrl?: string;
   thumbnailUrl?: string;
 }
@@ -2853,9 +2926,17 @@ export async function removeTrendingPackageApi(packageId: string) {
 // ─── QUICK SERVICES APIS ───
 
 export interface ApiQuickServiceItem {
-  packageId: string;
+  _id?: string;
+  packageId?: string;
   packageName: string;
   price: number;
+  originalPrice?: number;
+  duration?: number;
+  description?: string;
+  imageUrl?: string;
+  thumbnailUrl?: string;
+  serviceActionId?: any;
+  status?: boolean;
 }
 
 export async function getAdminQuickServicesApi(forceRefresh?: boolean) {
