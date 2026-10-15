@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Image from "next/image";
 import {
   Plus,
   Edit2,
@@ -12,6 +13,7 @@ import {
   Save,
   GripVertical,
   Upload,
+  Loader2,
 } from "lucide-react";
 import { Portal } from "@/components/Portal";
 import { ZoneCard } from "./types";
@@ -44,6 +46,7 @@ export function WhereWeServeSection({
   onCloseAddModal,
 }: WhereWeServeSectionProps) {
   const [previewZone, setPreviewZone] = useState<ZoneCard | null>(null);
+  const [isSavingZone, setIsSavingZone] = useState(false);
   const [zoneModal, setZoneModal] = useState<{
     open: boolean;
     mode: "add" | "edit";
@@ -105,6 +108,7 @@ export function WhereWeServeSection({
   };
 
   const saveZone = async () => {
+    if (isSavingZone) return;
     const d = zoneModal.data;
     if (!d.name?.trim()) {
       alert("Zone name is required.");
@@ -136,6 +140,7 @@ export function WhereWeServeSection({
       formData.append("image", zoneModal.file);
     }
 
+    setIsSavingZone(true);
     try {
       if (zoneModal.mode === "add") {
         if (!zoneModal.file && !d.imageUrl) {
@@ -161,6 +166,8 @@ export function WhereWeServeSection({
       }
     } catch (err) {
       console.error("Error saving zone:", err);
+    } finally {
+      setIsSavingZone(false);
     }
   };
 
@@ -203,9 +210,6 @@ export function WhereWeServeSection({
                     }`}
                   >
                     {zone.isActive ? "LIVE" : "HIDDEN"}
-                  </div>
-                  <div className="absolute top-2 left-2 bg-black/50 text-white text-[9px] font-black px-2 py-0.5 rounded-full flex items-center gap-1">
-                    <GripVertical className="w-2.5 h-2.5" />#{zone.sortOrder}
                   </div>
                 </div>
 
@@ -444,14 +448,15 @@ export function WhereWeServeSection({
                     />
                   </div>
                   {zoneModal.data.imageUrl ? (
-                    <img
-                      src={formatImageUrl(zoneModal.data.imageUrl)}
-                      alt="preview"
-                      className="mt-2 w-full h-28 object-cover rounded-xl border border-slate-200 dark:border-slate-700"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).style.display = "none";
-                      }}
-                    />
+                    <div className="relative mt-2 w-full h-28 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700">
+                      <Image
+                        src={formatImageUrl(zoneModal.data.imageUrl)}
+                        alt="preview"
+                        fill
+                        unoptimized
+                        className="object-cover"
+                      />
+                    </div>
                   ) : zoneModal.data.name ? (
                     <div className="mt-2 w-full h-28 rounded-xl bg-gradient-to-br from-[#48073d] via-[#610c52] to-[#801C6E] flex flex-col items-center justify-center text-white border border-slate-200 dark:border-slate-700">
                       <div className="w-12 h-12 rounded-xl bg-white/15 backdrop-blur-md border border-white/25 text-white font-black text-xl flex items-center justify-center shadow-md tracking-wider">
@@ -606,20 +611,31 @@ export function WhereWeServeSection({
               <div className="px-5 py-4 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2">
                 <button
                   type="button"
+                  disabled={isSavingZone}
                   onClick={() =>
                     setZoneModal({ open: false, mode: "add", data: {}, file: null, areasInput: "" })
                   }
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer transition-colors"
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
+                  disabled={isSavingZone}
                   onClick={saveZone}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-brand-600 hover:bg-brand-700 flex items-center gap-1.5 cursor-pointer transition-colors shadow-sm"
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-brand-600 hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 cursor-pointer transition-colors shadow-sm"
                 >
-                  <Save className="w-3.5 h-3.5" />
-                  Save Zone
+                  {isSavingZone ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>{zoneModal.mode === "add" ? "Adding Zone..." : "Updating Zone..."}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-3.5 h-3.5" />
+                      <span>Save Zone</span>
+                    </>
+                  )}
                 </button>
               </div>
             </div>

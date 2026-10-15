@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import Image from "next/image";
 import {
   FileImage,
   Upload,
@@ -197,7 +198,7 @@ export default function MediaPage() {
       const dataUrl = event.target?.result as string;
       
       // Calculate image dimensions
-      const img = new Image();
+      const img = new window.Image();
       img.onload = () => {
         setFileMeta({
           type: formattedType,
@@ -411,11 +412,15 @@ export default function MediaPage() {
             >
               {/* Image Box */}
               <div className="h-48 w-full rounded-2xl overflow-hidden bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 relative">
-                <img
-                  src={asset.url}
-                  alt={asset.altText}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                />
+                {asset.url ? (
+                  <Image
+                    src={asset.url}
+                    alt={asset.altText}
+                    fill
+                    unoptimized
+                    className="object-cover group-hover:scale-105 transition-transform duration-300"
+                  />
+                ) : null}
                 <span className="absolute top-3 left-3 text-[10px] font-black uppercase bg-white/90 dark:bg-slate-900/90 text-brand-600 dark:text-brand-400 px-2.5 py-1 rounded-full border border-slate-200 dark:border-slate-700 shadow-xs">
                   {asset.category}
                 </span>
@@ -533,7 +538,15 @@ export default function MediaPage() {
                     {/* Artwork Preview */}
                     <td className="py-3 px-4">
                       <div className="w-14 h-14 rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shrink-0 relative group">
-                        <img src={asset.url} alt={asset.altText} className="w-full h-full object-cover" />
+                        {asset.url ? (
+                          <Image
+                            src={asset.url}
+                            alt={asset.altText}
+                            fill
+                            unoptimized
+                            className="object-cover"
+                          />
+                        ) : null}
                         <button
                           type="button"
                           onClick={() => setPreviewAsset(asset)}
@@ -668,7 +681,13 @@ export default function MediaPage() {
                   {uploadForm.url ? (
                     <div className="space-y-2">
                       <div className="h-32 w-full rounded-xl overflow-hidden bg-slate-100 border border-slate-200 dark:border-slate-700 relative">
-                        <img src={uploadForm.url} alt="Selected preview" className="w-full h-full object-contain" />
+                        <Image
+                          src={uploadForm.url}
+                          alt="Selected preview"
+                          fill
+                          unoptimized
+                          className="object-contain"
+                        />
                       </div>
                       <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600">
                         <CheckCircle2 className="w-4 h-4" /> Image Selected ({fileMeta?.dimensions || "Ready"})
@@ -795,7 +814,15 @@ export default function MediaPage() {
 
                 {/* Preview Thumbnail */}
                 <div className="h-40 w-full rounded-2xl overflow-hidden bg-slate-100 border border-slate-200 dark:border-slate-700 relative">
-                  <img src={editingAsset.url} alt={editingAsset.name} className="w-full h-full object-cover" />
+                  {editingAsset.url ? (
+                    <Image
+                      src={editingAsset.url}
+                      alt={editingAsset.name}
+                      fill
+                      unoptimized
+                      className="object-cover"
+                    />
+                  ) : null}
                   <span className="absolute bottom-2 left-2 text-[10px] font-mono font-bold bg-slate-900/80 text-white px-2 py-0.5 rounded">
                     {editingAsset.dimensions} · {editingAsset.size}
                   </span>
@@ -881,8 +908,16 @@ export default function MediaPage() {
                 </button>
               </div>
 
-              <div className="h-80 w-full rounded-2xl overflow-hidden bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center">
-                <img src={previewAsset.url} alt={previewAsset.altText} className="max-h-full max-w-full object-contain" />
+              <div className="h-80 w-full rounded-2xl overflow-hidden bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center relative">
+                {previewAsset.url ? (
+                  <Image
+                    src={previewAsset.url}
+                    alt={previewAsset.altText}
+                    fill
+                    unoptimized
+                    className="object-contain"
+                  />
+                ) : null}
               </div>
 
               <div className="flex items-center justify-between text-xs pt-1">

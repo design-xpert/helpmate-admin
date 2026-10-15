@@ -25,25 +25,28 @@ import {
   Sparkles,
 } from "lucide-react";
 import { getPlatformSettingsApi, updatePlatformSettingsApi } from "@/lib/api";
+import { getStoredModuleData, setCachedModuleData, isModuleCacheFresh } from "@/lib/moduleCache";
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<
     "platform-fee" | "general" | "notifications" | "data" | "security"
   >("platform-fee");
 
+  const initialCachedSettings = getStoredModuleData<any>("platform_settings");
+
   // Platform Fee & GST State
-  const [platformFee, setPlatformFee] = useState<number | string>(49);
-  const [gstRate, setGstRate] = useState<number | string>(18);
+  const [platformFee, setPlatformFee] = useState<number | string>(() => initialCachedSettings?.platformConvenienceFee ?? 49);
+  const [gstRate, setGstRate] = useState<number | string>(() => initialCachedSettings?.gstRate ?? 18);
   const [gstinNumber, setGstinNumber] = useState("09AAACH1234F1Z5");
   const [sacCode, setSacCode] = useState("998714");
   const [gstCalculationType, setGstCalculationType] = useState<"exclusive" | "inclusive">("exclusive");
   const [sampleAmount, setSampleAmount] = useState<number | string>(500);
 
   // API Status & Loading State
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !(isModuleCacheFresh("platform_settings", 30000) && initialCachedSettings));
   const [saving, setSaving] = useState(false);
-  const [updatedBy, setUpdatedBy] = useState<{ name?: string; email?: string } | null>(null);
-  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
+  const [updatedBy, setUpdatedBy] = useState<{ name?: string; email?: string } | null>(() => initialCachedSettings?.updatedBy || null);
+  const [updatedAt, setUpdatedAt] = useState<string | null>(() => initialCachedSettings?.updatedAt || null);
   const [toast, setToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   // General Settings State
@@ -61,10 +64,23 @@ export default function SettingsPage() {
   const [emailReceipts, setEmailReceipts] = useState(true);
 
   // Fetch initial platform fee and GST from backend API
-  const fetchSettings = async () => {
-    setLoading(true);
+  const fetchSettings = async (force: boolean = false) => {
+    if (!force && isModuleCacheFresh("platform_settings", 30000)) {
+      const cached = getStoredModuleData<any>("platform_settings");
+      if (cached) {
+        if (typeof cached.platformConvenienceFee === "number") setPlatformFee(cached.platformConvenienceFee);
+        if (typeof cached.gstRate === "number") setGstRate(cached.gstRate);
+        if (cached.updatedBy) setUpdatedBy(cached.updatedBy);
+        if (cached.updatedAt) setUpdatedAt(cached.updatedAt);
+        setLoading(false);
+        return;
+      }
+    }
+    if (!initialCachedSettings) {
+      setLoading(true);
+    }
     try {
-      const res = await getPlatformSettingsApi(true);
+      const res = await getPlatformSettingsApi(force);
       if (res && res.success && res.data) {
         if (typeof res.data.platformConvenienceFee === "number") {
           setPlatformFee(res.data.platformConvenienceFee);
@@ -78,6 +94,7 @@ export default function SettingsPage() {
         if (res.data.updatedAt) {
           setUpdatedAt(res.data.updatedAt);
         }
+        setCachedModuleData("platform_settings", res.data);
       }
     } catch (err) {
       console.error("Failed to load platform settings:", err);
@@ -87,6 +104,10 @@ export default function SettingsPage() {
   };
 
   useEffect(() => {
+    if (isModuleCacheFresh("platform_settings", 30000) && initialCachedSettings) {
+      setLoading(false);
+      return;
+    }
     fetchSettings();
   }, []);
 
@@ -296,7 +317,7 @@ export default function SettingsPage() {
 
                   <button
                     type="button"
-                    onClick={fetchSettings}
+                    onClick={() => fetchSettings(true)}
                     title="Reload from Server"
                     className="px-3.5 py-2 rounded-xl bg-white/15 hover:bg-white/25 border border-white/20 text-white text-xs font-semibold flex items-center gap-1.5 backdrop-blur-sm cursor-pointer transition-all shrink-0"
                   >

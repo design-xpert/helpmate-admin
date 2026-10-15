@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import {
   Wrench,
   CheckCircle2,
@@ -523,11 +524,15 @@ export default function InspectionsPage() {
                 <div className="grid grid-cols-2 gap-3">
                   {selectedInspection.inspectionImages.map((img, idx) => (
                     <div key={idx} className="h-36 rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-100 relative group">
-                      <img
-                        src={img}
-                        alt={`Inspection Proof ${idx + 1}`}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                      />
+                      {img ? (
+                        <Image
+                          src={img}
+                          alt={`Inspection Proof ${idx + 1}`}
+                          fill
+                          unoptimized
+                          className="object-cover group-hover:scale-105 transition-transform duration-300"
+                        />
+                      ) : null}
                       <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                         <a
                           href={img}

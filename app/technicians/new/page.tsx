@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, Suspense, useMemo } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { initialTechnicians, varanasiLocalities } from "@/lib/mockData";
 import { CustomSelect } from "@/components/CustomSelect";
@@ -700,7 +701,7 @@ function TechnicianFormContent() {
   const handleApplyImageCrop = () => {
     if (!editorRawImage) return;
 
-    const img = new Image();
+    const img = new window.Image();
     img.crossOrigin = "anonymous";
     img.src = editorRawImage;
     img.onload = () => {
@@ -1601,11 +1602,15 @@ function TechnicianFormContent() {
             <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row items-center gap-4">
               <div className="relative group shrink-0">
                 {passportPhotoPreview ? (
-                  <img
-                    src={passportPhotoPreview}
-                    alt="Partner Profile"
-                    className="w-20 h-20 rounded-2xl object-cover border-2 border-brand-500 shadow-md"
-                  />
+                  <div className="relative w-20 h-20 rounded-2xl overflow-hidden border-2 border-brand-500 shadow-md">
+                    <Image
+                      src={passportPhotoPreview}
+                      alt="Partner Profile"
+                      fill
+                      unoptimized
+                      className="object-cover"
+                    />
+                  </div>
                 ) : (
                   <div className="w-20 h-20 rounded-2xl bg-brand-50 dark:bg-brand-950/60 border-2 border-dashed border-brand-300 dark:border-brand-700 flex flex-col items-center justify-center text-brand-600 dark:text-brand-400 shadow-xs">
                     <User className="w-8 h-8" />
@@ -2739,11 +2744,15 @@ function TechnicianFormContent() {
 
                 {aadhaarFrontPreview ? (
                   <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 flex items-center gap-3 shadow-2xs">
-                    <img
-                      src={aadhaarFrontPreview}
-                      alt="Aadhaar Front Preview"
-                      className="w-16 h-12 rounded-lg object-cover border border-slate-200 shadow-2xs shrink-0"
-                    />
+                    <div className="relative w-16 h-12 rounded-lg overflow-hidden border border-slate-200 shadow-2xs shrink-0">
+                      <Image
+                        src={aadhaarFrontPreview}
+                        alt="Aadhaar Front Preview"
+                        fill
+                        unoptimized
+                        className="object-cover"
+                      />
+                    </div>
                     <div className="min-w-0 flex-1">
                       <span className="text-xs font-bold text-slate-900 dark:text-white block truncate">
                         {aadhaarFrontFileName || "Aadhaar_Front_Copy.jpg"}
@@ -2792,11 +2801,15 @@ function TechnicianFormContent() {
 
                 {aadhaarBackPreview ? (
                   <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 flex items-center gap-3 shadow-2xs">
-                    <img
-                      src={aadhaarBackPreview}
-                      alt="Aadhaar Back Preview"
-                      className="w-16 h-12 rounded-lg object-cover border border-slate-200 shadow-2xs shrink-0"
-                    />
+                    <div className="relative w-16 h-12 rounded-lg overflow-hidden border border-slate-200 shadow-2xs shrink-0">
+                      <Image
+                        src={aadhaarBackPreview}
+                        alt="Aadhaar Back Preview"
+                        fill
+                        unoptimized
+                        className="object-cover"
+                      />
+                    </div>
                     <div className="min-w-0 flex-1">
                       <span className="text-xs font-bold text-slate-900 dark:text-white block truncate">
                         {aadhaarBackFileName || "Aadhaar_Back_Copy.jpg"}
@@ -2960,11 +2973,15 @@ function TechnicianFormContent() {
                 {/* Drag & Drop Upload / Live Preview Box */}
                 {passportPhotoPreview ? (
                   <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 flex items-center gap-4 shadow-2xs">
-                    <img
-                      src={passportPhotoPreview}
-                      alt="Passport Photo Preview"
-                      className="w-16 h-20 rounded-xl object-cover border-2 border-brand-500 shadow-sm shrink-0"
-                    />
+                    <div className="relative w-16 h-20 rounded-xl overflow-hidden border-2 border-brand-500 shadow-sm shrink-0">
+                      <Image
+                        src={passportPhotoPreview}
+                        alt="Passport Photo Preview"
+                        fill
+                        unoptimized
+                        className="object-cover"
+                      />
+                    </div>
                     <div className="min-w-0 flex-1 space-y-1">
                       <span className="text-xs font-extrabold text-slate-900 dark:text-white block truncate">
                         {photoFileName || "Passport_Photo.jpg"}
@@ -3245,14 +3262,15 @@ function TechnicianFormContent() {
                         key={srv.id}
                         className="pl-1.5 pr-3 py-1 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-extrabold flex items-center gap-1.5 shadow-2xs"
                       >
-                        <img
-                          src={srv.image}
-                          alt={srv.title}
-                          onError={(e) => {
-                            (e.currentTarget as HTMLImageElement).src = "https://images.unsplash.com/photo-1581094288338-2314dddb7ece?w=400&auto=format&fit=crop&q=80";
-                          }}
-                          className="w-5 h-5 rounded-md object-cover"
-                        />
+                        <div className="relative w-5 h-5 rounded-md overflow-hidden shrink-0">
+                          <Image
+                            src={srv.image || "https://images.unsplash.com/photo-1581094288338-2314dddb7ece?w=400&auto=format&fit=crop&q=80"}
+                            alt={srv.title}
+                            fill
+                            unoptimized
+                            className="object-cover"
+                          />
+                        </div>
                         <span>{srv.title} ({srv.type} • ₹{srv.price})</span>
                       </span>
                     ))}
@@ -3444,15 +3462,15 @@ function TechnicianFormContent() {
                   }`}
                 >
                   {editorRawImage && (
-                    <img
+                    <Image
                       src={editorRawImage}
                       alt="Editor Raw Preview"
+                      fill
+                      unoptimized
                       draggable={false}
                       style={{
                         transform: `scale(${cropZoom}) rotate(${cropRotation}deg) translate(${cropOffsetX}px, ${cropOffsetY}px)`,
                         transition: isDragging ? "none" : "transform 0.1s ease-out",
-                        maxHeight: "100%",
-                        maxWidth: "100%",
                         objectFit: "contain",
                         userSelect: "none",
                         pointerEvents: "none",

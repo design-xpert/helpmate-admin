@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { initialTechnicians, Technician } from "@/lib/mockData";
 import { Portal } from "@/components/Portal";
 import { ToastContainer, ToastMessage } from "@/components/Toast";
@@ -841,12 +842,18 @@ export default function TechnicianDetailPage() {
       <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-6">
         <div className="flex items-center gap-5">
           <div className="relative">
-            <img
-              src={tech.avatar}
-              alt={tech.name}
-              className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl object-cover border-2 border-brand-500 shadow-sm shrink-0"
-            />
-            <span className="absolute -bottom-1 -right-1 p-1 bg-emerald-500 text-white rounded-full text-[10px] ring-4 ring-white dark:ring-slate-900">
+            <div className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-2xl overflow-hidden border-2 border-brand-500 shadow-sm shrink-0">
+              {tech.avatar ? (
+                <Image
+                  src={tech.avatar}
+                  alt={tech.name}
+                  fill
+                  unoptimized
+                  className="object-cover"
+                />
+              ) : null}
+            </div>
+            <span className="absolute -bottom-1 -right-1 p-1 bg-emerald-500 text-white rounded-full text-[10px] ring-4 ring-white dark:ring-slate-900 z-10">
               <CheckCircle2 className="w-3.5 h-3.5" />
             </span>
           </div>
@@ -1668,11 +1675,17 @@ export default function TechnicianDetailPage() {
             >
               <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
                 <div className="flex items-center gap-2.5">
-                  <img
-                    src={tech.avatar}
-                    alt={tech.name}
-                    className="w-10 h-10 rounded-full object-cover border border-slate-200"
-                  />
+                  <div className="relative w-10 h-10 rounded-full overflow-hidden border border-slate-200 shrink-0">
+                    {tech.avatar ? (
+                      <Image
+                        src={tech.avatar}
+                        alt={tech.name}
+                        fill
+                        unoptimized
+                        className="object-cover"
+                      />
+                    ) : null}
+                  </div>
                   <div>
                     <h3 className="font-extrabold text-slate-900 dark:text-white text-base">
                       Process Manual Settlement: {tech.name}

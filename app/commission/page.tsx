@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { DataTable, Column } from "@/components/DataTable";
 import { RowActionMenu } from "@/components/RowActionMenu";
 import { Portal } from "@/components/Portal";
@@ -222,11 +223,17 @@ export default function CommissionPage() {
       header: "Partner Specialist",
       accessor: (row) => (
         <div className="flex items-center gap-2.5">
-          <img
-            src={row?.avatar}
-            alt={row?.name}
-            className="w-8 h-8 shrink-0 rounded-full object-cover border border-slate-200 dark:border-slate-700"
-          />
+          <div className="relative w-8 h-8 shrink-0 rounded-full overflow-hidden border border-slate-200 dark:border-slate-700">
+            {row?.avatar ? (
+              <Image
+                src={row.avatar}
+                alt={row?.name || "avatar"}
+                fill
+                unoptimized
+                className="object-cover"
+              />
+            ) : null}
+          </div>
           <div className="flex flex-col">
             <span className="font-extrabold text-slate-900 dark:text-white">{row?.name}</span>
             <span className="text-[10px] text-slate-400">{row?.locality}</span>

@@ -17,6 +17,8 @@ import {
   ChevronDown,
   Tag,
   CheckCircle2,
+  Clock,
+  Loader2,
 } from "lucide-react";
 import { Portal } from "@/components/Portal";
 import {
@@ -30,6 +32,10 @@ import { SectionCardImage } from "./SectionCardImage";
 import {
   ApiPackageItem,
   getPackagesApi,
+  spotlightBadges,
+  createSpotlightApi,
+  updateSpotlightApi,
+  formatImageUrl,
 } from "@/lib/api";
 
 interface SpotlightSectionProps {
@@ -42,6 +48,7 @@ interface SpotlightSectionProps {
   isAddModalOpen?: boolean;
   onCloseAddModal?: () => void;
   catalogPackages?: any[];
+  onRefreshSpotlight?: () => Promise<void>;
 }
 
 export function SpotlightSection({
@@ -51,6 +58,8 @@ export function SpotlightSection({
   onRequestDelete,
   isAddModalOpen = false,
   onCloseAddModal,
+  catalogPackages,
+  onRefreshSpotlight,
 }: SpotlightSectionProps) {
   const [spotlightHeader, setSpotlightHeader] = useState<SpotlightHeader>(
     initialSpotlightHeader
@@ -63,9 +72,10 @@ export function SpotlightSection({
     null
   );
 
-  // Available packages for the searchable dropdown fetched from http://localhost:5005/api/package?limit=100
+  // Available packages for the searchable dropdown fetched from /api/package?limit=100
   const [availablePackages, setAvailablePackages] = useState<ApiPackageItem[]>([]);
   const [isPackagesLoading, setIsPackagesLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [packageDropdownOpen, setPackageDropdownOpen] = useState(false);
   const [packageSearch, setPackageSearch] = useState("");
   const [selectedPackage, setSelectedPackage] = useState<ApiPackageItem | null>(null);
@@ -81,7 +91,7 @@ export function SpotlightSection({
     data: {},
   });
 
-  // Fetch packages from http://localhost:5005/api/package?limit=100
+  // Fetch packages from /api/package?limit=100
   const fetchPackages = async (search: string = "") => {
     setIsPackagesLoading(true);
     try {
@@ -160,7 +170,7 @@ export function SpotlightSection({
       open: true,
       mode: "add",
       data: {
-        badge: "New launch",
+        badge: "new-launch",
         badgeBg: "#801C6E",
         ctaText: "Book now",
         ctaTheme: "white",
@@ -186,7 +196,10 @@ export function SpotlightSection({
     setSpotlightModal({
       open: true,
       mode: "edit",
-      data: { ...banner },
+      data: {
+        ...banner,
+        badge: banner.badge || "new-launch",
+      },
     });
   };
 
@@ -208,6 +221,8 @@ export function SpotlightSection({
         ? `Professional doorstep ${serviceName} in Varanasi (₹${pkg.price})`
         : `Doorstep service starting at ₹${pkg.price}`);
 
+    const pkgImg = pkg.imageUrl || pkg.thumbnailUrl || "";
+
     setSpotlightModal((prev) => ({
       ...prev,
       data: {
@@ -215,11 +230,22 @@ export function SpotlightSection({
         packageId: pkgId,
         title: pkg.packageName,
         subtitle: subtitleText,
-        image: pkg.imageUrl || pkg.thumbnailUrl || "",
+        image: formatImageUrl(pkgImg, pkgId) || "",
         targetUrl: `/services?package=${pkgId}`,
         ctaText: prev.data.ctaText || "Book now",
         ctaTheme: prev.data.ctaTheme || "white",
         overlayGradient: prev.data.overlayGradient || GRADIENT_PRESETS[0].value,
+        packageName: pkg.packageName,
+        price: typeof pkg.price === "number" ? pkg.price : Number(pkg.price) || undefined,
+        originalPrice:
+          typeof pkg.originalPrice === "number"
+            ? pkg.originalPrice
+            : Number(pkg.originalPrice) || undefined,
+        duration:
+          typeof pkg.duration === "number" ? pkg.duration : Number(pkg.duration) || undefined,
+        description: pkg.description || "",
+        imageUrl: pkg.imageUrl || "",
+        thumbnailUrl: pkg.thumbnailUrl || "",
       },
     }));
   };
@@ -264,89 +290,186 @@ export function SpotlightSection({
     setEditingSpotlightHeader(false);
   };
 
-  const moveSpotlightBanner = (index: number, direction: "up" | "down") => {
-    onUpdateSpotlightBanners((prev) => {
-      const targetIndex = direction === "up" ? index - 1 : index + 1;
-      if (targetIndex < 0 || targetIndex >= prev.length) return prev;
-      const copy = [...prev];
-      const temp = copy[index];
-      copy[index] = copy[targetIndex];
-      copy[targetIndex] = temp;
-      return copy.map((b, i) => ({ ...b, sortOrder: i + 1 }));
-    });
+  const moveSpotlightBanner = async (index: number, direction: "up" | "down") => {
+    const targetIndex = direction === "up" ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= spotlightBanners.length) return;
+    const copy = [...spotlightBanners];
+    const currentItem = copy[index];
+    const targetItem = copy[targetIndex];
+
+    copy[index] = targetItem;
+    copy[targetIndex] = currentItem;
+    const updated = copy.map((b, i) => ({ ...b, sortOrder: i + 1 }));
+    onUpdateSpotlightBanners(() => updated);
+
+    try {
+      if (currentItem.id && !currentItem.id.startsWith("spotlight-")) {
+        await updateSpotlightApi(currentItem.id, { displayOrder: targetIndex + 1 });
+      }
+      if (targetItem.id && !targetItem.id.startsWith("spotlight-")) {
+        await updateSpotlightApi(targetItem.id, { displayOrder: index + 1 });
+      }
+    } catch (err) {
+      console.error("Failed to update banner order:", err);
+    }
   };
 
-  const toggleSpotlightBanner = (id: string) => {
+  const toggleSpotlightBanner = async (id: string) => {
+    const banner = spotlightBanners.find((b) => b.id === id);
+    if (!banner) return;
+    const newStatus = !banner.isActive;
     onUpdateSpotlightBanners((prev) =>
-      prev.map((b) => (b.id === id ? { ...b, isActive: !b.isActive } : b))
+      prev.map((b) => (b.id === id ? { ...b, isActive: newStatus } : b))
     );
+    try {
+      if (id && !id.startsWith("spotlight-")) {
+        await updateSpotlightApi(id, { status: newStatus });
+      }
+    } catch (err) {
+      console.error("Failed to toggle spotlight banner status:", err);
+    }
   };
 
-  const saveSpotlightBanner = () => {
+  const saveSpotlightBanner = async () => {
+    if (isSaving) return;
     const d = spotlightModal.data;
-    if (!d.title?.trim() && !selectedPackage) {
+    if (!selectedPackage && !d.packageId) {
       alert("Please select a package for the spotlight banner.");
       return;
     }
 
     const pkgId = selectedPackage?._id || selectedPackage?.packageId || d.packageId;
+    if (!pkgId) {
+      alert("Please select a valid package.");
+      return;
+    }
+
+    const badge = d.badge || "new-launch";
+    const displayOrder = Number(d.sortOrder) || spotlightBanners.length + 1;
     const title = selectedPackage?.packageName || d.title || "Featured Package";
     const subtitle =
       selectedPackage?.subtitle ||
       selectedPackage?.description ||
       d.subtitle ||
       (selectedPackage ? `Special service starting at ₹${selectedPackage.price}` : "");
-    const image =
+    const rawImage =
       selectedPackage?.imageUrl ||
       selectedPackage?.thumbnailUrl ||
       d.image ||
       "";
+    const image = formatImageUrl(rawImage, pkgId) || "";
     const packageId = pkgId;
-    const targetUrl = packageId
-      ? `/services?package=${packageId}`
-      : d.targetUrl || "/services";
+    const targetUrl = `/services?package=${packageId}`;
+    const price =
+      selectedPackage?.price !== undefined
+        ? Number(selectedPackage.price)
+        : d.price;
+    const originalPrice =
+      selectedPackage?.originalPrice !== undefined
+        ? Number(selectedPackage.originalPrice)
+        : d.originalPrice;
+    const duration =
+      selectedPackage?.duration !== undefined
+        ? Number(selectedPackage.duration)
+        : d.duration;
+    const description =
+      selectedPackage?.description || d.description || "";
 
-    if (spotlightModal.mode === "add") {
-      const newBanner: SpotlightBanner = {
-        id: `spotlight-${Date.now()}`,
-        packageId,
-        title,
-        subtitle,
-        badge: d.badge?.trim() || "Featured",
-        badgeBg: d.badgeBg || "#801C6E",
-        ctaText: d.ctaText?.trim() || "Book now",
-        ctaTheme: d.ctaTheme || "white",
-        overlayGradient: d.overlayGradient || GRADIENT_PRESETS[0].value,
-        image,
-        targetUrl,
-        isActive: d.isActive ?? true,
-        sortOrder: Number(d.sortOrder) || spotlightBanners.length + 1,
-      };
-      onUpdateSpotlightBanners((prev) => [...prev, newBanner]);
-    } else {
-      onUpdateSpotlightBanners((prev) =>
-        prev.map((b) =>
-          b.id === d.id
-            ? {
-                ...b,
-                packageId,
-                title,
-                subtitle:
-                  d.subtitle !== undefined && !selectedPackage
-                    ? d.subtitle
-                    : subtitle,
-                badge: d.badge !== undefined ? d.badge.trim() : b.badge,
-                badgeBg: d.badgeBg || b.badgeBg,
-                image,
-                targetUrl,
-                isActive: d.isActive ?? b.isActive,
-              }
-            : b
-        )
-      );
+    setIsSaving(true);
+    try {
+      if (spotlightModal.mode === "add") {
+        const res = await createSpotlightApi({
+          packageId,
+          badge,
+          displayOrder,
+        });
+
+        if (res && res.success) {
+          const created = res.data;
+          const badgePresetColors: Record<string, string> = {
+            "new-launch": "#801C6E",
+            "best-seller": "#B45309",
+            "summer-special": "#0284C7",
+          };
+          const newBanner: SpotlightBanner = {
+            id: created?._id || `spotlight-${Date.now()}`,
+            packageId,
+            title,
+            subtitle,
+            badge,
+            badgeBg: d.badgeBg || badgePresetColors[badge] || "#801C6E",
+            ctaText: "Book now",
+            ctaTheme: "white",
+            overlayGradient: GRADIENT_PRESETS[0].value,
+            image,
+            targetUrl,
+            isActive: true,
+            sortOrder: displayOrder,
+            packageName: title,
+            price,
+            originalPrice,
+            duration,
+            description,
+          };
+          onUpdateSpotlightBanners((prev) => [...prev, newBanner]);
+          if (onRefreshSpotlight) {
+            await onRefreshSpotlight();
+          }
+          setSpotlightModal({ open: false, mode: "add", data: {} });
+          setSelectedPackage(null);
+        } else {
+          alert(res?.message || "Failed to add package to spotlight.");
+        }
+      } else {
+        const bannerId = d.id;
+        if (!bannerId) return;
+
+        const res = await updateSpotlightApi(bannerId, {
+          packageId,
+          badge,
+          displayOrder,
+          status: d.isActive ?? true,
+        });
+
+        if (res && res.success) {
+          onUpdateSpotlightBanners((prev) =>
+            prev.map((b) =>
+              b.id === bannerId
+                ? {
+                    ...b,
+                    packageId,
+                    title,
+                    subtitle,
+                    badge,
+                    badgeBg: d.badgeBg || b.badgeBg,
+                    image,
+                    targetUrl,
+                    isActive: d.isActive ?? b.isActive,
+                    sortOrder: displayOrder,
+                    packageName: title,
+                    price,
+                    originalPrice,
+                    duration,
+                    description,
+                  }
+                : b
+            )
+          );
+          if (onRefreshSpotlight) {
+            await onRefreshSpotlight();
+          }
+          setSpotlightModal({ open: false, mode: "edit", data: {} });
+          setSelectedPackage(null);
+        } else {
+          alert(res?.message || "Failed to update spotlight item.");
+        }
+      }
+    } catch (err: any) {
+      console.error("saveSpotlightBanner error:", err);
+      alert(err?.message || "Failed to save spotlight banner.");
+    } finally {
+      setIsSaving(false);
     }
-    setSpotlightModal({ open: false, mode: "add", data: {} });
-    setSelectedPackage(null);
   };
 
   const inputCls =
@@ -516,9 +639,11 @@ export function SpotlightSection({
                 {/* Background image / letters fallback */}
                 <div className="absolute inset-0">
                   <SectionCardImage
-                    src={banner.image}
+                    src={banner.image || banner.imageUrl}
+                    packageId={banner.packageId}
                     title={banner.title.replace(/\n/g, " ")}
                     badgeSize="w-16 h-16 text-2xl"
+                    className="w-full h-full object-cover object-right group-hover:scale-105 transition-transform duration-500"
                     fallback="SP"
                   />
                 </div>
@@ -540,9 +665,6 @@ export function SpotlightSection({
                     {banner.isActive ? "LIVE" : "HIDDEN"}
                   </span>
                 </div>
-                <div className="absolute top-3 left-3 bg-black/60 text-white text-[9px] font-mono font-bold px-2 py-0.5 rounded-full z-10 flex items-center gap-1">
-                  <GripVertical className="w-2.5 h-2.5" />#{banner.sortOrder || index + 1}
-                </div>
 
                 {/* Content text */}
                 <div className="relative z-10 h-full p-5 flex flex-col justify-between max-w-[68%] text-white">
@@ -553,7 +675,7 @@ export function SpotlightSection({
                           className="inline-block text-white text-[10px] font-black px-2 py-0.5 rounded-md tracking-wide shadow-xs border border-white/20"
                           style={{ backgroundColor: banner.badgeBg || "#801C6E" }}
                         >
-                          {banner.badge}
+                          {spotlightBadges.find((b) => b.value === banner.badge)?.label || banner.badge}
                         </span>
                       </div>
                     )}
@@ -563,6 +685,28 @@ export function SpotlightSection({
                     <p className="text-xs font-medium mt-1 leading-snug text-pink-100/90 line-clamp-2">
                       {banner.subtitle}
                     </p>
+
+                    {/* Price and duration pill on card */}
+                    {(banner.price !== undefined || banner.duration !== undefined) && (
+                      <div className="flex items-center gap-2 mt-2">
+                        {banner.price !== undefined && (
+                          <span className="text-sm font-black text-white drop-shadow-xs">
+                            ₹{banner.price}
+                          </span>
+                        )}
+                        {banner.originalPrice && banner.originalPrice > (banner.price || 0) && (
+                          <span className="text-xs text-pink-200/80 line-through">
+                            ₹{banner.originalPrice}
+                          </span>
+                        )}
+                        {banner.duration && (
+                          <span className="text-[10px] font-bold bg-white/20 backdrop-blur-xs px-1.5 py-0.5 rounded text-white/95 flex items-center gap-1">
+                            <Clock className="w-2.5 h-2.5" />
+                            {banner.duration}m
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* CTA button visual preview */}
@@ -577,12 +721,24 @@ export function SpotlightSection({
               {/* Card Actions Bottom Bar */}
               <div className="p-3.5 space-y-2.5 bg-slate-50/60 dark:bg-slate-800/40 border-t border-slate-100 dark:border-slate-800">
                 <div className="flex items-center justify-between text-[11px] text-slate-500">
-                  <span
-                    className="font-mono text-xs truncate max-w-[200px]"
-                    title={banner.targetUrl}
-                  >
-                    {banner.targetUrl}
-                  </span>
+                  <div className="flex items-center gap-2 min-w-0">
+                    {banner.price !== undefined && (
+                      <span className="font-extrabold text-xs text-slate-900 dark:text-white">
+                        ₹{banner.price}
+                      </span>
+                    )}
+                    {banner.originalPrice && banner.originalPrice > (banner.price || 0) && (
+                      <span className="line-through text-slate-400 text-[10px]">
+                        ₹{banner.originalPrice}
+                      </span>
+                    )}
+                    <span
+                      className="font-mono text-[11px] truncate max-w-[150px] text-slate-400"
+                      title={banner.targetUrl}
+                    >
+                      {banner.targetUrl}
+                    </span>
+                  </div>
                   <button
                     type="button"
                     onClick={() => toggleSpotlightBanner(banner.id)}
@@ -754,7 +910,13 @@ export function SpotlightSection({
                                 {spotlightModal.data.title}
                               </span>
                               <span className="text-[10px] text-slate-400 font-medium block truncate mt-0.5">
-                                {spotlightModal.data.packageId ? `ID: ${spotlightModal.data.packageId}` : "Linked Banner"}
+                                {spotlightModal.data.price !== undefined
+                                  ? `₹${spotlightModal.data.price}${
+                                      spotlightModal.data.duration ? ` • ${spotlightModal.data.duration}m` : ""
+                                    }`
+                                  : spotlightModal.data.packageId
+                                  ? `ID: ${spotlightModal.data.packageId}`
+                                  : "Linked Package"}
                               </span>
                             </div>
                           </div>
@@ -909,48 +1071,56 @@ export function SpotlightSection({
                     </div>
                   </div>
 
-                  {/* 2. Badge Text */}
+                  {/* 2. Badge Selection (Enum: new-launch, best-seller, summer-special) */}
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
                       <label className="text-xs font-black text-slate-800 dark:text-slate-200">
-                        Badge Text
+                        Badge *
                       </label>
                       <span className="text-[10px] text-slate-400">
-                        Displayed as promotional pill
+                        Select promotional badge
                       </span>
                     </div>
-                    <input
-                      type="text"
-                      placeholder="e.g. New launch, 20% OFF, Featured"
-                      value={spotlightModal.data.badge || ""}
-                      onChange={(e) =>
-                        setSpotlightModal({
-                          ...spotlightModal,
-                          data: { ...spotlightModal.data, badge: e.target.value },
-                        })
-                      }
-                      className={inputCls}
-                    />
-                    <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                      {["New launch", "Featured", "20% OFF", "Trending", "Best Seller"].map((tag) => (
-                        <button
-                          key={tag}
-                          type="button"
-                          onClick={() =>
-                            setSpotlightModal({
-                              ...spotlightModal,
-                              data: { ...spotlightModal.data, badge: tag },
-                            })
-                          }
-                          className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border transition-colors cursor-pointer ${
-                            spotlightModal.data.badge === tag
-                              ? "bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-800"
-                              : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700"
-                          }`}
-                        >
-                          {tag}
-                        </button>
-                      ))}
+
+                    <div className="grid grid-cols-3 gap-2">
+                      {spotlightBadges.map((badgeItem) => {
+                        const currentVal = spotlightModal.data.badge || "new-launch";
+                        const isSelected = currentVal === badgeItem.value;
+                        const badgePresetColors: Record<string, string> = {
+                          "new-launch": "#801C6E",
+                          "best-seller": "#B45309",
+                          "summer-special": "#0284C7",
+                        };
+                        return (
+                          <button
+                            key={badgeItem.value}
+                            type="button"
+                            onClick={() =>
+                              setSpotlightModal((prev) => ({
+                                ...prev,
+                                data: {
+                                  ...prev.data,
+                                  badge: badgeItem.value,
+                                  badgeBg:
+                                    prev.data.badgeBg ||
+                                    badgePresetColors[badgeItem.value] ||
+                                    "#801C6E",
+                                },
+                              }))
+                            }
+                            className={`px-3 py-2.5 rounded-xl border text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                              isSelected
+                                ? "bg-purple-100 dark:bg-purple-950/80 text-purple-900 dark:text-purple-200 border-purple-500 shadow-xs ring-2 ring-purple-500/20"
+                                : "bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700/60"
+                            }`}
+                          >
+                            {isSelected && (
+                              <Check className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                            )}
+                            <span>{badgeItem.label}</span>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -1049,10 +1219,11 @@ export function SpotlightSection({
                       {/* Background Image or Letters Fallback */}
                       <div className="absolute inset-0">
                         <SectionCardImage
-                          src={spotlightModal.data.image}
+                          src={spotlightModal.data.image || spotlightModal.data.imageUrl}
                           packageId={selectedPackage?._id || selectedPackage?.packageId || spotlightModal.data.packageId}
                           title={spotlightModal.data.title || "In the Spotlight"}
                           badgeSize="w-20 h-20 text-3xl"
+                          className="w-full h-full object-cover object-right"
                           fallback="SP"
                         />
                       </div>
@@ -1080,7 +1251,8 @@ export function SpotlightSection({
                                     spotlightModal.data.badgeBg || "#801C6E",
                                 }}
                               >
-                                {spotlightModal.data.badge}
+                                {spotlightBadges.find((b) => b.value === spotlightModal.data.badge)?.label ||
+                                  spotlightModal.data.badge}
                               </span>
                             </div>
                           )}
@@ -1094,6 +1266,28 @@ export function SpotlightSection({
                           <p className="text-xs font-medium mt-1.5 leading-snug text-pink-100/90 line-clamp-2">
                             {spotlightModal.data.subtitle || "Spotless homes at ₹1200"}
                           </p>
+
+                          {/* Price & Duration */}
+                          {(spotlightModal.data.price !== undefined || spotlightModal.data.duration !== undefined) && (
+                            <div className="flex items-center gap-2 mt-2">
+                              {spotlightModal.data.price !== undefined && (
+                                <span className="text-sm font-black text-white">
+                                  ₹{spotlightModal.data.price}
+                                </span>
+                              )}
+                              {spotlightModal.data.originalPrice && spotlightModal.data.originalPrice > (spotlightModal.data.price || 0) && (
+                                <span className="text-xs text-pink-200/70 line-through">
+                                  ₹{spotlightModal.data.originalPrice}
+                                </span>
+                              )}
+                              {spotlightModal.data.duration && (
+                                <span className="text-[10px] font-bold bg-white/20 backdrop-blur-xs px-1.5 py-0.5 rounded text-white flex items-center gap-1">
+                                  <Clock className="w-2.5 h-2.5" />
+                                  {spotlightModal.data.duration}m
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
 
                         {/* CTA button */}
@@ -1146,24 +1340,39 @@ export function SpotlightSection({
               <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex justify-end gap-2.5">
                 <button
                   type="button"
+                  disabled={isSaving}
                   onClick={() =>
                     setSpotlightModal({ open: false, mode: "add", data: {} })
                   }
-                  className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 cursor-pointer transition-colors"
+                  className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
+                  disabled={isSaving}
                   onClick={saveSpotlightBanner}
-                  className="px-5 py-2.5 rounded-xl text-xs font-extrabold text-white bg-brand-600 hover:bg-brand-700 flex items-center gap-1.5 cursor-pointer transition-colors shadow-lux"
+                  className="px-5 py-2.5 rounded-xl text-xs font-extrabold text-white bg-brand-600 hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 cursor-pointer transition-colors shadow-lux"
                 >
-                  <Save className="w-4 h-4" />
-                  <span>
-                    {spotlightModal.mode === "add"
-                      ? "Save Spotlight Banner"
-                      : "Update Banner"}
-                  </span>
+                  {isSaving ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>
+                        {spotlightModal.mode === "add"
+                          ? "Adding Banner..."
+                          : "Updating Banner..."}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4" />
+                      <span>
+                        {spotlightModal.mode === "add"
+                          ? "Save Spotlight Banner"
+                          : "Update Banner"}
+                      </span>
+                    </>
+                  )}
                 </button>
               </div>
             </div>
@@ -1196,9 +1405,11 @@ export function SpotlightSection({
                 <div className="rounded-3xl overflow-hidden bg-slate-900 shadow-xl relative h-72 select-none border border-slate-200 dark:border-slate-800">
                   <div className="absolute inset-0">
                     <SectionCardImage
-                      src={previewSpotlight.image}
+                      src={previewSpotlight.image || previewSpotlight.imageUrl}
+                      packageId={previewSpotlight.packageId}
                       title={previewSpotlight.title.replace(/\n/g, " ")}
                       badgeSize="w-20 h-20 text-3xl"
+                      className="w-full h-full object-cover object-right"
                       fallback="SP"
                     />
                   </div>
@@ -1218,7 +1429,8 @@ export function SpotlightSection({
                                 previewSpotlight.badgeBg || "#801C6E",
                             }}
                           >
-                            {previewSpotlight.badge}
+                            {spotlightBadges.find((b) => b.value === previewSpotlight.badge)?.label ||
+                              previewSpotlight.badge}
                           </span>
                         </div>
                       )}
@@ -1228,6 +1440,28 @@ export function SpotlightSection({
                       <p className="text-xs font-medium mt-2 leading-snug text-pink-100/90 line-clamp-3">
                         {previewSpotlight.subtitle}
                       </p>
+
+                      {/* Price & Duration */}
+                      {(previewSpotlight.price !== undefined || previewSpotlight.duration !== undefined) && (
+                        <div className="flex items-center gap-2.5 mt-2.5">
+                          {previewSpotlight.price !== undefined && (
+                            <span className="text-base font-extrabold text-white">
+                              ₹{previewSpotlight.price}
+                            </span>
+                          )}
+                          {previewSpotlight.originalPrice && previewSpotlight.originalPrice > (previewSpotlight.price || 0) && (
+                            <span className="text-xs text-pink-200/80 line-through">
+                              ₹{previewSpotlight.originalPrice}
+                            </span>
+                          )}
+                          {previewSpotlight.duration && (
+                            <span className="text-[11px] font-bold bg-white/20 backdrop-blur-xs px-2 py-0.5 rounded text-white/95 flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              {previewSpotlight.duration} mins
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     <div>

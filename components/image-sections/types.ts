@@ -77,6 +77,13 @@ export interface SpotlightBanner {
   targetUrl: string;
   isActive: boolean;
   sortOrder: number;
+  packageName?: string;
+  price?: number;
+  originalPrice?: number;
+  duration?: number;
+  description?: string;
+  imageUrl?: string;
+  thumbnailUrl?: string;
 }
 
 export interface SpotlightHeader {

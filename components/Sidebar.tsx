@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
@@ -392,9 +393,11 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
           onClick={onCloseMobile}
           className="flex items-center gap-2.5 group"
         >
-          <img
+          <Image
             src="/logo.png"
             alt="HelpMate Logo"
+            width={28}
+            height={28}
             className="h-7 w-auto object-contain group-hover:scale-105 transition-transform"
           />
           <div className="flex flex-col">

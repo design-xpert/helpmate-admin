@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { Portal } from "@/components/Portal";
 import {
   Megaphone,
@@ -350,8 +351,16 @@ export default function BannersPage() {
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-center">
                       {/* Live Image Preview Thumbnail */}
                       <div className="relative aspect-[16/9] rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 shadow-xs">
-                        <img src={richBannerImage} alt="Banner Showcase Preview" className="w-full h-full object-cover" />
-                        <div className="absolute bottom-1.5 left-1.5 bg-black/70 text-white text-[9px] font-mono px-1.5 py-0.5 rounded">
+                        {richBannerImage ? (
+                          <Image
+                            src={richBannerImage}
+                            alt="Banner Showcase Preview"
+                            fill
+                            className="object-cover"
+                            unoptimized
+                          />
+                        ) : null}
+                        <div className="absolute bottom-1.5 left-1.5 bg-black/70 text-white text-[9px] font-mono px-1.5 py-0.5 rounded z-10">
                           Preview
                         </div>
                       </div>
@@ -533,11 +542,15 @@ export default function BannersPage() {
 
                     <div className="flex gap-3 items-center">
                       <div className="w-28 h-20 rounded-2xl overflow-hidden border-2 border-brand-500 shrink-0 bg-slate-200 dark:bg-slate-700 shadow-md relative group">
-                        <img
-                          src={pureBannerImageUrl}
-                          alt="Visitor Banner Image"
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                        />
+                        {pureBannerImageUrl ? (
+                          <Image
+                            src={pureBannerImageUrl}
+                            alt="Visitor Banner Image"
+                            fill
+                            className="object-cover group-hover:scale-105 transition-transform"
+                            unoptimized
+                          />
+                        ) : null}
                       </div>
                       <div className="flex-1 space-y-2">
                         <div className="flex items-center gap-2">
@@ -584,12 +597,16 @@ export default function BannersPage() {
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="flex gap-2 items-center">
-                        <div className="w-14 h-14 rounded-2xl overflow-hidden border-2 border-purple-500 shrink-0 bg-white dark:bg-slate-800 shadow-md p-1">
-                          <img
-                            src={secondBannerIconUrl}
-                            alt="Second Icon Badge"
-                            className="w-full h-full object-contain"
-                          />
+                        <div className="w-14 h-14 rounded-2xl overflow-hidden border-2 border-purple-500 shrink-0 bg-white dark:bg-slate-800 shadow-md p-1 relative">
+                          {secondBannerIconUrl ? (
+                            <Image
+                              src={secondBannerIconUrl}
+                              alt="Second Icon Badge"
+                              fill
+                              className="object-contain p-1"
+                              unoptimized
+                            />
+                          ) : null}
                         </div>
                         <div className="flex-1 space-y-1.5">
                           <label className="px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-bold text-[11px] flex items-center gap-1 cursor-pointer w-fit shadow-xs">
@@ -778,11 +795,15 @@ export default function BannersPage() {
                       <div className="grid grid-cols-1 md:grid-cols-12">
                         {/* Left image half */}
                         <div className="md:col-span-5 relative bg-slate-800 min-h-[140px] md:min-h-[220px]">
-                          <img
-                            src={richBannerImage}
-                            alt="Showcase"
-                            className="w-full h-full object-cover"
-                          />
+                          {richBannerImage ? (
+                            <Image
+                              src={richBannerImage}
+                              alt="Showcase"
+                              fill
+                              className="object-cover"
+                              unoptimized
+                            />
+                          ) : null}
                           {warrantyBadgeText && (
                             <div className="absolute top-2 left-2 w-12 h-12 rounded-full border border-dashed border-white/80 text-white font-black text-[7px] uppercase tracking-wider flex items-center justify-center text-center p-1 bg-black/40 backdrop-blur-xs">
                               {warrantyBadgeText}
@@ -850,11 +871,15 @@ export default function BannersPage() {
                       </div>
 
                       <div className="relative w-full aspect-[16/10] bg-slate-800 overflow-hidden">
-                        <img
-                          src={pureBannerImageUrl}
-                          alt="Pure Image Promo Popup"
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                        />
+                        {pureBannerImageUrl ? (
+                          <Image
+                            src={pureBannerImageUrl}
+                            alt="Pure Image Promo Popup"
+                            fill
+                            className="object-cover group-hover:scale-105 transition-transform duration-300"
+                            unoptimized
+                          />
+                        ) : null}
 
                         {secondBannerIconUrl && (
                           <div className={`absolute z-20 p-1.5 rounded-xl bg-white/95 dark:bg-slate-900/95 backdrop-blur-md shadow-2xl border border-white/40 flex items-center gap-1.5 max-w-[170px] ${
@@ -862,11 +887,15 @@ export default function BannersPage() {
                             badgePosition === "bottom-right" ? "bottom-2.5 right-2.5" :
                             badgePosition === "top-left" ? "top-2.5 left-2.5" : "top-2.5 right-2.5"
                           }`}>
-                            <img
-                              src={secondBannerIconUrl}
-                              alt="Second Icon Badge"
-                              className="w-6 h-6 object-contain rounded-md shrink-0"
-                            />
+                            <div className="relative w-6 h-6 shrink-0 overflow-hidden">
+                              <Image
+                                src={secondBannerIconUrl}
+                                alt="Second Icon Badge"
+                                fill
+                                className="object-contain rounded-md"
+                                unoptimized
+                              />
+                            </div>
                             <span className="text-[9px] font-black text-slate-900 dark:text-white leading-tight truncate">
                               {badgeText}
                             </span>
@@ -930,11 +959,15 @@ export default function BannersPage() {
               >
                 <div>
                   <div className="relative aspect-[16/9] bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                    <img
-                      src={banner.imageUrl}
-                      alt={banner.title}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    />
+                    {banner.imageUrl ? (
+                      <Image
+                        src={banner.imageUrl}
+                        alt={banner.title}
+                        fill
+                        className="object-cover group-hover:scale-105 transition-transform duration-300"
+                        unoptimized
+                      />
+                    ) : null}
 
                     <div className="absolute top-3 left-3 z-10">
                       <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider shadow-sm flex items-center gap-1 ${
@@ -947,11 +980,13 @@ export default function BannersPage() {
                     </div>
 
                     {banner.secondImageIconUrl && (
-                      <div className="absolute bottom-3 right-3 z-10 w-9 h-9 rounded-xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-md p-1 shadow-md border border-white/40">
-                        <img
+                      <div className="absolute bottom-3 right-3 z-10 w-9 h-9 rounded-xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-md p-1 shadow-md border border-white/40 overflow-hidden">
+                        <Image
                           src={banner.secondImageIconUrl}
                           alt="2nd Badge"
-                          className="w-full h-full object-contain"
+                          fill
+                          className="object-contain p-0.5"
+                          unoptimized
                         />
                       </div>
                     )}
@@ -1139,7 +1174,15 @@ export default function BannersPage() {
                               : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 hover:bg-slate-100"
                           }`}
                         >
-                          <img src={preset.url} alt={preset.label} className="w-7 h-7 rounded object-cover shrink-0" />
+                          <div className="relative w-7 h-7 rounded overflow-hidden shrink-0">
+                            <Image
+                              src={preset.url}
+                              alt={preset.label}
+                              fill
+                              className="object-cover"
+                              unoptimized
+                            />
+                          </div>
                           <div className="min-w-0">
                             <div className="font-bold truncate">{preset.label}</div>
                             <div className="opacity-75 text-[9px] font-mono">{preset.dimensions}</div>
@@ -1194,11 +1237,15 @@ export default function BannersPage() {
                 <div className="grid grid-cols-1 md:grid-cols-12 min-h-[480px]">
                   {/* Left Side: Photo + Badges */}
                   <div className="md:col-span-5 relative bg-slate-800 overflow-hidden min-h-[260px] md:min-h-full">
-                    <img
-                      src={richBannerImage}
-                      alt="Service Technician Showcase"
-                      className="w-full h-full object-cover"
-                    />
+                    {richBannerImage ? (
+                      <Image
+                        src={richBannerImage}
+                        alt="Service Technician Showcase"
+                        fill
+                        className="object-cover"
+                        unoptimized
+                      />
+                    ) : null}
 
                     {/* Circular Warranty Badge top left */}
                     {warrantyBadgeText && (
@@ -1311,12 +1358,16 @@ export default function BannersPage() {
                   <X className="w-5 h-5" />
                 </button>
 
-                <div className="relative w-full aspect-[16/9] sm:aspect-[16/8] bg-slate-900">
-                  <img
-                    src={pureBannerImageUrl}
-                    alt="Pure Image Visitor Promo Popup Banner"
-                    className="w-full h-full object-cover"
-                  />
+                <div className="relative w-full aspect-[16/9] sm:aspect-[16/8] bg-slate-900 overflow-hidden">
+                  {pureBannerImageUrl ? (
+                    <Image
+                      src={pureBannerImageUrl}
+                      alt="Pure Image Visitor Promo Popup Banner"
+                      fill
+                      className="object-cover"
+                      unoptimized
+                    />
+                  ) : null}
 
                   {secondBannerIconUrl && (
                     <div className={`absolute z-20 p-2.5 rounded-2xl bg-white/95 dark:bg-slate-900/95 backdrop-blur-md shadow-2xl border border-white/40 flex items-center gap-2 max-w-[220px] ${
@@ -1324,11 +1375,15 @@ export default function BannersPage() {
                       badgePosition === "bottom-right" ? "bottom-4 right-4" :
                       badgePosition === "top-left" ? "top-4 left-4" : "top-4 right-4"
                     }`}>
-                      <img
-                        src={secondBannerIconUrl}
-                        alt="Second Icon Badge"
-                        className="w-8 h-8 object-contain rounded-lg shrink-0"
-                      />
+                      <div className="relative w-8 h-8 rounded-lg shrink-0 overflow-hidden">
+                        <Image
+                          src={secondBannerIconUrl}
+                          alt="Second Icon Badge"
+                          fill
+                          className="object-contain"
+                          unoptimized
+                        />
+                      </div>
                       <span className="text-[11px] font-extrabold text-slate-900 dark:text-white leading-tight">
                         {badgeText}
                       </span>

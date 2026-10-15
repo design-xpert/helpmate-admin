@@ -69,9 +69,10 @@ import { getStoredModuleData, setCachedModuleData, isModuleCacheFresh } from "@/
 
 export default function CustomersPage() {
   const initialCached = getStoredModuleData<CustomerRow[]>("customers");
+  const initialCachedLocs = getStoredModuleData<ApiLocality[]>("customer_localities");
   const [customers, setCustomers] = useState<CustomerRow[]>(() => initialCached || []);
-  const [localities, setLocalities] = useState<ApiLocality[]>([]);
-  const [loading, setLoading] = useState(() => !initialCached || initialCached.length === 0);
+  const [localities, setLocalities] = useState<ApiLocality[]>(() => initialCachedLocs || []);
+  const [loading, setLoading] = useState(() => !(isModuleCacheFresh("customers", 30000) && initialCached && initialCached.length > 0));
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Filters & Search
@@ -112,11 +113,19 @@ export default function CustomersPage() {
   ] as const;
 
   // Load Localities from API
-  const fetchLocalities = useCallback(async () => {
+  const fetchLocalities = useCallback(async (force: boolean = false) => {
+    if (!force && isModuleCacheFresh("customer_localities", 30000)) {
+      const cached = getStoredModuleData<ApiLocality[]>("customer_localities");
+      if (cached && cached.length > 0) {
+        setLocalities(cached);
+        return;
+      }
+    }
     try {
-      const res = await getLocalitiesApi({ limit: 200 });
+      const res = await getLocalitiesApi({ limit: 200, forceRefresh: force });
       if (res && res.success !== false && Array.isArray(res.data)) {
         setLocalities(res.data);
+        setCachedModuleData("customer_localities", res.data);
       }
     } catch (err) {
       console.error("Error fetching localities:", err);
@@ -125,11 +134,15 @@ export default function CustomersPage() {
 
   // Fetch Customers from Backend API
   const fetchCustomers = useCallback(async (force: boolean = false) => {
-    if (!force && isModuleCacheFresh("customers", 30000) && customers.length > 0) {
-      setLoading(false);
-      return;
+    if (!force && !searchQuery && isModuleCacheFresh("customers", 30000)) {
+      const cached = getStoredModuleData<CustomerRow[]>("customers");
+      if (cached && cached.length > 0) {
+        setCustomers(cached);
+        setLoading(false);
+        return;
+      }
     }
-    if (customers.length === 0) {
+    if (customers.length === 0 && (!initialCached || initialCached.length === 0)) {
       setLoading(true);
     }
     setErrorMsg(null);

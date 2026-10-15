@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import {
   ShieldCheck,
   CheckCircle2,
@@ -140,12 +141,18 @@ export default function PartnerProfilePage() {
       <div className="p-6 sm:p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row items-center md:items-start justify-between gap-6">
         <div className="flex flex-col md:flex-row items-center md:items-start gap-6 text-center md:text-left">
           <div className="relative">
-            <img
-              src={profileData.avatar}
-              alt={profileData.name}
-              className="w-24 h-24 sm:w-28 sm:h-28 rounded-3xl object-cover border-4 border-white dark:border-slate-800 shadow-lg shrink-0"
-            />
-            <span className="absolute -bottom-1 -right-1 p-1.5 bg-emerald-500 text-white rounded-full text-xs ring-4 ring-white dark:ring-slate-900">
+            <div className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-3xl overflow-hidden border-4 border-white dark:border-slate-800 shadow-lg shrink-0">
+              {profileData.avatar ? (
+                <Image
+                  src={profileData.avatar}
+                  alt={profileData.name}
+                  fill
+                  unoptimized
+                  className="object-cover"
+                />
+              ) : null}
+            </div>
+            <span className="absolute -bottom-1 -right-1 p-1.5 bg-emerald-500 text-white rounded-full text-xs ring-4 ring-white dark:ring-slate-900 z-10">
               <CheckCircle2 className="w-4 h-4" />
             </span>
           </div>

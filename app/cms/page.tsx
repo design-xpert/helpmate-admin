@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { getStoredModuleData, setCachedModuleData, isModuleCacheFresh } from "@/lib/moduleCache";
+import { useState, useRef, useEffect, useMemo } from "react";
+import Image from "next/image";
+import { getStoredModuleData, setCachedModuleData, isModuleCacheFresh, clearModuleCache } from "@/lib/moduleCache";
 import { DataTable, Column } from "@/components/DataTable";
 import { RowActionMenu } from "@/components/RowActionMenu";
 import { TableImage } from "@/components/TableImage";
@@ -37,7 +38,7 @@ import {
   formatImageUrl,
 } from "@/lib/api";
 import { ShimmerRow, ShimmerCardGrid } from "@/components/ShimmerLoader";
-import { Wrench, Plus, CheckCircle2, MapPin, Tag, X, Filter, Sliders, Briefcase, Trash2, Link, Layers, AlertCircle, Edit, ChevronDown, FileImage, Upload, Megaphone, Eye, Flame, Image as ImageIcon, Link as LinkIcon, Copy } from "lucide-react";
+import { Wrench, Plus, CheckCircle2, MapPin, Tag, X, Filter, Sliders, Briefcase, Trash2, Link, Layers, AlertCircle, Edit, ChevronDown, FileImage, Upload, Megaphone, Eye, Flame, Image as ImageIcon, Link as LinkIcon, Copy, Loader2 } from "lucide-react";
 
 function safeStr(val: any): string {
   if (val === null || val === undefined) return "";
@@ -100,6 +101,7 @@ interface ServiceOfferingRow {
   excludeFromPackage?: string[];
   thumbnailUrl?: string;
   imageFile?: File;
+  imageRemoved?: boolean;
   addonIds?: string[];
 }
 
@@ -166,12 +168,19 @@ export default function CmsPage() {
   };
 
   // Enhanced Services state — live API data only (no manual mock data)
-  const initialCachedServices = getStoredModuleData<ServiceItem[]>("cms_services");
-  const [services, setServices] = useState<ServiceItem[]>(() => initialCachedServices || []);
-  const [addons, setAddons] = useState<ServiceAddon[]>([]);
-  const [localities, setLocalities] = useState<VaranasiLocality[]>([]);
+  const initialCachedServices = getStoredModuleData<ServiceItem[]>("cms_services") || [];
+  const initialCachedAddons = getStoredModuleData<ServiceAddon[]>("cms_addons") || [];
+  const initialCachedLocalities = getStoredModuleData<VaranasiLocality[]>("cms_localities") || [];
+
+  const [services, setServices] = useState<ServiceItem[]>(() => initialCachedServices);
+  const [addons, setAddons] = useState<ServiceAddon[]>(() => initialCachedAddons);
+  const [localities, setLocalities] = useState<VaranasiLocality[]>(() => initialCachedLocalities);
   const [activeTab, setActiveTab] = useState<"services" | "addons" | "pincodes">("services");
-  const [isLoading, setIsLoading] = useState<boolean>(() => !initialCachedServices || initialCachedServices.length === 0);
+  
+  // If cache is fresh (< 30s), don't show any loader at all! Exact data shows with 0 delay
+  const [isLoading, setIsLoading] = useState<boolean>(() => {
+    return !(isModuleCacheFresh("cms_services", 30000) && initialCachedServices.length > 0);
+  });
 
   // Category Filter Flow State
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>("All Categories");
@@ -182,19 +191,22 @@ export default function CmsPage() {
     force: boolean = false,
     categoryId?: string
   ) => {
-    const activeCatId = categoryId !== undefined ? categoryId : selectedCategoryIdFilter;
-    if (!force && !activeCatId && isModuleCacheFresh("cms_services", 30000) && services.length > 0) {
-      setIsLoading(false);
-      return;
+    const activeCatId = categoryId !== undefined ? categoryId : "";
+    if (!force && isModuleCacheFresh("cms_services", 30000)) {
+      const cached = getStoredModuleData<ServiceItem[]>("cms_services");
+      if (cached && cached.length > 0) {
+        setServices(cached);
+        setIsLoading(false);
+        return;
+      }
     }
-    // Keep the table mounted during background refreshes so its search and
-    // pagination state survive package edits.
-    if (services.length === 0 || activeCatId) {
+    // Only show full loader if table has no data yet to keep table mounted during refreshes
+    if (services.length === 0 && initialCachedServices.length === 0) {
       setIsLoading(true);
     }
     try {
       const catsToUse = (catsList && catsList.length > 0) ? catsList : categoriesFromApi;
-      const params: any = { limit: 100, forceRefresh: force || Boolean(activeCatId) };
+      const params: any = { limit: 100, forceRefresh: force };
       if (activeCatId && activeCatId !== "all" && activeCatId !== "") {
         params.categoryId = activeCatId;
       }
@@ -269,7 +281,11 @@ export default function CmsPage() {
             const descriptionVal = s.description ? safeStr(s.description) : `Expert ${titleStr} service with 30-day HelpMate guarantee`;
 
             const rawImg = s.imageUrl || s.thumbnailUrl || "";
-            const thumbVal = rawImg;
+            const thumbVal = rawImg
+              ? (rawImg.startsWith("data:") || rawImg.startsWith("blob:")
+                  ? rawImg
+                  : `${rawImg}${rawImg.includes("?") ? "&" : "?"}v=${s.updatedAt ? new Date(s.updatedAt).getTime() : Date.now()}`)
+              : "";
 
             const rawAddons = s.addons || [];
             const mappedAddons = Array.isArray(rawAddons)
@@ -296,6 +312,7 @@ export default function CmsPage() {
               systemType: [actionVal],
               serviceAction: actionVal,
               thumbnailUrl: thumbVal,
+              imageUrl: thumbVal,
               addons: mappedAddons as any,
               status: s.status !== false ? "Active" : "Inactive",
               createdBy: "Admin Coordinator",
@@ -315,13 +332,20 @@ export default function CmsPage() {
     }
   };
 
-  const fetchAddonsFromBackend = async (catId?: string, subCatId?: string) => {
+  const fetchAddonsFromBackend = async (catId?: string, subCatId?: string, force: boolean = false) => {
+    if (!force && !catId && !subCatId && isModuleCacheFresh("cms_addons", 30000)) {
+      const cached = getStoredModuleData<ServiceAddon[]>("cms_addons");
+      if (cached && cached.length > 0) {
+        setAddons(cached);
+        return;
+      }
+    }
     try {
       let res;
       if (catId || subCatId) {
-        res = await getAddonDropdownApi({ categoryId: catId, subCategoryId: subCatId, forceRefresh: true });
+        res = await getAddonDropdownApi({ categoryId: catId, subCategoryId: subCatId, forceRefresh: force });
       } else {
-        res = await getAddonsApi({ forceRefresh: true });
+        res = await getAddonsApi({ forceRefresh: force });
       }
 
       let rawList: any[] = [];
@@ -348,6 +372,9 @@ export default function CmsPage() {
         status: a.status !== false ? "Active" : "Inactive",
       }));
       setAddons(mapped);
+      if (!catId && !subCatId) {
+        setCachedModuleData("cms_addons", mapped);
+      }
     } catch (e) {
       console.error("fetchAddonsFromBackend error:", e);
       setAddons([]);
@@ -355,11 +382,15 @@ export default function CmsPage() {
   };
 
   const fetchCategoriesFromBackend = async (force: boolean = false): Promise<ApiCategory[]> => {
-    if (!force && isModuleCacheFresh("cms_categories_api", 30000) && categoriesFromApi.length > 0) {
-      return categoriesFromApi;
+    if (!force && isModuleCacheFresh("cms_categories_api", 30000)) {
+      const cached = getStoredModuleData<ApiCategory[]>("cms_categories_api");
+      if (cached && cached.length > 0) {
+        setCategoriesFromApi(cached);
+        return cached;
+      }
     }
     try {
-      const res = await getCategoriesApi();
+      const res = await getCategoriesApi({ forceRefresh: force });
       if (res.success && Array.isArray(res.data) && res.data.length > 0) {
         setCategoriesFromApi(res.data);
         setCachedModuleData("cms_categories_api", res.data);
@@ -377,35 +408,39 @@ export default function CmsPage() {
   };
 
   const fetchServiceActionsFromBackend = async (catId?: string, subCatId?: string, force: boolean = false) => {
-    if (!force && !catId && !subCatId && isModuleCacheFresh("cms_service_actions", 30000) && serviceActionsFromApi.length > 0) {
+    // Only call this API when category or subcategory is selected
+    if (!catId) {
+      setServiceActionsFromApi([]);
+      setServiceActionsList([]);
       return;
     }
     try {
-      let res;
-      if (catId && subCatId) {
-        res = await getServiceActionDropdownApi({ categoryId: catId, subCategoryId: subCatId });
-      } else if (catId) {
-        res = await getServiceActionDropdownApi({ categoryId: catId });
-      } else {
-        res = await getServiceActionsApi();
-      }
+      const res = await getServiceActionDropdownApi({
+        categoryId: catId,
+        subCategoryId: subCatId || undefined,
+        forceRefresh: force,
+      });
       const rawList = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []);
       if (res && res.success !== false) {
         setServiceActionsFromApi(rawList);
         const names = rawList.map((a: any) => a.serviceAction || a.name || "").filter(Boolean);
         setServiceActionsList(Array.from(new Set(names)));
-        if (!catId && !subCatId) {
-          setCachedModuleData("cms_service_actions", rawList);
-        }
       }
     } catch (e) {
       console.error("fetchServiceActionsFromBackend error:", e);
     }
   };
 
-  const fetchLocalitiesFromBackend = async () => {
+  const fetchLocalitiesFromBackend = async (force: boolean = false) => {
+    if (!force && isModuleCacheFresh("cms_localities", 30000)) {
+      const cached = getStoredModuleData<VaranasiLocality[]>("cms_localities");
+      if (cached && cached.length > 0) {
+        setLocalities(cached);
+        return;
+      }
+    }
     try {
-      const res = await getLocalitiesApi({ forceRefresh: true });
+      const res = await getLocalitiesApi({ forceRefresh: force });
       const rawList = res?.data?.localities || (Array.isArray(res?.data) ? res.data : []);
       if (res && res.success !== false) {
         const mapped: VaranasiLocality[] = rawList.map((l: ApiLocality) => ({
@@ -418,6 +453,7 @@ export default function CmsPage() {
           isServiceable: l.status !== false,
         }));
         setLocalities(mapped);
+        setCachedModuleData("cms_localities", mapped);
       }
     } catch (e) {
       console.error("fetchLocalitiesFromBackend error:", e);
@@ -426,11 +462,28 @@ export default function CmsPage() {
 
   useEffect(() => {
     const loadAllData = async () => {
-      const cats = await fetchCategoriesFromBackend();
-      await fetchServiceActionsFromBackend();
-      await fetchServicesFromBackend(cats);
-      fetchAddonsFromBackend();
-      fetchLocalitiesFromBackend();
+      // Check if all module data is fresh (within 30 seconds)
+      const hasFreshServices = isModuleCacheFresh("cms_services", 30000) && initialCachedServices.length > 0;
+      const hasFreshCats = isModuleCacheFresh("cms_categories_api", 30000) && initialCachedCats.length > 0;
+      const hasFreshAddons = isModuleCacheFresh("cms_addons", 30000) && initialCachedAddons.length > 0;
+      const hasFreshLocalities = isModuleCacheFresh("cms_localities", 30000) && initialCachedLocalities.length > 0;
+
+      // If all data was loaded within 30 seconds, DO NOT CALL ANY APIS! Show exact data with zero load!
+      if (hasFreshServices && hasFreshCats && hasFreshAddons && hasFreshLocalities) {
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        const [cats] = await Promise.all([
+          fetchCategoriesFromBackend(),
+          fetchAddonsFromBackend(),
+          fetchLocalitiesFromBackend(),
+        ]);
+        await fetchServicesFromBackend(cats);
+      } catch (e) {
+        console.error("loadAllData error:", e);
+      }
     };
     loadAllData();
   }, []);
@@ -474,26 +527,36 @@ export default function CmsPage() {
     if (serviceId.length === 24) {
       await deletePackageApi(serviceId);
     }
-    setServices((prev) => prev.filter((s) => s.id !== serviceId));
+    setServices((prev) => {
+      const updated = prev.filter((s) => s.id !== serviceId);
+      setCachedModuleData("cms_services", updated);
+      return updated;
+    });
   };
 
   const handleToggleServiceStatus = async (serviceId: string, currentStatus?: string) => {
     const newStatusBool = currentStatus !== "Active";
-    const newStatusStr = newStatusBool ? "Active" : "Inactive";
+    const newStatusStr: "Active" | "Inactive" = newStatusBool ? "Active" : "Inactive";
 
     if (serviceId.length === 24) {
       await updatePackageApi(serviceId, { status: newStatusBool });
     }
-    setServices((prev) =>
-      prev.map((s) => (s.id === serviceId ? { ...s, status: newStatusStr } : s))
-    );
+    setServices((prev) => {
+      const updated = prev.map((s) => (s.id === serviceId ? { ...s, status: newStatusStr } : s));
+      setCachedModuleData("cms_services", updated);
+      return updated;
+    });
   };
 
   const handleDeleteAddon = async (addonId: string) => {
     if (addonId.length === 24) {
       await deleteAddonApi(addonId);
     }
-    setAddons((prev) => prev.filter((a) => a.id !== addonId));
+    setAddons((prev) => {
+      const updated = prev.filter((a) => a.id !== addonId);
+      setCachedModuleData("cms_addons", updated);
+      return updated;
+    });
   };
 
   const handleToggleAddonStatus = async (addonId: string, currentStatus?: string) => {
@@ -503,9 +566,11 @@ export default function CmsPage() {
     if (addonId.length === 24) {
       await toggleAddonStatusApi(addonId, newStatusBool);
     }
-    setAddons((prev) =>
-      prev.map((a) => (a.id === addonId ? { ...a, status: newStatusStr } : a))
-    );
+    setAddons((prev) => {
+      const updated = prev.map((a) => (a.id === addonId ? { ...a, status: newStatusStr } : a));
+      setCachedModuleData("cms_addons", updated);
+      return updated;
+    });
   };
 
   // Website Visitor Promo Popup Banner State
@@ -518,12 +583,10 @@ export default function CmsPage() {
   // Selected Service Details & Add-ons Modal State
   const [selectedService, setSelectedService] = useState<ServiceItem | null>(null);
 
-  // Category Filter Flow Actions
-  const handleSelectCategoryFilter = async (catId: string, catName: string) => {
+  // Category Filter Flow Actions (instantaneous in-memory filtering)
+  const handleSelectCategoryFilter = (catId: string, catName: string) => {
     setSelectedCategoryIdFilter(catId);
     setSelectedCategoryFilter(catName);
-    setIsLoading(true);
-    await fetchServicesFromBackend(categoriesFromApi, true, catId);
   };
 
   const categoriesList = [
@@ -614,6 +677,7 @@ export default function CmsPage() {
       accessor: (row) => (
         <TableImage
           src={row.thumbnailUrl || (row as any).imageUrl}
+          packageId={row.id}
           alt={row.title}
           fallbackIcon="wrench"
         />
@@ -900,6 +964,11 @@ export default function CmsPage() {
   const [isAddServiceOpen, setIsAddServiceOpen] = useState(false);
   const [isAddAddonOpen, setIsAddAddonOpen] = useState(false);
   const [isAddPincodeOpen, setIsAddPincodeOpen] = useState(false);
+  const [isSavingService, setIsSavingService] = useState(false);
+  const [isSavingAddon, setIsSavingAddon] = useState(false);
+  const [isSavingAction, setIsSavingAction] = useState(false);
+  const [isSavingCategory, setIsSavingCategory] = useState(false);
+  const [isSavingSubcategory, setIsSavingSubcategory] = useState(false);
 
   // Step 1 State: Master Category & Option to Add New Category
   const [serviceCategory, setServiceCategory] = useState("");
@@ -1061,8 +1130,8 @@ export default function CmsPage() {
   const [pincodeCode, setPincodeCode] = useState("221005");
 
   const handleAddOfferingRow = () => {
-    setServiceOfferings([
-      ...serviceOfferings,
+    setServiceOfferings((prev) => [
+      ...prev,
       {
         id: `offering-${Date.now()}`,
         title: "",
@@ -1073,15 +1142,29 @@ export default function CmsPage() {
         description: "",
         includeInPackage: ["• "],
         excludeFromPackage: ["• "],
+        thumbnailUrl: "",
+        imageFile: undefined,
+        imageRemoved: false,
         addonIds: [],
       },
     ]);
   };
 
-  const handleUpdateOfferingRow = (index: number, field: keyof ServiceOfferingRow, value: any) => {
-    const updated = [...serviceOfferings];
-    updated[index] = { ...updated[index], [field]: value };
-    setServiceOfferings(updated);
+  const handleUpdateOfferingRow = (
+    index: number,
+    fieldOrUpdates: keyof ServiceOfferingRow | Partial<ServiceOfferingRow>,
+    value?: any
+  ) => {
+    setServiceOfferings((prev) => {
+      const updated = [...prev];
+      if (!updated[index]) return prev;
+      if (typeof fieldOrUpdates === "object") {
+        updated[index] = { ...updated[index], ...fieldOrUpdates };
+      } else {
+        updated[index] = { ...updated[index], [fieldOrUpdates]: value };
+      }
+      return updated;
+    });
   };
 
   const handlePackageListEnter = (
@@ -1208,9 +1291,8 @@ export default function CmsPage() {
   const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
 
   const openAddServiceDrawer = () => {
-    fetchServiceActionsFromBackend();
-    fetchCategoriesFromBackend();
-    fetchAddonsFromBackend();
+    if (categoriesFromApi.length === 0) fetchCategoriesFromBackend();
+    if (addons.length === 0) fetchAddonsFromBackend();
     setEditingServiceId(null);
     setServiceCategory("");
     setSelectedSubcategory("");
@@ -1235,25 +1317,7 @@ export default function CmsPage() {
     setIsAddServiceOpen(true);
   };
 
-  const openEditServiceDrawer = async (item: ServiceItem) => {
-    let packageDetails: Record<string, any> = {};
-    if (item.id.length === 24) {
-      const packageRes = await getPackageByIdApi(item.id);
-      const responseData = packageRes?.data;
-      const detail = packageRes?.package
-        || responseData?.package
-        || responseData?.data?.package
-        || responseData?.data
-        || responseData;
-      if (detail && typeof detail === "object" && !Array.isArray(detail)) {
-        packageDetails = detail;
-      }
-    }
-    const packageValues: Record<string, unknown> = { ...item, ...packageDetails };
-
-    fetchServiceActionsFromBackend();
-    fetchCategoriesFromBackend();
-    fetchAddonsFromBackend();
+  const openEditServiceDrawer = (item: ServiceItem) => {
     setEditingServiceId(item.id);
 
     // Prefill Category
@@ -1292,40 +1356,37 @@ export default function CmsPage() {
       setServiceActionsList((prev) => (prev.includes(actionVal) ? prev : [actionVal, ...prev]));
     }
 
-    const catIdToUse = matchedCategory?._id || item.categoryId;
-    const subCatIdToUse = matchedSub?._id || item.subCategoryId;
-    fetchAddonsFromBackend(catIdToUse, subCatIdToUse);
-    fetchServiceActionsFromBackend(catIdToUse, subCatIdToUse);
-
-    // Prefill Addons & Package Image
-    const extractedAddonIds = Array.isArray(packageValues.addons)
-      ? packageValues.addons.map((a: any) => (typeof a === "string" ? a : (a.id || a._id))).filter(Boolean)
+    // Prefill Addons & Package Image from existing item
+    const extractedAddonIds = Array.isArray(item.addons)
+      ? item.addons.map((a: any) => (typeof a === "string" ? a : (a.id || a._id))).filter(Boolean)
       : [];
 
-    const packageImage = safeStr(packageValues.thumbnailUrl) || safeStr(packageValues.imageUrl);
-    const includedItems = safeStringArray(packageValues.includeInPackage);
-    const excludedItems = safeStringArray(packageValues.excludeFromPackage);
+    const packageImage = safeStr(item.thumbnailUrl) || safeStr((item as any).imageUrl);
+    const includedItems = safeStringArray(item.includeInPackage);
+    const excludedItems = safeStringArray(item.excludeFromPackage);
 
     setServiceOfferings([
       {
         id: item.id,
-        title: safeStr(packageValues.packageName) || item.title,
-        subtitle: safeStr(packageValues.subtitle),
-        price: Number(packageValues.price ?? item.price),
-        originalPrice: Number(packageValues.originalPrice ?? item.originalPrice),
-        duration: typeof packageValues.duration === "number"
-          ? `${packageValues.duration} mins`
-          : safeStr(packageValues.duration) || item.duration,
-        description: safeStr(packageValues.description) || item.description || item.subtitle || "",
+        title: item.title,
+        subtitle: safeStr(item.subtitle),
+        price: Number(item.price),
+        originalPrice: Number(item.originalPrice),
+        duration: typeof item.duration === "number"
+          ? `${item.duration} mins`
+          : safeStr(item.duration) || "45 mins",
+        description: safeStr(item.description) || safeStr(item.subtitle) || "",
         includeInPackage: includedItems.length ? includedItems : ["• "],
         excludeFromPackage: excludedItems.length ? excludedItems : ["• "],
         thumbnailUrl: packageImage,
+        imageFile: undefined,
+        imageRemoved: false,
         addonIds: extractedAddonIds,
       },
     ]);
 
-    if (Array.isArray(packageValues.addons)) {
-      const extraAddons: ServiceAddon[] = packageValues.addons
+    if (Array.isArray(item.addons)) {
+      const extraAddons: ServiceAddon[] = item.addons
         .filter((a: any) => typeof a === "object" && a !== null && (a.id || a._id))
         .map((a: any) => ({
           id: a._id || a.id,
@@ -1344,11 +1405,13 @@ export default function CmsPage() {
       }
     }
 
+    // Instant drawer opening with zero delay and zero API calls
     setIsAddServiceOpen(true);
   };
 
   const handleCreateService = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSavingService) return;
 
     const finalCategory = isAddingNewCategory && newCategoryName.trim()
       ? newCategoryName.trim()
@@ -1370,164 +1433,185 @@ export default function CmsPage() {
       return;
     }
 
-    const catsRes = await getCategoriesApi({ forceRefresh: true });
-    const allCategories: ApiCategory[] = (catsRes && catsRes.success && Array.isArray(catsRes.data) && catsRes.data.length > 0)
-      ? catsRes.data
-      : categoriesFromApi;
+    setIsSavingService(true);
+    try {
+      if (editingServiceId) {
+        // UPDATE MODE: Call ONLY updatePackageApi and recall package API!
+        // DO NOT call getCategoriesApi, getServiceActionDropdownApi, or createServiceActionApi!
+        const firstOff = validOfferings[0];
+        const packageAddonIds = (firstOff.addonIds || []).filter((id) => id.length === 24);
 
-    const matchedCat = allCategories.find(
-      (c: ApiCategory) =>
-        (c.categoryName && c.categoryName.toLowerCase().trim() === finalCategory.toLowerCase().trim()) ||
-        c._id === finalCategory
-    ) || allCategories[0];
-
-    const subCatObj = selectedSubcategory
-      ? matchedCat?.subCategories?.find(
-        (sub: any) =>
-          (sub.name && sub.name.toLowerCase().trim() === selectedSubcategory.toLowerCase().trim()) ||
-          sub._id === selectedSubcategory
-      )
-      : undefined;
-
-    const catIdToUse = matchedCat?._id;
-    const subCatIdToUse = subCatObj?._id || undefined;
-
-    if (!catIdToUse) {
-      toast.error("Category Error", "Unable to resolve category ID. Please check backend categories.");
-      return;
-    }
-
-    let matchedActionObj = (serviceActionsFromApi || []).find(
-      (act: any) =>
-        act._id === selectedServiceAction ||
-        act.serviceAction === selectedServiceAction ||
-        act.name === selectedServiceAction ||
-        act.serviceName === selectedServiceAction
-    );
-    let actionIdToUse = matchedActionObj?._id || (selectedServiceAction?.length === 24 ? selectedServiceAction : undefined);
-
-    if (!actionIdToUse && selectedServiceAction && catIdToUse) {
-      const dropRes = await getServiceActionDropdownApi({ categoryId: catIdToUse, subCategoryId: subCatIdToUse || undefined });
-      const dropList = Array.isArray(dropRes?.data) ? dropRes.data : [];
-      const foundInDrop = dropList.find(
-        (act: any) =>
-          act._id === selectedServiceAction ||
-          act.serviceAction === selectedServiceAction ||
-          act.name === selectedServiceAction
-      );
-      if (foundInDrop?._id) {
-        actionIdToUse = foundInDrop._id;
-      } else {
-        const createActRes = await createServiceActionApi({
-          categoryId: catIdToUse,
-          subCategoryId: subCatIdToUse || undefined,
-          serviceAction: selectedServiceAction,
-        });
-        if (createActRes?.success && createActRes?.data?._id) {
-          actionIdToUse = createActRes.data._id;
-        } else {
-          const retryDrop = await getServiceActionDropdownApi({ categoryId: catIdToUse, subCategoryId: subCatIdToUse || undefined });
-          const retryList = Array.isArray(retryDrop?.data) ? retryDrop.data : [];
-          const retryFound = retryList.find(
-            (act: any) =>
-              (act.serviceAction || act.name || "").toLowerCase().trim() === selectedServiceAction.toLowerCase().trim()
-          );
-          if (retryFound?._id) {
-            actionIdToUse = retryFound._id;
-          }
-        }
-      }
-    }
-
-    if (editingServiceId) {
-      // EDIT MODE: Update existing package
-      const firstOff = validOfferings[0];
-      const packageAddonIds = (firstOff.addonIds || []).filter((id) => id.length === 24);
-
-      if (editingServiceId.length === 24) {
-        let updatePayload: any;
-        if (firstOff.imageFile instanceof File) {
+        if (editingServiceId.length === 24) {
           const form = new FormData();
-          form.append("image", firstOff.imageFile);
           form.append("packageName", firstOff.title);
-          if (firstOff.subtitle && firstOff.subtitle.trim()) form.append("subtitle", firstOff.subtitle.trim());
-          if (firstOff.description && firstOff.description.trim()) form.append("description", firstOff.description.trim());
+          form.append("subtitle", firstOff.subtitle && firstOff.subtitle.trim() ? firstOff.subtitle.trim() : "");
+          form.append("description", firstOff.description && firstOff.description.trim() ? firstOff.description.trim() : "");
           form.append("price", String(firstOff.price));
           form.append("duration", String(parseInt(String(firstOff.duration)) || 45));
           form.append("originalPrice", String(firstOff.originalPrice || Math.round((firstOff.price || 699) * 1.3)));
           form.append("includeInPackage", JSON.stringify(cleanPackagePoints(firstOff.includeInPackage)));
           form.append("excludeFromPackage", JSON.stringify(cleanPackagePoints(firstOff.excludeFromPackage)));
-          if (packageAddonIds.length > 0) {
-            packageAddonIds.forEach((addonId) => form.append("addons", addonId));
-          } else {
-            form.append("addons", JSON.stringify([]));
-          }
-          updatePayload = form;
-        } else {
-          updatePayload = {
-            serviceId: actionIdToUse || catIdToUse,
-            serviceActionId: actionIdToUse,
-            categoryId: catIdToUse,
-            subCategoryId: subCatIdToUse,
-            serviceAction: selectedServiceAction,
-            packageName: firstOff.title,
-            subtitle: firstOff.subtitle && firstOff.subtitle.trim() ? firstOff.subtitle.trim() : undefined,
-            description: firstOff.description && firstOff.description.trim() ? firstOff.description.trim() : undefined,
-            price: firstOff.price,
-            duration: parseInt(String(firstOff.duration)) || 45,
-            originalPrice: firstOff.originalPrice || Math.round((firstOff.price || 699) * 1.3),
-            includeInPackage: cleanPackagePoints(firstOff.includeInPackage),
-            excludeFromPackage: cleanPackagePoints(firstOff.excludeFromPackage),
-            imageUrl: firstOff.thumbnailUrl || "",
-            thumbnailUrl: firstOff.thumbnailUrl || "",
-            addons: packageAddonIds,
-          };
-        }
+          // Send addons in array format (works for 0, 1, or multiple addons)
+          form.append("addons", JSON.stringify(packageAddonIds));
 
-        const updatePkgRes = await updatePackageApi(editingServiceId, updatePayload);
-        if (updatePkgRes && updatePkgRes.success === false) {
-          toast.error("Update Package Failed", updatePkgRes.message || "Unknown error");
-        } else {
+          // Use selected action directly if it's an ID or found in existing serviceActionsFromApi (zero network calls)
+          const matchedActionObj = (serviceActionsFromApi || []).find(
+            (act: any) =>
+              act._id === selectedServiceAction ||
+              act.serviceAction === selectedServiceAction ||
+              act.name === selectedServiceAction ||
+              act.serviceName === selectedServiceAction
+          );
+          const actionIdToUse = matchedActionObj?._id || (selectedServiceAction?.length === 24 ? selectedServiceAction : undefined);
+          if (actionIdToUse) {
+            form.append("serviceActionId", actionIdToUse);
+          }
+
+          if (firstOff.imageFile instanceof File) {
+            form.append("image", firstOff.imageFile);
+          } else if (firstOff.imageRemoved || !firstOff.thumbnailUrl) {
+            form.append("removeImage", "true");
+            form.append("imageUrl", "");
+          }
+
+          const updatePkgRes = await updatePackageApi(editingServiceId, form);
+          if (updatePkgRes && updatePkgRes.success === false) {
+            toast.error("Update Package Failed", updatePkgRes.message || "Unknown error");
+            return;
+          }
+
           toast.success("Package Updated", `"${firstOff.title}" package updated successfully.`);
-        }
-      }
 
-      if (validOfferings.length > 1) {
-        if (actionIdToUse && actionIdToUse.length === 24) {
-          const extraPackageListPayload = validOfferings.slice(1).map((off) => ({
-            packageName: off.title,
-            subtitle: off.subtitle && off.subtitle.trim() ? off.subtitle.trim() : undefined,
-            description: off.description && off.description.trim() ? off.description.trim() : `${off.title} service`,
-            price: off.price,
-            originalPrice: off.originalPrice || Math.round((off.price || 699) * 1.3),
-            includeInPackage: cleanPackagePoints(off.includeInPackage),
-            excludeFromPackage: cleanPackagePoints(off.excludeFromPackage),
-            duration: parseInt(String(off.duration)) || 45,
-            imageUrl: off.thumbnailUrl || "",
-            thumbnailUrl: off.thumbnailUrl || "",
-            imageFile: off.imageFile,
-            addons: (off.addonIds || []).filter((id) => id.length === 24),
-          }));
+          // 1. Instantly close the sliding form drawer
+          setIsAddServiceOpen(false);
+          setEditingServiceId(null);
+          setIsAddingNewCategory(false);
+          setNewCategoryName("");
 
-          const createExtraRes = await createPackageApi({
-            serviceActionId: actionIdToUse,
-            packages: extraPackageListPayload,
-          });
+          // 2. Immediate table update for instant 0ms visual feedback
+          setServices((prev) =>
+            prev.map((s) => {
+              if (s.id === editingServiceId) {
+                return {
+                  ...s,
+                  title: firstOff.title,
+                  subtitle: safeStr(firstOff.subtitle),
+                  description: safeStr(firstOff.description) || s.description,
+                  price: Number(firstOff.price),
+                  originalPrice: Number(firstOff.originalPrice) || Math.round(Number(firstOff.price) * 1.3),
+                  duration: typeof firstOff.duration === "number" ? `${firstOff.duration} mins` : (firstOff.duration || "45 mins"),
+                  includeInPackage: cleanPackagePoints(firstOff.includeInPackage),
+                  excludeFromPackage: cleanPackagePoints(firstOff.excludeFromPackage),
+                  thumbnailUrl: firstOff.imageFile instanceof File
+                    ? (firstOff.thumbnailUrl || s.thumbnailUrl || "")
+                    : (firstOff.imageRemoved ? "" : (firstOff.thumbnailUrl || "")),
+                  imageUrl: firstOff.imageFile instanceof File
+                    ? (firstOff.thumbnailUrl || s.thumbnailUrl || "")
+                    : (firstOff.imageRemoved ? "" : ((s as any).imageUrl || firstOff.thumbnailUrl || "")),
+                };
+              }
+              return s;
+            })
+          );
 
-          if (createExtraRes && createExtraRes.success === false) {
-            const errMsg = createExtraRes.errors ? createExtraRes.errors.join(", ") : (createExtraRes.message || "Unknown error");
-            toast.error("Create Package Failed", errMsg);
-          } else {
-            toast.success("Additional Packages Created", `Created ${extraPackageListPayload.length} additional package(s).`);
+          if (validOfferings.length > 1 && actionIdToUse && actionIdToUse.length === 24) {
+            const extraPackageListPayload = validOfferings.slice(1).map((off) => ({
+              packageName: off.title,
+              subtitle: off.subtitle && off.subtitle.trim() ? off.subtitle.trim() : undefined,
+              description: off.description && off.description.trim() ? off.description.trim() : `${off.title} service`,
+              price: off.price,
+              originalPrice: off.originalPrice || Math.round((off.price || 699) * 1.3),
+              includeInPackage: cleanPackagePoints(off.includeInPackage),
+              excludeFromPackage: cleanPackagePoints(off.excludeFromPackage),
+              duration: parseInt(String(off.duration)) || 45,
+              imageUrl: off.thumbnailUrl || "",
+              thumbnailUrl: off.thumbnailUrl || "",
+              imageFile: off.imageFile,
+              addons: (off.addonIds || []).filter((id) => id.length === 24),
+            }));
+
+            await createPackageApi({
+              serviceActionId: actionIdToUse,
+              packages: extraPackageListPayload,
+            });
           }
+        }
+
+        // 3. Recall package API from backend to reload and guarantee 100% perfect, current data
+        await fetchServicesFromBackend(categoriesFromApi, true);
+        return;
+      }
+
+      // CREATE MODE: Add new package offers matching POST /api/package schema
+      const catsRes = await getCategoriesApi({ forceRefresh: true });
+      const allCategories: ApiCategory[] = (catsRes && catsRes.success && Array.isArray(catsRes.data) && catsRes.data.length > 0)
+        ? catsRes.data
+        : categoriesFromApi;
+
+      const matchedCat = allCategories.find(
+        (c: ApiCategory) =>
+          (c.categoryName && c.categoryName.toLowerCase().trim() === finalCategory.toLowerCase().trim()) ||
+          c._id === finalCategory
+      ) || allCategories[0];
+
+      const subCatObj = selectedSubcategory
+        ? matchedCat?.subCategories?.find(
+          (sub: any) =>
+            (sub.name && sub.name.toLowerCase().trim() === selectedSubcategory.toLowerCase().trim()) ||
+            sub._id === selectedSubcategory
+        )
+        : undefined;
+
+      const catIdToUse = matchedCat?._id;
+      const subCatIdToUse = subCatObj?._id || undefined;
+
+      if (!catIdToUse) {
+        toast.error("Category Error", "Unable to resolve category ID. Please check backend categories.");
+        return;
+      }
+
+      let matchedActionObj = (serviceActionsFromApi || []).find(
+        (act: any) =>
+          act._id === selectedServiceAction ||
+          act.serviceAction === selectedServiceAction ||
+          act.name === selectedServiceAction ||
+          act.serviceName === selectedServiceAction
+      );
+      let actionIdToUse = matchedActionObj?._id || (selectedServiceAction?.length === 24 ? selectedServiceAction : undefined);
+
+      if (!actionIdToUse && selectedServiceAction && catIdToUse) {
+        const dropRes = await getServiceActionDropdownApi({ categoryId: catIdToUse, subCategoryId: subCatIdToUse || undefined });
+        const dropList = Array.isArray(dropRes?.data) ? dropRes.data : [];
+        const foundInDrop = dropList.find(
+          (act: any) =>
+            act._id === selectedServiceAction ||
+            act.serviceAction === selectedServiceAction ||
+            act.name === selectedServiceAction
+        );
+        if (foundInDrop?._id) {
+          actionIdToUse = foundInDrop._id;
         } else {
-          toast.error("Service Action Required", "A valid Service Action ID is required to create additional packages.");
+          const createActRes = await createServiceActionApi({
+            categoryId: catIdToUse,
+            subCategoryId: subCatIdToUse || undefined,
+            serviceAction: selectedServiceAction,
+          });
+          if (createActRes?.success && createActRes?.data?._id) {
+            actionIdToUse = createActRes.data._id;
+          } else {
+            const retryDrop = await getServiceActionDropdownApi({ categoryId: catIdToUse, subCategoryId: subCatIdToUse || undefined });
+            const retryList = Array.isArray(retryDrop?.data) ? retryDrop.data : [];
+            const retryFound = retryList.find(
+              (act: any) =>
+                (act.serviceAction || act.name || "").toLowerCase().trim() === selectedServiceAction.toLowerCase().trim()
+            );
+            if (retryFound?._id) {
+              actionIdToUse = retryFound._id;
+            }
+          }
         }
       }
 
-      await fetchServicesFromBackend();
-    } else {
-      // CREATE MODE: Add new package offers matching POST /api/package schema
       if (!actionIdToUse || actionIdToUse.length !== 24) {
         toast.error("Service Action Required", "A valid Service Action ID is required before creating packages.");
         return;
@@ -1558,75 +1642,92 @@ export default function CmsPage() {
         toast.error("Create Package Failed", errMsg);
       } else {
         toast.success("Package Created", `Successfully created ${packageListPayload.length} service package(s).`);
-        await fetchServicesFromBackend();
+        // Force-refresh package list to display the new data in the table
+        await fetchServicesFromBackend(categoriesFromApi, true);
       }
-    }
 
-    if (isAddingNewCategory && newCategoryName.trim()) {
-      setCustomCategories([...customCategories, newCategoryName.trim()]);
-    }
+      if (isAddingNewCategory && newCategoryName.trim()) {
+        setCustomCategories([...customCategories, newCategoryName.trim()]);
+      }
 
-    setEditingServiceId(null);
-    setIsAddingNewCategory(false);
-    setNewCategoryName("");
-    setIsAddServiceOpen(false);
+      setEditingServiceId(null);
+      setIsAddingNewCategory(false);
+      setNewCategoryName("");
+      setIsAddServiceOpen(false);
+    } catch (err: any) {
+      console.error("handleCreateService error:", err);
+      toast.error("Save Failed", err?.message || "Failed to save service package.");
+    } finally {
+      setIsSavingService(false);
+    }
   };
 
   const handleSaveAddon = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSavingAddon) return;
     if (!addonTitle.trim()) {
       toast.error("Title Required", "Add-on Item Title is required.");
       return;
     }
 
-    const matchedCat = categoriesFromApi.find(
-      (c) => c._id === addonCategoryId || c.categoryName === addonCategory
-    ) || categoriesFromApi[0];
+    setIsSavingAddon(true);
+    try {
+      const matchedCat = categoriesFromApi.find(
+        (c) => c._id === addonCategoryId || c.categoryName === addonCategory
+      ) || categoriesFromApi[0];
 
-    const catIdToUse = matchedCat?._id || addonCategoryId;
+      const catIdToUse = matchedCat?._id || addonCategoryId;
 
-    const matchedSub = matchedCat?.subCategories?.find(
-      (s: any) => s._id === addonSubCategoryId || s.name === addonSubCategory
-    ) || matchedCat?.subCategories?.[0];
+      const matchedSub = matchedCat?.subCategories?.find(
+        (s: any) => s._id === addonSubCategoryId || s.name === addonSubCategory
+      ) || matchedCat?.subCategories?.[0];
 
-    const subCatIdToUse = matchedSub?._id || addonSubCategoryId;
+      const subCatIdToUse = matchedSub?._id || addonSubCategoryId;
 
-    const payload = {
-      categoryId: catIdToUse,
-      subCategoryId: subCatIdToUse,
-      addonName: addonTitle.trim(),
-      title: addonTitle.trim(),
-      description: addonDescription.trim(),
-      price: parseFloat(addonPrice) || 199,
-      unit: addonUnit.trim() || "Per Unit",
-      imageUrl: addonImageUrl.trim(),
-      category: matchedCat?.categoryName || addonCategory,
-      status: true,
-    };
+      const payload = {
+        categoryId: catIdToUse,
+        subCategoryId: subCatIdToUse,
+        addonName: addonTitle.trim(),
+        title: addonTitle.trim(),
+        description: addonDescription.trim(),
+        price: parseFloat(addonPrice) || 199,
+        unit: addonUnit.trim() || "Per Unit",
+        imageUrl: addonImageUrl.trim(),
+        category: matchedCat?.categoryName || addonCategory,
+        status: true,
+      };
 
-    if (editingAddonId && editingAddonId.length === 24) {
-      const updateRes = await updateAddonApi(editingAddonId, payload);
-      if (updateRes && updateRes.success === false) {
-        toast.error("Update Add-on Failed", updateRes.message || "Unknown error");
-      } else {
+      if (editingAddonId && editingAddonId.length === 24) {
+        const updateRes = await updateAddonApi(editingAddonId, payload);
+        if (updateRes && updateRes.success === false) {
+          toast.error("Update Add-on Failed", updateRes.message || "Unknown error");
+          return;
+        }
         toast.success("Add-on Updated", `"${addonTitle.trim()}" updated successfully.`);
-      }
-      await fetchAddonsFromBackend(addonCategoryId, addonSubCategoryId);
-    } else {
-      const createRes = await createAddonApi(payload);
-      if (createRes && createRes.success === false) {
-        toast.error("Create Add-on Failed", createRes.message || "Unknown error");
       } else {
+        const createRes = await createAddonApi(payload);
+        if (createRes && createRes.success === false) {
+          toast.error("Create Add-on Failed", createRes.message || "Unknown error");
+          return;
+        }
         toast.success("Add-on Created", `"${addonTitle.trim()}" created successfully.`);
       }
-      await fetchAddonsFromBackend(addonCategoryId, addonSubCategoryId);
-    }
 
-    setEditingAddonId(null);
-    setAddonTitle("");
-    setAddonDescription("");
-    setAddonImageUrl("");
-    setIsAddAddonOpen(false);
+      // Instantly close the sliding form drawer
+      setIsAddAddonOpen(false);
+      setEditingAddonId(null);
+      setAddonTitle("");
+      setAddonDescription("");
+      setAddonImageUrl("");
+
+      // Recall addons API to reload and show perfect data
+      await fetchAddonsFromBackend();
+    } catch (err: any) {
+      console.error("handleSaveAddon error:", err);
+      toast.error("Save Error", err?.message || "Failed to save add-on.");
+    } finally {
+      setIsSavingAddon(false);
+    }
   };
 
   const handleCreatePincode = (e: React.FormEvent) => {
@@ -1648,12 +1749,18 @@ export default function CmsPage() {
     setIsAddPincodeOpen(false);
   };
 
-  // Dynamic Filtering by Category
-  const filteredServices = selectedCategoryIdFilter
-    ? services
-    : selectedCategoryFilter === "All Categories"
-      ? services
-      : services.filter((s) => s.category === selectedCategoryFilter);
+  // Dynamic Filtering by Category (instant in-memory, no API spam)
+  const filteredServices = useMemo(() => {
+    if (!selectedCategoryIdFilter && (!selectedCategoryFilter || selectedCategoryFilter === "All Categories")) {
+      return services;
+    }
+    return services.filter((s) => {
+      if (selectedCategoryIdFilter) {
+        return s.categoryId === selectedCategoryIdFilter || s.category === selectedCategoryFilter;
+      }
+      return s.category === selectedCategoryFilter;
+    });
+  }, [services, selectedCategoryIdFilter, selectedCategoryFilter]);
 
   return (
     <div className="space-y-6">
@@ -1726,7 +1833,7 @@ export default function CmsPage() {
       </div>
 
       {/* CATEGORY FLOW SELECTION CHIPS (For Services Tab) */}
-      {activeTab === "services" && (
+      {/* {activeTab === "services" && (
         <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs no-scrollbar">
           <span className="font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-wider text-[10px] shrink-0 flex items-center gap-1">
             <Filter className="w-3 h-3" /> Category Flow:
@@ -1756,21 +1863,22 @@ export default function CmsPage() {
                 }`}
               >
                 {cat.iconUrl ? (
-                  <img
-                    src={cat.iconUrl}
-                    alt={cat.categoryName}
-                    className="w-3.5 h-3.5 rounded object-contain shrink-0"
-                    onError={(e) => {
-                      (e.currentTarget as HTMLElement).style.display = "none";
-                    }}
-                  />
+                  <div className="relative w-3.5 h-3.5 rounded overflow-hidden shrink-0">
+                    <Image
+                      src={cat.iconUrl}
+                      alt={cat.categoryName}
+                      fill
+                      className="object-contain"
+                      unoptimized
+                    />
+                  </div>
                 ) : null}
                 <span>{cat.categoryName}</span>
               </button>
             );
           })}
         </div>
-      )}
+      )} */}
 
       {activeTab === "services" ? (
         isLoading ? (
@@ -1922,9 +2030,17 @@ export default function CmsPage() {
                         setServiceCategory(catName);
                         setSelectedSubcategory("");
                         setSelectedServiceAction("");
-                        const matchedCat = categoriesFromApi.find((c) => c.categoryName === catName);
-                        fetchAddonsFromBackend(matchedCat?._id, undefined);
-                        fetchServiceActionsFromBackend(matchedCat?._id, undefined);
+
+                        // Only call service action dropdown when category is selected
+                        const matchedCat = categoriesFromApi.find(
+                          (c) => c.categoryName.toLowerCase().trim() === catName.toLowerCase().trim() || c._id === catName
+                        );
+                        if (matchedCat?._id) {
+                          fetchServiceActionsFromBackend(matchedCat._id);
+                        } else {
+                          setServiceActionsFromApi([]);
+                          setServiceActionsList([]);
+                        }
                       }}
                       options={(categoriesFromApi.length > 0
                         ? categoriesFromApi.map((c) => c.categoryName)
@@ -1951,10 +2067,17 @@ export default function CmsPage() {
                       onChange={(sub) => {
                         setSelectedSubcategory(sub);
                         setSelectedServiceAction("");
-                        const matchedCat = categoriesFromApi.find((c) => c.categoryName === serviceCategory);
-                        const matchedSub = matchedCat?.subCategories?.find((s: any) => s.name === sub);
-                        fetchAddonsFromBackend(matchedCat?._id, matchedSub?._id);
-                        fetchServiceActionsFromBackend(matchedCat?._id, matchedSub?._id);
+
+                        // Only call service action dropdown when subcategory is selected
+                        const matchedCat = categoriesFromApi.find(
+                          (c) => c.categoryName.toLowerCase().trim() === serviceCategory.toLowerCase().trim() || c._id === serviceCategory
+                        );
+                        const matchedSub = matchedCat?.subCategories?.find(
+                          (s: any) => s.name.toLowerCase().trim() === sub.toLowerCase().trim() || s._id === sub
+                        );
+                        if (matchedCat?._id) {
+                          fetchServiceActionsFromBackend(matchedCat._id, matchedSub?._id);
+                        }
                       }}
                       options={(() => {
                         if (!serviceCategory) return [];
@@ -2251,41 +2374,66 @@ export default function CmsPage() {
                                 <label className="text-[10px] font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
                                   <span>Package Image</span>
                                   <span className="text-brand-600 font-extrabold text-[9px] uppercase">
-                                    {off.thumbnailUrl || off.imageFile ? "Image Attached" : "Upload File"}
+                                    {(!off.imageRemoved && (off.thumbnailUrl || off.imageFile)) ? "Image Attached" : "Upload File"}
                                   </span>
                                 </label>
                                 {(() => {
-                                  const activeImage = off.thumbnailUrl !== undefined ? off.thumbnailUrl : (serviceThumbnail || "");
+                                  const pkgIdToUse = !off.imageRemoved ? (off.id && off.id.length === 24 ? off.id : (editingServiceId && editingServiceId.length === 24 ? editingServiceId : undefined)) : undefined;
+                                  const activeImage = !off.imageRemoved ? (off.thumbnailUrl || (off as any).imageUrl || "") : "";
+                                  const hasImage = Boolean(activeImage || off.imageFile);
                                   return (
-                                    <div className="flex items-center gap-2">
-                                      <div className="w-10 h-10 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-                                        {activeImage ? (
-                                          <img
-                                            src={activeImage}
-                                            alt="Package Thumbnail"
-                                            className="w-full h-full object-cover"
-                                            onError={(e) => {
-                                              (e.target as HTMLImageElement).style.display = "none";
-                                            }}
-                                          />
-                                        ) : (
-                                          <ImageIcon className="w-4 h-4 text-slate-400" />
-                                        )}
-                                      </div>
+                                    <div className="flex items-center gap-2.5">
+                                      <TableImage
+                                        src={activeImage}
+                                        packageId={pkgIdToUse}
+                                        alt="Package Thumbnail"
+                                        containerClassName="w-12 h-12 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-slate-100 dark:bg-slate-800 flex items-center justify-center relative shadow-xs"
+                                        className="w-full h-full object-cover"
+                                        fallbackIcon="image"
+                                        showInitialsFallback={false}
+                                      />
 
-                                      {activeImage || off.imageFile ? (
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            handleUpdateOfferingRow(idx, "thumbnailUrl", "");
-                                            handleUpdateOfferingRow(idx, "imageFile", undefined);
-                                          }}
-                                          className="px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 dark:hover:bg-rose-900 border border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-400 font-bold text-[10px] flex items-center gap-1 cursor-pointer shrink-0 shadow-xs transition-colors"
-                                          title="Delete Image"
-                                        >
-                                          <Trash2 className="w-3.5 h-3.5" />
-                                          <span>Delete Image</span>
-                                        </button>
+                                      {hasImage ? (
+                                        <div className="flex items-center gap-1.5">
+                                          {/* Change / Reupload image */}
+                                          <label className="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-[10px] flex items-center gap-1 cursor-pointer shrink-0 shadow-xs transition-colors">
+                                            <Upload className="w-3.5 h-3.5 text-brand-600" />
+                                            <span>Change</span>
+                                            <input
+                                              type="file"
+                                              accept="image/*"
+                                              className="hidden"
+                                              onChange={(e) => {
+                                                const file = e.target.files?.[0];
+                                                if (file) {
+                                                  handleUpdateOfferingRow(idx, {
+                                                    imageFile: file,
+                                                    thumbnailUrl: URL.createObjectURL(file),
+                                                    imageRemoved: false,
+                                                  });
+                                                }
+                                                e.target.value = "";
+                                              }}
+                                            />
+                                          </label>
+
+                                          {/* Delete / Remove image */}
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              handleUpdateOfferingRow(idx, {
+                                                thumbnailUrl: "",
+                                                imageFile: undefined,
+                                                imageRemoved: true,
+                                              });
+                                            }}
+                                            className="px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 dark:hover:bg-rose-900 border border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-400 font-bold text-[10px] flex items-center gap-1 cursor-pointer shrink-0 shadow-xs transition-colors"
+                                            title="Delete Image"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                            <span>Delete</span>
+                                          </button>
+                                        </div>
                                       ) : (
                                         <label className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:bg-slate-200 text-slate-700 dark:text-slate-200 font-bold text-[10px] flex items-center gap-1 cursor-pointer shrink-0 shadow-xs transition-colors">
                                           <Upload className="w-3.5 h-3.5 text-brand-600" />
@@ -2297,9 +2445,13 @@ export default function CmsPage() {
                                             onChange={(e) => {
                                               const file = e.target.files?.[0];
                                               if (file) {
-                                                handleUpdateOfferingRow(idx, "imageFile", file);
-                                                handleUpdateOfferingRow(idx, "thumbnailUrl", URL.createObjectURL(file));
+                                                handleUpdateOfferingRow(idx, {
+                                                  imageFile: file,
+                                                  thumbnailUrl: URL.createObjectURL(file),
+                                                  imageRemoved: false,
+                                                });
                                               }
+                                              e.target.value = "";
                                             }}
                                           />
                                         </label>
@@ -2416,9 +2568,14 @@ export default function CmsPage() {
                                   <div className="flex items-center gap-2">
                                     {inlineAddonImageUrl ? (
                                       <div className="flex items-center gap-2">
-                                        <div className="w-9 h-9 rounded-lg overflow-hidden border border-purple-200 dark:border-purple-800 shrink-0 bg-white dark:bg-slate-800 flex items-center justify-center">
-                                          <img src={inlineAddonImageUrl} alt="Addon Preview" className="w-full h-full object-cover" />
-                                        </div>
+                                        <TableImage
+                                          src={inlineAddonImageUrl}
+                                          alt="Addon Preview"
+                                          containerClassName="w-9 h-9 rounded-lg overflow-hidden border border-purple-200 dark:border-purple-800 shrink-0 bg-white dark:bg-slate-800 flex items-center justify-center relative shadow-xs"
+                                          className="w-full h-full object-cover"
+                                          fallbackIcon="image"
+                                          showInitialsFallback={false}
+                                        />
                                         <button
                                           type="button"
                                           onClick={() => setInlineAddonImageUrl("")}
@@ -2445,6 +2602,7 @@ export default function CmsPage() {
                                               };
                                               reader.readAsDataURL(file);
                                             }
+                                            e.target.value = "";
                                           }}
                                         />
                                       </label>
@@ -2540,17 +2698,28 @@ export default function CmsPage() {
               <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-800 shrink-0">
                 <button
                   type="button"
+                  disabled={isSavingService}
                   onClick={() => setIsAddServiceOpen(false)}
-                  className="flex-1 py-3 rounded-xl border border-slate-200 dark:border-slate-700 font-bold text-xs text-slate-700 dark:text-slate-300"
+                  className="flex-1 py-3 rounded-xl border border-slate-200 dark:border-slate-700 font-bold text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-3 rounded-xl bg-brand-500 hover:bg-brand-600 text-white font-extrabold text-xs shadow-lux flex items-center justify-center gap-1.5"
+                  disabled={isSavingService}
+                  className="flex-1 py-3 rounded-xl bg-brand-500 hover:bg-brand-600 disabled:opacity-60 disabled:cursor-not-allowed text-white font-extrabold text-xs shadow-lux flex items-center justify-center gap-2 cursor-pointer transition-all"
                 >
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>Save Service Package</span>
+                  {isSavingService ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>{editingServiceId ? "Updating Package..." : "Saving Package..."}</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>{editingServiceId ? "Update Service Package" : "Save Service Package"}</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>
@@ -2690,6 +2859,7 @@ export default function CmsPage() {
                           if (file) {
                             setAddonImageUrl(URL.createObjectURL(file));
                           }
+                          e.target.value = "";
                         }}
                       />
                     </label>
@@ -2706,16 +2876,14 @@ export default function CmsPage() {
                   {addonImageUrl && (
                     <div className="mt-2.5 p-2 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-between gap-3">
                       <div className="flex items-center gap-2.5 overflow-hidden">
-                        <div className="w-12 h-12 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-                          <img
-                            src={addonImageUrl}
-                            alt="Addon Preview"
-                            className="w-full h-full object-cover"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).style.display = "none";
-                            }}
-                          />
-                        </div>
+                        <TableImage
+                          src={addonImageUrl}
+                          alt="Addon Preview"
+                          containerClassName="w-12 h-12 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-slate-100 dark:bg-slate-800 flex items-center justify-center relative shadow-xs"
+                          className="w-full h-full object-cover"
+                          fallbackIcon="image"
+                          showInitialsFallback={false}
+                        />
                         <div className="truncate">
                           <p className="text-xs font-bold text-slate-800 dark:text-slate-200">Image Preview</p>
                           <p className="text-[10px] text-slate-400 truncate max-w-[200px]">
@@ -2740,16 +2908,25 @@ export default function CmsPage() {
               <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
                 <button
                   type="button"
+                  disabled={isSavingAddon}
                   onClick={() => setIsAddAddonOpen(false)}
-                  className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 font-bold text-xs text-slate-700 dark:text-slate-300"
+                  className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 font-bold text-xs text-slate-700 dark:text-slate-300 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white font-extrabold text-xs shadow-lux"
+                  disabled={isSavingAddon}
+                  className="flex-1 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-extrabold text-xs shadow-lux flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  {editingAddonId ? "Update Add-on Item" : "Save Add-on Item"}
+                  {isSavingAddon ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>{editingAddonId ? "Updating Add-on..." : "Saving Add-on..."}</span>
+                    </>
+                  ) : (
+                    editingAddonId ? "Update Add-on Item" : "Save Add-on Item"
+                  )}
                 </button>
               </div>
             </form>
@@ -2952,10 +3129,12 @@ export default function CmsPage() {
             <form
               onSubmit={async (e) => {
                 e.preventDefault();
+                if (isSavingCategory) return;
                 if (!newCatNameInput.trim()) return;
                 const catName = newCatNameInput.trim();
                 const slug = catName.toLowerCase().replace(/[^a-z0-9]+/g, "-");
 
+                setIsSavingCategory(true);
                 try {
                   const res = await createCategoryApi({
                     categoryName: catName,
@@ -2963,11 +3142,17 @@ export default function CmsPage() {
                     subCategories: newCatSubcategories.map((subName) => ({ name: subName })),
                     status: true,
                   });
-                  if (res.success) {
-                    await fetchCategoriesFromBackend();
+                  if (res && res.success !== false) {
+                    toast.success("Category Created", `Category "${catName}" created successfully.`);
+                    await fetchCategoriesFromBackend(true);
+                  } else {
+                    toast.error("Category Creation Failed", res?.message || "Failed to create category");
                   }
-                } catch (err) {
+                } catch (err: any) {
                   console.error("Failed to create category API:", err);
+                  toast.error("Category Error", err?.message || "Failed to create category");
+                } finally {
+                  setIsSavingCategory(false);
                 }
 
                 setCategorySubcategoriesMap((prev) => ({
@@ -3108,16 +3293,25 @@ export default function CmsPage() {
               <div className="flex gap-3 pt-2">
                 <button
                   type="button"
+                  disabled={isSavingCategory}
                   onClick={() => setIsAddCategoryModalOpen(false)}
-                  className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 font-bold text-xs text-slate-700 dark:text-slate-300"
+                  className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 font-bold text-xs text-slate-700 dark:text-slate-300 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 bg-brand-500 hover:bg-brand-600 text-white rounded-xl font-extrabold text-xs shadow-lux cursor-pointer"
+                  disabled={isSavingCategory}
+                  className="flex-1 py-2.5 bg-brand-500 hover:bg-brand-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-extrabold text-xs shadow-lux flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  Save Category & Subcategories
+                  {isSavingCategory ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Saving Category...</span>
+                    </>
+                  ) : (
+                    "Save Category & Subcategories"
+                  )}
                 </button>
               </div>
             </form>
@@ -3132,21 +3326,31 @@ export default function CmsPage() {
             <form
               onSubmit={async (e) => {
                 e.preventDefault();
+                if (isSavingSubcategory) return;
                 const catName = targetCategoryForSubcategory;
                 const subsList = categorySubcategoriesMap[catName] || [];
 
                 const matchedCat = categoriesFromApi.find((c) => c.categoryName === catName);
                 if (matchedCat && matchedCat._id) {
+                  setIsSavingSubcategory(true);
                   try {
-                    await updateCategoryApi(matchedCat._id, {
+                    const res = await updateCategoryApi(matchedCat._id, {
                       categoryName: matchedCat.categoryName,
                       slug: matchedCat.slug || catName.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
                       subCategories: subsList.map((subName) => ({ name: subName })),
                       status: matchedCat.status !== false,
                     });
-                    await fetchCategoriesFromBackend();
-                  } catch (err) {
+                    if (res && res.success !== false) {
+                      toast.success("Subcategories Updated", "Subcategories updated successfully.");
+                      await fetchCategoriesFromBackend(true);
+                    } else {
+                      toast.error("Update Failed", res?.message || "Failed to update subcategories");
+                    }
+                  } catch (err: any) {
                     console.error("Failed to update category subcategories API:", err);
+                    toast.error("Update Error", err?.message || "Failed to update subcategories");
+                  } finally {
+                    setIsSavingSubcategory(false);
                   }
                 }
 
@@ -3272,13 +3476,28 @@ export default function CmsPage() {
                 </div>
               </div>
 
-              <div className="pt-2">
+              <div className="flex gap-3 pt-2">
                 <button
                   type="button"
+                  disabled={isSavingSubcategory}
                   onClick={() => setIsAddSubcategoryOpen(false)}
-                  className="w-full py-2.5 bg-brand-500 hover:bg-brand-600 text-white rounded-xl font-bold text-xs shadow-lux cursor-pointer"
+                  className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 font-bold text-xs text-slate-700 dark:text-slate-300 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                 >
-                  Done & Save
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingSubcategory}
+                  className="flex-1 py-2.5 bg-brand-500 hover:bg-brand-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-bold text-xs shadow-lux flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  {isSavingSubcategory ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Saving Subcategories...</span>
+                    </>
+                  ) : (
+                    "Done & Save"
+                  )}
                 </button>
               </div>
             </form>
@@ -3293,6 +3512,7 @@ export default function CmsPage() {
             <form
               onSubmit={async (e) => {
                 e.preventDefault();
+                if (isSavingAction) return;
                 setActionFormError("");
                 if (!newActionInput.trim()) {
                   setActionFormError("Service Action Name is required.");
@@ -3303,48 +3523,58 @@ export default function CmsPage() {
                   return;
                 }
 
-                const cleanAction = newActionInput.trim();
-                const cleanImg = actionImageUrl.trim() || undefined;
-                let res;
-                if (editingActionObj) {
-                  res = await updateServiceActionApi(editingActionObj._id, {
-                    categoryId: actionCategoryId,
-                    subCategoryId: actionSubCategoryId || undefined,
-                    serviceAction: cleanAction,
-                    imageUrl: cleanImg,
-                    thumbnailUrl: cleanImg,
-                  });
-                } else {
-                  res = await createServiceActionApi({
-                    categoryId: actionCategoryId,
-                    subCategoryId: actionSubCategoryId || undefined,
-                    serviceAction: cleanAction,
-                    imageUrl: cleanImg,
-                    thumbnailUrl: cleanImg,
-                  });
-                }
-
-                if (res && res.success !== false) {
-                  toast.success(
-                    editingActionObj ? "Service Action Updated" : "Service Action Created",
-                    editingActionObj ? "Service action updated successfully." : "Service action created successfully."
-                  );
-                  fetchServiceActionsFromBackend(actionCategoryId, actionSubCategoryId || undefined);
-                  setServiceActionsList((prev) => Array.from(new Set([cleanAction, ...prev])));
-                  setSelectedServiceAction(cleanAction);
-                  if (targetOfferingIndexForAction !== null) {
-                    handleUpdateOfferingRow(targetOfferingIndexForAction, "type", cleanAction);
+                setIsSavingAction(true);
+                try {
+                  const cleanAction = newActionInput.trim();
+                  const cleanImg = actionImageUrl.trim() || undefined;
+                  let res;
+                  if (editingActionObj) {
+                    res = await updateServiceActionApi(editingActionObj._id, {
+                      categoryId: actionCategoryId,
+                      subCategoryId: actionSubCategoryId || undefined,
+                      serviceAction: cleanAction,
+                      imageUrl: cleanImg,
+                      thumbnailUrl: cleanImg,
+                    });
+                  } else {
+                    res = await createServiceActionApi({
+                      categoryId: actionCategoryId,
+                      subCategoryId: actionSubCategoryId || undefined,
+                      serviceAction: cleanAction,
+                      imageUrl: cleanImg,
+                      thumbnailUrl: cleanImg,
+                    });
                   }
-                  setNewActionInput("");
-                  setActionImageUrl("");
-                  setActionCategoryId("");
-                  setActionSubCategoryId("");
-                  setEditingActionObj(null);
-                  setIsAddActionModalOpen(false);
-                } else {
-                  const errorMsg = res?.message || "Failed to save service action.";
+
+                  if (res && res.success !== false) {
+                    toast.success(
+                      editingActionObj ? "Service Action Updated" : "Service Action Created",
+                      editingActionObj ? "Service action updated successfully." : "Service action created successfully."
+                    );
+                    await fetchServiceActionsFromBackend(actionCategoryId, actionSubCategoryId || undefined, true);
+                    setServiceActionsList((prev) => Array.from(new Set([cleanAction, ...prev])));
+                    setSelectedServiceAction(cleanAction);
+                    if (targetOfferingIndexForAction !== null) {
+                      handleUpdateOfferingRow(targetOfferingIndexForAction, "type", cleanAction);
+                    }
+                    setNewActionInput("");
+                    setActionImageUrl("");
+                    setActionCategoryId("");
+                    setActionSubCategoryId("");
+                    setEditingActionObj(null);
+                    setIsAddActionModalOpen(false);
+                  } else {
+                    const errorMsg = res?.message || "Failed to save service action.";
+                    setActionFormError(errorMsg);
+                    toast.error("Service Action Error", errorMsg);
+                  }
+                } catch (err: any) {
+                  console.error("Save service action error:", err);
+                  const errorMsg = err?.message || "Failed to save service action.";
                   setActionFormError(errorMsg);
                   toast.error("Service Action Error", errorMsg);
+                } finally {
+                  setIsSavingAction(false);
                 }
               }}
               className="bg-white dark:bg-slate-900 p-6 rounded-3xl max-w-lg w-full space-y-5 ring-1 ring-slate-900/10 dark:ring-slate-800 shadow-2xl outline-none max-h-[90vh] overflow-y-auto text-xs animate-in zoom-in-95 duration-150"
@@ -3446,10 +3676,13 @@ export default function CmsPage() {
                     <div className="relative w-14 h-14 rounded-2xl border-2 border-dashed border-purple-300 dark:border-purple-700 bg-white dark:bg-slate-800 flex items-center justify-center overflow-hidden shrink-0 group shadow-2xs">
                       {actionImageUrl ? (
                         <>
-                          <img
+                          <TableImage
                             src={actionImageUrl}
                             alt="Action Preview"
+                            containerClassName="w-full h-full"
                             className="w-full h-full object-cover"
+                            fallbackIcon="image"
+                            showInitialsFallback={false}
                           />
                           <button
                             type="button"
@@ -3509,14 +3742,25 @@ export default function CmsPage() {
               <div className="flex gap-2 pt-2">
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 bg-brand-500 hover:bg-brand-600 text-white rounded-xl font-bold text-xs shadow-lux flex items-center justify-center gap-1 cursor-pointer"
+                  disabled={isSavingAction}
+                  className="flex-1 py-2.5 bg-brand-500 hover:bg-brand-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-bold text-xs shadow-lux flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  {editingActionObj ? <Edit className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-                  <span>{editingActionObj ? "Update Service Action" : "Add Service Action"}</span>
+                  {isSavingAction ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>{editingActionObj ? "Updating Service Action..." : "Adding Service Action..."}</span>
+                    </>
+                  ) : (
+                    <>
+                      {editingActionObj ? <Edit className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                      <span>{editingActionObj ? "Update Service Action" : "Add Service Action"}</span>
+                    </>
+                  )}
                 </button>
                 {editingActionObj && (
                   <button
                     type="button"
+                    disabled={isSavingAction}
                     onClick={() => {
                       setEditingActionObj(null);
                       setNewActionInput("");
@@ -3525,7 +3769,7 @@ export default function CmsPage() {
                       setActionSubCategoryId("");
                       setActionFormError("");
                     }}
-                    className="px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-xs text-slate-600 dark:text-slate-400 cursor-pointer"
+                    className="px-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-xs text-slate-600 dark:text-slate-400 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                   >
                     Cancel Edit
                   </button>
@@ -3562,13 +3806,13 @@ export default function CmsPage() {
                           <div className="flex items-center gap-2.5 min-w-0">
                             {/* Thumbnail or Icon */}
                             {actImg ? (
-                              <img
+                              <TableImage
                                 src={actImg}
                                 alt={actName}
-                                className="w-8 h-8 rounded-lg object-cover border border-purple-200 dark:border-purple-800 shrink-0"
-                                onError={(e) => {
-                                  (e.currentTarget as HTMLElement).style.display = "none";
-                                }}
+                                containerClassName="w-8 h-8 rounded-lg overflow-hidden border border-purple-200 dark:border-purple-800 shrink-0"
+                                className="w-full h-full object-cover"
+                                fallbackIcon="wrench"
+                                showInitialsFallback={false}
                               />
                             ) : (
                               <div className="w-8 h-8 rounded-lg bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0 border border-purple-100 dark:border-purple-900/40">
@@ -3698,21 +3942,29 @@ export default function CmsPage() {
               </button>
 
               {/* Pure Image Banner Container (No Text, Only Banner Image) */}
-              <div className="relative w-full aspect-[16/9] sm:aspect-[16/8] bg-slate-900">
-                <img
-                  src={bannerImageUrl}
-                  alt="Pure Image Visitor Promo Popup Banner"
-                  className="w-full h-full object-cover"
-                />
+              <div className="relative w-full aspect-[16/9] sm:aspect-[16/8] bg-slate-900 overflow-hidden">
+                {bannerImageUrl ? (
+                  <Image
+                    src={bannerImageUrl}
+                    alt="Pure Image Visitor Promo Popup Banner"
+                    fill
+                    className="object-cover"
+                    unoptimized
+                  />
+                ) : null}
 
                 {/* Optional Second Image Icon Overlay Badge at bottom left */}
                 {secondBannerIconUrl && (
                   <div className="absolute bottom-4 left-4 z-20 p-2 rounded-2xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-md shadow-2xl border border-white/40 flex items-center gap-2 max-w-[200px]">
-                    <img
-                      src={secondBannerIconUrl}
-                      alt="Second Icon Badge"
-                      className="w-8 h-8 object-contain rounded-lg shrink-0"
-                    />
+                    <div className="relative w-8 h-8 rounded-lg overflow-hidden shrink-0">
+                      <Image
+                        src={secondBannerIconUrl}
+                        alt="Second Icon Badge"
+                        fill
+                        className="object-contain"
+                        unoptimized
+                      />
+                    </div>
                     <span className="text-[10px] font-extrabold text-slate-900 dark:text-white leading-tight">
                       Verified Partner Offer
                     </span>

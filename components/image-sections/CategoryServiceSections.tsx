@@ -17,6 +17,7 @@ import {
   Tag,
   Zap,
   Upload,
+  Loader2,
 } from "lucide-react";
 import { Portal } from "@/components/Portal";
 import {
@@ -88,6 +89,8 @@ export function CategoryServiceSections({
     data: Partial<SimpleServiceCard>;
     file?: File | null;
   }>({ open: false, mode: "add", sectionId: "", data: {} });
+  const [isSavingSection, setIsSavingSection] = useState(false);
+  const [isSavingServiceCard, setIsSavingServiceCard] = useState(false);
 
   // Handle outside click for category dropdown
   useEffect(() => {
@@ -273,6 +276,7 @@ export function CategoryServiceSections({
   };
 
   const saveCategorySection = () => {
+    if (isSavingSection) return;
     if (catModalSelectedCategories.length === 0) {
       alert("Please select at least one category from the API (maximum 2).");
       return;
@@ -285,8 +289,10 @@ export function CategoryServiceSections({
       return;
     }
 
-    const cat1 = selectedCats[0];
-    const cat2 = selectedCats[1] || null;
+    setIsSavingSection(true);
+    try {
+      const cat1 = selectedCats[0];
+      const cat2 = selectedCats[1] || null;
 
     const derivedTitle = cat2
       ? `${cat1.categoryName} & ${cat2.categoryName}`
@@ -358,7 +364,10 @@ export function CategoryServiceSections({
       );
     }
     setCategorySectionModal({ open: false, mode: "add", data: {} });
-  };
+  } finally {
+    setIsSavingSection(false);
+  }
+};
 
   const moveCategorySection = (index: number, direction: "up" | "down") => {
     onUpdateCategorySections((prev) => {
@@ -379,6 +388,7 @@ export function CategoryServiceSections({
   };
 
   const saveServiceCard = () => {
+    if (isSavingServiceCard) return;
     const { sectionId, data: d, mode } = serviceCardModal;
     if (!sectionId) {
       alert("Please select a target category section.");
@@ -388,6 +398,9 @@ export function CategoryServiceSections({
       alert("Service title is required.");
       return;
     }
+
+    setIsSavingServiceCard(true);
+    try {
 
     if (mode === "add") {
       const newCard: SimpleServiceCard = {
@@ -425,7 +438,10 @@ export function CategoryServiceSections({
       );
     }
     setServiceCardModal({ open: false, mode: "add", sectionId: "", data: {} });
-  };
+  } finally {
+    setIsSavingServiceCard(false);
+  }
+};
 
   const moveServiceCard = (
     sectionId: string,
@@ -1249,24 +1265,39 @@ export function CategoryServiceSections({
                 <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex justify-end gap-2.5">
                   <button
                     type="button"
+                    disabled={isSavingSection}
                     onClick={() =>
                       setCategorySectionModal({ open: false, mode: "add", data: {} })
                     }
-                    className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 cursor-pointer transition-colors"
+                    className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     type="button"
+                    disabled={isSavingSection}
                     onClick={saveCategorySection}
-                    className="px-5 py-2.5 rounded-xl text-xs font-extrabold text-white bg-brand-600 hover:bg-brand-700 flex items-center gap-1.5 cursor-pointer transition-colors shadow-lux"
+                    className="px-5 py-2.5 rounded-xl text-xs font-extrabold text-white bg-brand-600 hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 cursor-pointer transition-colors shadow-lux"
                   >
-                    <Save className="w-4 h-4" />
-                    <span>
-                      {categorySectionModal.mode === "add"
-                        ? "Save Section"
-                        : "Update Section"}
-                    </span>
+                    {isSavingSection ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>
+                          {categorySectionModal.mode === "add"
+                            ? "Adding Section..."
+                            : "Updating Section..."}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4" />
+                        <span>
+                          {categorySectionModal.mode === "add"
+                            ? "Save Section"
+                            : "Update Section"}
+                        </span>
+                      </>
+                    )}
                   </button>
                 </div>
               </div>
@@ -1523,6 +1554,7 @@ export function CategoryServiceSections({
               <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex justify-end gap-2.5">
                 <button
                   type="button"
+                  disabled={isSavingServiceCard}
                   onClick={() =>
                     setServiceCardModal({
                       open: false,
@@ -1532,21 +1564,35 @@ export function CategoryServiceSections({
                       file: null,
                     })
                   }
-                  className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 cursor-pointer transition-colors"
+                  className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
+                  disabled={isSavingServiceCard}
                   onClick={saveServiceCard}
-                  className="px-5 py-2.5 rounded-xl text-xs font-extrabold text-white bg-brand-600 hover:bg-brand-700 flex items-center gap-1.5 cursor-pointer transition-colors shadow-lux"
+                  className="px-5 py-2.5 rounded-xl text-xs font-extrabold text-white bg-brand-600 hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 cursor-pointer transition-colors shadow-lux"
                 >
-                  <Save className="w-4 h-4" />
-                  <span>
-                    {serviceCardModal.mode === "add"
-                      ? "Save Service Card"
-                      : "Update Service Card"}
-                  </span>
+                  {isSavingServiceCard ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>
+                        {serviceCardModal.mode === "add"
+                          ? "Adding Card..."
+                          : "Updating Card..."}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4" />
+                      <span>
+                        {serviceCardModal.mode === "add"
+                          ? "Save Service Card"
+                          : "Update Service Card"}
+                      </span>
+                    </>
+                  )}
                 </button>
               </div>
             </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { getStoredModuleData, setCachedModuleData } from "@/lib/moduleCache";
+import { getStoredModuleData, setCachedModuleData, isModuleCacheFresh, clearModuleCache } from "@/lib/moduleCache";
 import {
   Plus,
   Camera,
@@ -47,28 +47,36 @@ import {
   getCategoriesApi,
   ApiCategory,
   formatImageUrl,
+  getAdminSpotlightApi,
+  deleteSpotlightApi,
 } from "@/lib/api";
 
 export default function ImageSectionsPage() {
   const [activeTab, setActiveTab] = useState<TabType>("zones");
   const [searchQuery, setSearchQuery] = useState("");
 
+  const initialCachedZones = getStoredModuleData<ZoneCard[]>("website_zones") || [];
+  const initialCachedTrending = getStoredModuleData<TrendingServiceCard[]>("website_trending") || [];
+  const initialCachedQuick = getStoredModuleData<TrendingServiceCard[]>("website_quick") || [];
+  const initialCachedSpotlight = getStoredModuleData<SpotlightBanner[]>("website_spotlight") || initialSpotlightBanners;
+  const initialCachedCategories = getStoredModuleData<ApiCategory[]>("website_categories") || [];
+
   // Server-safe initial states (rehydrated in useEffect from localStorage / cache)
-  const [zones, setZones] = useState<ZoneCard[]>([]);
-  const [trendingServices, setTrendingServices] = useState<TrendingServiceCard[]>([]);
-  const [quickServices, setQuickServices] = useState<TrendingServiceCard[]>([]);
-  const [spotlightBanners, setSpotlightBanners] = useState<SpotlightBanner[]>(initialSpotlightBanners);
+  const [zones, setZones] = useState<ZoneCard[]>(() => initialCachedZones);
+  const [trendingServices, setTrendingServices] = useState<TrendingServiceCard[]>(() => initialCachedTrending);
+  const [quickServices, setQuickServices] = useState<TrendingServiceCard[]>(() => initialCachedQuick);
+  const [spotlightBanners, setSpotlightBanners] = useState<SpotlightBanner[]>(() => initialCachedSpotlight);
   const [categorySections, setCategorySections] = useState<CategorySectionData[]>(initialCategorySections);
 
   // Loading states
-  const [isZonesLoading, setIsZonesLoading] = useState(false);
-  const [isTrendingLoading, setIsTrendingLoading] = useState(false);
-  const [isQuickLoading, setIsQuickLoading] = useState(false);
+  const [isZonesLoading, setIsZonesLoading] = useState(() => !(isModuleCacheFresh("website_zones", 30000) && initialCachedZones.length > 0));
+  const [isTrendingLoading, setIsTrendingLoading] = useState(() => !(isModuleCacheFresh("website_trending", 30000) && initialCachedTrending.length > 0));
+  const [isQuickLoading, setIsQuickLoading] = useState(() => !(isModuleCacheFresh("website_quick", 30000) && initialCachedQuick.length > 0));
   const [isCategoriesLoading, setIsCategoriesLoading] = useState(false);
   const [isCatalogLoading, setIsCatalogLoading] = useState(false);
 
   // Categories & Catalog data
-  const [apiCategories, setApiCategories] = useState<ApiCategory[]>([]);
+  const [apiCategories, setApiCategories] = useState<ApiCategory[]>(() => initialCachedCategories);
   const [catalogPackages, setCatalogPackages] = useState<ApiTrendingCatalogItem[]>([]);
   const [catalogSearch, setCatalogSearch] = useState("");
   const [isCatalogPickerOpen, setIsCatalogPickerOpen] = useState(false);
@@ -110,18 +118,12 @@ export default function ImageSectionsPage() {
       }
     } catch (e) {}
 
-    const cachedZones = getStoredModuleData<ZoneCard[]>("website_zones");
-    if (cachedZones && cachedZones.length > 0) setZones(cachedZones);
-    const cachedTrending = getStoredModuleData<TrendingServiceCard[]>("website_trending");
-    if (cachedTrending && cachedTrending.length > 0) setTrendingServices(cachedTrending);
-    const cachedQuick = getStoredModuleData<TrendingServiceCard[]>("website_quick");
-    if (cachedQuick && cachedQuick.length > 0) setQuickServices(cachedQuick);
-
-    // Initial API fetches
-    fetchZones();
-    fetchTrendingPackages();
-    fetchQuickServices();
-    fetchCategories();
+    // Initial API fetches — only call if not fresh in cache!
+    if (!isModuleCacheFresh("website_zones", 30000) || initialCachedZones.length === 0) fetchZones();
+    if (!isModuleCacheFresh("website_trending", 30000) || initialCachedTrending.length === 0) fetchTrendingPackages();
+    if (!isModuleCacheFresh("website_quick", 30000) || initialCachedQuick.length === 0) fetchQuickServices();
+    if (!isModuleCacheFresh("website_categories", 30000) || initialCachedCategories.length === 0) fetchCategories();
+    if (!isModuleCacheFresh("website_spotlight", 30000)) fetchSpotlightItems();
   }, []);
 
   // Fetch data on active tab switch
@@ -132,11 +134,13 @@ export default function ImageSectionsPage() {
       return;
     }
     if (activeTab === "zones") {
-      fetchZones();
+      if (!isModuleCacheFresh("website_zones", 30000)) fetchZones();
     } else if (activeTab === "trending") {
-      fetchTrendingPackages();
+      if (!isModuleCacheFresh("website_trending", 30000)) fetchTrendingPackages();
     } else if (activeTab === "quick") {
-      fetchQuickServices();
+      if (!isModuleCacheFresh("website_quick", 30000)) fetchQuickServices();
+    } else if (activeTab === "spotlight") {
+      if (!isModuleCacheFresh("website_spotlight", 30000)) fetchSpotlightItems();
     }
   }, [activeTab]);
 
@@ -150,12 +154,84 @@ export default function ImageSectionsPage() {
     }
   }, [isCatalogPickerOpen, catalogSearch]);
 
-  const fetchCategories = async () => {
+  const fetchSpotlightItems = async (force: boolean = false) => {
+    if (!force && isModuleCacheFresh("website_spotlight", 30000)) {
+      const cached = getStoredModuleData<SpotlightBanner[]>("website_spotlight");
+      if (cached && cached.length > 0) {
+        setSpotlightBanners(cached);
+        return;
+      }
+    }
+    try {
+      const res = await getAdminSpotlightApi(force);
+      if (res && res.success && Array.isArray(res.data)) {
+        const badgeColors: Record<string, string> = {
+          "new-launch": "#801C6E",
+          "best-seller": "#B45309",
+          "summer-special": "#0284C7",
+        };
+        const mapped: SpotlightBanner[] = res.data.map((item: any, index: number) => {
+          const pkg = typeof item.packageId === "object" ? item.packageId : null;
+          const pkgId = pkg?._id || (typeof item.packageId === "string" ? item.packageId : "");
+          const pkgImg = pkg?.imageUrl || pkg?.thumbnailUrl || "";
+          const apiOrigin = (process.env.NEXT_PUBLIC_API_URL || "").trim().replace(/\/api\/?$/, "");
+          const resolvedImageUrl =
+            formatImageUrl(pkgImg, pkgId) ||
+            (pkgId && apiOrigin ? `${apiOrigin}/api/media/package/${pkgId}/image` : "");
+          const cleanDesc = (pkg?.description || "")
+            .replace(/<[^>]*>/g, "")
+            .replace(/\n+/g, " • ")
+            .trim();
+
+          return {
+            id: item._id,
+            packageId: pkgId,
+            badge: item.badge || "new-launch",
+            badgeBg: badgeColors[item.badge] || "#801C6E",
+            title: pkg?.packageName || "Featured Service",
+            subtitle:
+              pkg?.subtitle ||
+              cleanDesc ||
+              (pkg?.price ? `Professional doorstep service in Varanasi (₹${pkg.price})` : "Professional doorstep service in Varanasi"),
+            ctaText: "Book now",
+            ctaTheme: "white" as const,
+            overlayGradient:
+              "linear-gradient(90deg, #48073d 0%, #48073d 44%, rgba(72, 7, 61, 0.92) 62%, rgba(72, 7, 61, 0) 100%)",
+            image: resolvedImageUrl,
+            targetUrl: pkgId ? `/services?package=${pkgId}` : "/services",
+            isActive: item.status ?? true,
+            sortOrder: item.displayOrder ?? index + 1,
+            packageName: pkg?.packageName || "",
+            price: typeof pkg?.price === "number" ? pkg.price : Number(pkg?.price) || undefined,
+            originalPrice: typeof pkg?.originalPrice === "number" ? pkg.originalPrice : Number(pkg?.originalPrice) || undefined,
+            duration: typeof pkg?.duration === "number" ? pkg.duration : Number(pkg?.duration) || undefined,
+            description: cleanDesc,
+            imageUrl: resolvedImageUrl,
+            thumbnailUrl: pkg?.thumbnailUrl || "",
+          };
+        });
+        setSpotlightBanners(mapped);
+        setCachedModuleData("website_spotlight", mapped);
+      }
+    } catch (err) {
+      console.error("Failed to fetch spotlight items:", err);
+    }
+  };
+
+  const fetchCategories = async (force: boolean = false) => {
+    if (!force && isModuleCacheFresh("website_categories", 30000)) {
+      const cached = getStoredModuleData<ApiCategory[]>("website_categories");
+      if (cached && cached.length > 0) {
+        setApiCategories(cached);
+        return;
+      }
+    }
     setIsCategoriesLoading(true);
     try {
-      const res = await getCategoriesApi({ limit: 100 });
+      const res = await getCategoriesApi({ limit: 100, forceRefresh: force });
       if (res && res.success && Array.isArray(res.data)) {
         setApiCategories(res.data);
+        setCachedModuleData("website_categories", res.data);
       }
     } catch (err) {
       console.error("Failed to fetch categories:", err);
@@ -164,10 +240,20 @@ export default function ImageSectionsPage() {
     }
   };
 
-  const fetchZones = async () => {
-    setIsZonesLoading(true);
+  const fetchZones = async (force: boolean = false) => {
+    if (!force && isModuleCacheFresh("website_zones", 30000)) {
+      const cached = getStoredModuleData<ZoneCard[]>("website_zones");
+      if (cached && cached.length > 0) {
+        setZones(cached);
+        setIsZonesLoading(false);
+        return;
+      }
+    }
+    if (zones.length === 0 && (!initialCachedZones || initialCachedZones.length === 0)) {
+      setIsZonesLoading(true);
+    }
     try {
-      const res = await getWebsiteZonesApi({ forceRefresh: true });
+      const res = await getWebsiteZonesApi({ forceRefresh: force });
       if (res && res.success && Array.isArray(res.data)) {
         const mapped: ZoneCard[] = res.data.map((item: ApiWebsiteZone, index: number) => ({
           id: item._id,
@@ -189,10 +275,20 @@ export default function ImageSectionsPage() {
     }
   };
 
-  const fetchTrendingPackages = async () => {
-    setIsTrendingLoading(true);
+  const fetchTrendingPackages = async (force: boolean = false) => {
+    if (!force && isModuleCacheFresh("website_trending", 30000)) {
+      const cached = getStoredModuleData<TrendingServiceCard[]>("website_trending");
+      if (cached && cached.length > 0) {
+        setTrendingServices(cached);
+        setIsTrendingLoading(false);
+        return;
+      }
+    }
+    if (trendingServices.length === 0 && (!initialCachedTrending || initialCachedTrending.length === 0)) {
+      setIsTrendingLoading(true);
+    }
     try {
-      const res = await getAdminTrendingPackagesApi(true);
+      const res = await getAdminTrendingPackagesApi(force);
       if (res && res.success && Array.isArray(res.data)) {
         const mapped: TrendingServiceCard[] = res.data.map((item: ApiTrendingPackage, index: number) => {
           const pkg = typeof item.packageId === "object" ? item.packageId : null;
@@ -252,10 +348,20 @@ export default function ImageSectionsPage() {
     }
   };
 
-  const fetchQuickServices = async () => {
-    setIsQuickLoading(true);
+  const fetchQuickServices = async (force: boolean = false) => {
+    if (!force && isModuleCacheFresh("website_quick", 30000)) {
+      const cached = getStoredModuleData<TrendingServiceCard[]>("website_quick");
+      if (cached && cached.length > 0) {
+        setQuickServices(cached);
+        setIsQuickLoading(false);
+        return;
+      }
+    }
+    if (quickServices.length === 0 && (!initialCachedQuick || initialCachedQuick.length === 0)) {
+      setIsQuickLoading(true);
+    }
     try {
-      const res = await getAdminQuickServicesApi(true);
+      const res = await getAdminQuickServicesApi(force);
       if (res && res.success && Array.isArray(res.data)) {
         let catalogList: ApiTrendingCatalogItem[] = catalogPackages;
         if (!catalogList || catalogList.length === 0) {
@@ -473,7 +579,12 @@ export default function ImageSectionsPage() {
       await handleRemovePackageFromQuickServices(targetPkgId);
     }
     if (deleteModal.type === "spotlight") {
-      updateSpotlightBannersState((prev) => prev.filter((b) => b.id !== deleteModal.id));
+      try {
+        await deleteSpotlightApi(deleteModal.id);
+        updateSpotlightBannersState((prev) => prev.filter((b) => b.id !== deleteModal.id));
+      } catch (e) {
+        console.error("Failed to delete spotlight item:", e);
+      }
     }
     if (deleteModal.type === "categorySections") {
       if (deleteModal.sectionId) {
@@ -647,6 +758,7 @@ export default function ImageSectionsPage() {
           spotlightBanners={spotlightBanners}
           searchQuery={searchQuery}
           onUpdateSpotlightBanners={updateSpotlightBannersState}
+          onRefreshSpotlight={fetchSpotlightItems}
           onRequestDelete={(id, name) =>
             setDeleteModal({ open: true, id, type: "spotlight", name })
           }

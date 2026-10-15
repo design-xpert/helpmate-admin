@@ -1100,40 +1100,6 @@ export async function getServiceActionsApi(
       }
     }
 
-    const catRes = await getCategoriesApi();
-    if (catRes && catRes.success && Array.isArray(catRes.data) && catRes.data.length > 0) {
-      const allActionPromises = catRes.data.map((cat: any) =>
-        authFetch(`${API_BASE_URL}/api/service-action/dropdown?categoryId=${cat._id}`)
-          .then((r) => safeJsonResponse(r))
-          .catch(() => null)
-      );
-      const actionResults = await Promise.all(allActionPromises);
-      const combined: any[] = [];
-      const seenIds = new Set<string>();
-
-      actionResults.forEach((res, idx) => {
-        const cat = catRes.data[idx];
-        if (res && res.success && Array.isArray(res.data)) {
-          res.data.forEach((act: any) => {
-            if (!seenIds.has(act._id)) {
-              seenIds.add(act._id);
-              combined.push({
-                ...act,
-                categoryId: cat,
-                categoryName: cat.categoryName,
-              });
-            }
-          });
-        }
-      });
-
-      const result = { success: true, message: "Service actions fetched successfully.", data: combined };
-      if (combined.length > 0) {
-        apiCache.set(cacheKey, result);
-      }
-      return result;
-    }
-
     return { success: true, data: [] };
   } catch (error) {
     console.error("getServiceActionsApi error:", error);
@@ -1145,8 +1111,8 @@ export async function getServiceActionDropdownApi(params?: { categoryId?: string
   const cleanCatId = (params?.categoryId || "").trim();
   const cleanSubCatId = (params?.subCategoryId || "").trim();
 
-  if (!cleanCatId && !cleanSubCatId) {
-    return getServiceActionsApi(params?.forceRefresh);
+  if (!cleanCatId) {
+    return { success: true, data: [] };
   }
 
   const cacheKey = `getServiceActionDropdownApi:${JSON.stringify({ categoryId: cleanCatId, subCategoryId: cleanSubCatId })}`;
@@ -1435,6 +1401,15 @@ export function formatImageUrl(imgUrl?: any, packageId?: string): string {
     return trimmed;
   }
 
+  // Route any backend media URL through same-origin (/api/media/...)
+  // This completely eliminates browser CORP (Cross-Origin-Resource-Policy: same-origin) blocking
+  if (trimmed.includes("/api/media/")) {
+    return trimmed.substring(trimmed.indexOf("/api/media/"));
+  }
+  if (trimmed.includes("/uploads/")) {
+    return trimmed.substring(trimmed.indexOf("/uploads/"));
+  }
+
   // If a package ID is provided or in URL and rawStr is an internal MinIO path
   if (packageId && (trimmed.startsWith("helpMate/packages") || trimmed.includes("packages/"))) {
     return `/api/media/package/${packageId}/image`;
@@ -1461,34 +1436,29 @@ export function formatImageUrl(imgUrl?: any, packageId?: string): string {
   // 3. Convert backslashes (Windows paths like uploads\image.png) to forward slashes
   trimmed = trimmed.replace(/\\/g, "/");
 
-  // 4. Proxy /api/media/ and /uploads/ URLs via same-origin Next.js rewrite to bypass CORS
-  if (trimmed.includes("/api/media/")) {
-    const idx = trimmed.indexOf("/api/media/");
-    return trimmed.substring(idx);
-  }
-
-  if (trimmed.includes("/uploads/")) {
-    const idx = trimmed.indexOf("/uploads/");
-    return trimmed.substring(idx);
-  }
-
-  // If it's a relative URL or internal path like helpMate/packages/...
-  if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
-    if (trimmed.includes("packages") && packageId) {
-      return `/api/media/package/${packageId}/image`;
+  // 4. Absolute URLs (http:// or https://) - preserve them completely
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    try {
+      return encodeURI(decodeURI(trimmed));
+    } catch {
+      return trimmed;
     }
-    const base = API_BASE_URL.replace(/\/api\/?$/, "");
-    if (!trimmed.startsWith("/")) {
-      trimmed = `/${trimmed}`;
-    }
-    trimmed = `${base}${trimmed}`;
   }
 
-  // 7. Safely encode space characters and unescaped symbols
+  // 5. If it's a relative URL or internal path like helpMate/packages/...
+  if (trimmed.includes("packages") && packageId) {
+    return `/api/media/package/${packageId}/image`;
+  }
+
+  const origin = (process.env.NEXT_PUBLIC_API_URL || "").trim().replace(/\/api\/?$/, "");
+  const path = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+  const fullUrl = origin ? `${origin}${path}` : path;
+
+  // 6. Safely encode space characters and unescaped symbols
   try {
-    return encodeURI(decodeURI(trimmed));
+    return encodeURI(decodeURI(fullUrl));
   } catch {
-    return trimmed;
+    return fullUrl;
   }
 }
 
@@ -1707,6 +1677,7 @@ export async function updatePackageApi(
       thumbnailUrl?: string;
       imageUrl?: string;
       imageFile?: File;
+      removeImage?: boolean;
       addons?: string[];
       includeInPackage?: string[];
       excludeFromPackage?: string[];
@@ -1726,15 +1697,17 @@ export async function updatePackageApi(
         fileBlob = objPayload.imageFile;
       } else {
         const rawUri = objPayload.imageUrl || objPayload.thumbnailUrl || "";
-        if (rawUri.startsWith("blob:") || rawUri.startsWith("http://") || rawUri.startsWith("https://")) {
-          try {
-            const res = await fetch(rawUri);
-            fileBlob = await res.blob();
-          } catch {
-            fileBlob = null;
+        if (rawUri.startsWith("blob:") || rawUri.startsWith("data:")) {
+          if (rawUri.startsWith("blob:")) {
+            try {
+              const res = await fetch(rawUri);
+              fileBlob = await res.blob();
+            } catch {
+              fileBlob = null;
+            }
+          } else {
+            fileBlob = dataURLtoBlob(rawUri);
           }
-        } else if (rawUri.startsWith("data:")) {
-          fileBlob = dataURLtoBlob(rawUri);
         }
       }
 
@@ -1748,12 +1721,12 @@ export async function updatePackageApi(
         formData.append("packageName", String(objPayload.packageName || objPayload.title).trim());
       }
 
-      if (objPayload.subtitle && typeof objPayload.subtitle === "string" && objPayload.subtitle.trim()) {
-        formData.append("subtitle", objPayload.subtitle.trim());
+      if (objPayload.subtitle !== undefined) {
+        formData.append("subtitle", objPayload.subtitle && typeof objPayload.subtitle === "string" ? objPayload.subtitle.trim() : "");
       }
 
-      if (objPayload.description && typeof objPayload.description === "string" && objPayload.description.trim()) {
-        formData.append("description", objPayload.description.trim());
+      if (objPayload.description !== undefined) {
+        formData.append("description", objPayload.description && typeof objPayload.description === "string" ? objPayload.description.trim() : "");
       }
 
       if (objPayload.price !== undefined) {
@@ -1791,6 +1764,9 @@ export async function updatePackageApi(
         const mimeType = (fileBlob as any).type || "image/jpeg";
         const ext = mimeType.split("/")[1] || "jpeg";
         formData.append("image", fileBlob, `package_image.${ext}`);
+      } else if (objPayload.removeImage || (objPayload.imageUrl === "" && !objPayload.thumbnailUrl)) {
+        formData.append("removeImage", "true");
+        formData.append("imageUrl", "");
       }
 
       bodyData = formData;
@@ -3137,6 +3113,113 @@ export async function deleteWebsiteZoneApi(id: string) {
   } catch (error) {
     console.error("deleteWebsiteZoneApi error:", error);
     return { success: false, message: "Failed to delete website zone." };
+  }
+}
+
+// ─── WEBSITE SPOTLIGHT APIS ───
+
+export const spotlightBadges = [
+  { label: "New Launch", value: "new-launch" },
+  { label: "Best Seller", value: "best-seller" },
+  { label: "Summer Special", value: "summer-special" },
+] as const;
+
+export type SpotlightBadgeValue = (typeof spotlightBadges)[number]["value"];
+
+export interface ApiWebsiteSpotlight {
+  _id: string;
+  packageId: {
+    _id: string;
+    packageName: string;
+    subtitle?: string;
+    description?: string;
+    price: number;
+    originalPrice?: number;
+    duration?: number;
+    imageUrl?: string;
+    thumbnailUrl?: string;
+    status: boolean;
+    serviceActionId?: any;
+  } | string;
+  badge: SpotlightBadgeValue;
+  displayOrder: number;
+  status: boolean;
+  createdBy?: string;
+  updatedBy?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export async function getAdminSpotlightApi(forceRefresh?: boolean) {
+  const cacheKey = `getAdminSpotlightApi`;
+  const cached = getFromCache(cacheKey, forceRefresh);
+  if (cached) return cached;
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/website/spotlight/admin`);
+    const data = await safeJsonResponse(res);
+    if (data && data.success !== false) {
+      apiCache.set(cacheKey, data);
+    }
+    return data;
+  } catch (error) {
+    console.error("getAdminSpotlightApi error:", error);
+    return { success: false, message: "Failed to fetch spotlight items." };
+  }
+}
+
+export async function createSpotlightApi(payload: {
+  packageId: string;
+  badge: string;
+  displayOrder?: number;
+}) {
+  clearApiCache("getAdminSpotlightApi");
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/website/spotlight/admin`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(payload),
+    });
+    return await safeJsonResponse(res);
+  } catch (error) {
+    console.error("createSpotlightApi error:", error);
+    return { success: false, message: "Failed to add package to spotlight." };
+  }
+}
+
+export async function updateSpotlightApi(
+  id: string,
+  payload: {
+    packageId?: string;
+    badge?: string;
+    displayOrder?: number;
+    status?: boolean;
+  }
+) {
+  clearApiCache("getAdminSpotlightApi");
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/website/spotlight/admin/${id}`, {
+      method: "PUT",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(payload),
+    });
+    return await safeJsonResponse(res);
+  } catch (error) {
+    console.error("updateSpotlightApi error:", error);
+    return { success: false, message: "Failed to update spotlight item." };
+  }
+}
+
+export async function deleteSpotlightApi(id: string) {
+  clearApiCache("getAdminSpotlightApi");
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/website/spotlight/admin/${id}`, {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    });
+    return await safeJsonResponse(res);
+  } catch (error) {
+    console.error("deleteSpotlightApi error:", error);
+    return { success: false, message: "Failed to delete spotlight item." };
   }
 }
 

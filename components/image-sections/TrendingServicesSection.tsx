@@ -1,11 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import {
   Flame,
   Trash2,
   X,
   Save,
+  Loader2,
 } from "lucide-react";
 import { Portal } from "@/components/Portal";
 import { TrendingServiceCard } from "./types";
@@ -39,6 +41,7 @@ export function TrendingServicesSection({
     mode: "add",
     data: {},
   });
+  const [isSavingTrending, setIsSavingTrending] = useState(false);
 
   const filteredTrending = trendingServices.filter(
     (t) =>
@@ -54,34 +57,40 @@ export function TrendingServicesSection({
   };
 
   const saveTrending = () => {
+    if (isSavingTrending) return;
     const d = trendingModal.data;
     if (!d.title || !d.imageUrl) return;
 
-    if (trendingModal.mode === "add") {
-      const newTrending: TrendingServiceCard = {
-        id: `trend-${Date.now()}`,
-        title: d.title!,
-        category: d.category || "General",
-        durationMins: d.durationMins || 60,
-        rating: d.rating || 4.9,
-        reviewsCount: d.reviewsCount || 100,
-        description: d.description || "",
-        discountPercentage: d.discountPercentage || "20% OFF",
-        price: d.price || "999",
-        originalPrice: d.originalPrice || "1499",
-        imageUrl: d.imageUrl!,
-        bookCtaText: d.bookCtaText || "Book Now →",
-        bookCtaLink: d.bookCtaLink || "/services",
-        isActive: d.isActive ?? true,
-        sortOrder: d.sortOrder || trendingServices.length + 1,
-      };
-      onUpdateTrendingServices((prev) => [...prev, newTrending]);
-    } else {
-      onUpdateTrendingServices((prev) =>
-        prev.map((t) => (t.id === d.id ? ({ ...t, ...d } as TrendingServiceCard) : t))
-      );
+    setIsSavingTrending(true);
+    try {
+      if (trendingModal.mode === "add") {
+        const newTrending: TrendingServiceCard = {
+          id: `trend-${Date.now()}`,
+          title: d.title!,
+          category: d.category || "General",
+          durationMins: d.durationMins || 60,
+          rating: d.rating || 4.9,
+          reviewsCount: d.reviewsCount || 100,
+          description: d.description || "",
+          discountPercentage: d.discountPercentage || "20% OFF",
+          price: d.price || "999",
+          originalPrice: d.originalPrice || "1499",
+          imageUrl: d.imageUrl!,
+          bookCtaText: d.bookCtaText || "Book Now →",
+          bookCtaLink: d.bookCtaLink || "/services",
+          isActive: d.isActive ?? true,
+          sortOrder: d.sortOrder || trendingServices.length + 1,
+        };
+        onUpdateTrendingServices((prev) => [...prev, newTrending]);
+      } else {
+        onUpdateTrendingServices((prev) =>
+          prev.map((t) => (t.id === d.id ? ({ ...t, ...d } as TrendingServiceCard) : t))
+        );
+      }
+      setTrendingModal({ open: false, mode: "add", data: {} });
+    } finally {
+      setIsSavingTrending(false);
     }
-    setTrendingModal({ open: false, mode: "add", data: {} });
   };
 
   const inputCls =
@@ -235,14 +244,15 @@ export function TrendingServicesSection({
                     className={inputCls}
                   />
                   {trendingModal.data.imageUrl ? (
-                    <img
-                      src={formatImageUrl(trendingModal.data.imageUrl)}
-                      alt="preview"
-                      className="mt-2 w-full h-28 object-cover rounded-xl border border-slate-200 dark:border-slate-700"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).style.display = "none";
-                      }}
-                    />
+                    <div className="relative mt-2 w-full h-28 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700">
+                      <Image
+                        src={formatImageUrl(trendingModal.data.imageUrl)}
+                        alt="preview"
+                        fill
+                        unoptimized
+                        className="object-cover"
+                      />
+                    </div>
                   ) : trendingModal.data.title ? (
                     <div className="mt-2 w-full h-28 rounded-xl bg-gradient-to-br from-[#48073d] via-[#610c52] to-[#801C6E] flex flex-col items-center justify-center text-white border border-slate-200 dark:border-slate-700">
                       <div className="w-12 h-12 rounded-xl bg-white/15 backdrop-blur-md border border-white/25 text-white font-black text-xl flex items-center justify-center shadow-md tracking-wider">
@@ -444,18 +454,29 @@ export function TrendingServicesSection({
               <div className="px-5 py-4 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2">
                 <button
                   type="button"
+                  disabled={isSavingTrending}
                   onClick={() => setTrendingModal({ open: false, mode: "add", data: {} })}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer transition-colors"
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
+                  disabled={isSavingTrending}
                   onClick={saveTrending}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-brand-600 hover:bg-brand-700 flex items-center gap-1.5 cursor-pointer transition-colors shadow-sm"
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-brand-600 hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 cursor-pointer transition-colors shadow-sm"
                 >
-                  <Save className="w-3.5 h-3.5" />
-                  Save Package
+                  {isSavingTrending ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>{trendingModal.mode === "add" ? "Adding Package..." : "Updating Package..."}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-3.5 h-3.5" />
+                      <span>{trendingModal.mode === "add" ? "Save Package" : "Update Package"}</span>
+                    </>
+                  )}
                 </button>
               </div>
             </div>

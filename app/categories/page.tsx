@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Image from "next/image";
 import { DataTable, Column } from "@/components/DataTable";
 import { RowActionMenu } from "@/components/RowActionMenu";
 import { Portal } from "@/components/Portal";
@@ -35,6 +36,7 @@ import {
   Trash2,
   RefreshCw,
   Check,
+  Loader2,
 } from "lucide-react";
 
 function CategoryIconDisplay({ iconUrl, name, sizeClassName = "w-full h-full" }: { iconUrl?: string; name: string; sizeClassName?: string }) {
@@ -57,21 +59,27 @@ export default function CategoriesPage() {
 
   const initialCached = getStoredModuleData<CategoryItem[]>("categories");
   const [categories, setCategories] = useState<CategoryItem[]>(() => initialCached || []);
-  const [isLoading, setIsLoading] = useState<boolean>(() => !initialCached || initialCached.length === 0);
+  const [isLoading, setIsLoading] = useState<boolean>(
+    () => !(isModuleCacheFresh("categories", 30000) && initialCached && initialCached.length > 0)
+  );
 
   // Fetch Categories from Backend API
   const fetchCategoriesFromBackend = async (force: boolean = false) => {
     // If cache is fresh (< 30s) and not forced, DO NOT CALL API AT ALL!
-    if (!force && isModuleCacheFresh("categories", 30000) && categories.length > 0) {
-      setIsLoading(false);
-      return;
+    if (!force && isModuleCacheFresh("categories", 30000)) {
+      const cached = getStoredModuleData<CategoryItem[]>("categories");
+      if (cached && cached.length > 0) {
+        setCategories(cached);
+        setIsLoading(false);
+        return;
+      }
     }
 
-    if (categories.length === 0) {
+    if (categories.length === 0 && (!initialCached || initialCached.length === 0)) {
       setIsLoading(true);
     }
     try {
-      const res = await getCategoriesApi();
+      const res = await getCategoriesApi({ forceRefresh: force });
       if (res && res.success !== false && res.data && Array.isArray(res.data)) {
         const mapped: CategoryItem[] = res.data.map((c: ApiCategory) => {
           const apiIcon = c.iconUrl || (c as any).icon || (c._id ? `/api/media/category/${c._id}/icon` : "");
@@ -99,11 +107,16 @@ export default function CategoriesPage() {
   };
 
   useEffect(() => {
+    if (isModuleCacheFresh("categories", 30000) && initialCached && initialCached.length > 0) {
+      setIsLoading(false);
+      return;
+    }
     fetchCategoriesFromBackend();
   }, []);
 
   // Add / Edit Drawer State
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [isSavingCategory, setIsSavingCategory] = useState(false);
   const [editingCategory, setEditingCategory] = useState<CategoryItem | null>(null);
   const [deleteModal, setDeleteModal] = useState<{ open: boolean; cat: CategoryItem } | null>(null);
 
@@ -304,96 +317,104 @@ export default function CategoriesPage() {
 
   const handleSaveCategory = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSavingCategory) return;
     if (!catName.trim()) return;
 
-    let updatedSubs = [...subcategoriesList];
-    if (editingSubcatIndex !== null && editingSubcatIndex >= 0 && editingSubcatIndex < updatedSubs.length) {
-      if (editingSubcatName.trim()) {
-        const img = editingSubcatImageUrl.trim();
-        updatedSubs[editingSubcatIndex] = {
-          ...updatedSubs[editingSubcatIndex],
-          name: editingSubcatName.trim(),
-          imageUrl: img || undefined,
-          iconUrl: img || undefined,
-        };
+    setIsSavingCategory(true);
+    try {
+      let updatedSubs = [...subcategoriesList];
+      if (editingSubcatIndex !== null && editingSubcatIndex >= 0 && editingSubcatIndex < updatedSubs.length) {
+        if (editingSubcatName.trim()) {
+          const img = editingSubcatImageUrl.trim();
+          updatedSubs[editingSubcatIndex] = {
+            ...updatedSubs[editingSubcatIndex],
+            name: editingSubcatName.trim(),
+            imageUrl: img || undefined,
+            iconUrl: img || undefined,
+          };
+        }
       }
-    }
 
-    if (subCategoryInput.trim()) {
-      const tag = subCategoryInput.trim();
-      const img = subCategoryImageUrl.trim();
-      if (!updatedSubs.some((s) => s.name.toLowerCase() === tag.toLowerCase())) {
-        updatedSubs.push({ name: tag, imageUrl: img || undefined, iconUrl: img || undefined });
+      if (subCategoryInput.trim()) {
+        const tag = subCategoryInput.trim();
+        const img = subCategoryImageUrl.trim();
+        if (!updatedSubs.some((s) => s.name.toLowerCase() === tag.toLowerCase())) {
+          updatedSubs.push({ name: tag, imageUrl: img || undefined, iconUrl: img || undefined });
+        }
       }
-    }
 
-    const finalSlug = slug.trim() || catName.trim().toLowerCase().replace(/\s+/g, "-");
-    const subCatsPayload = updatedSubs
-      .filter((item) => item.name && item.name.trim())
-      .map((item) => ({
-        ...(item._id ? { _id: item._id } : {}),
-        name: item.name.trim(),
-        ...(item.imageUrl ? { imageUrl: item.imageUrl.trim() } : {}),
-        ...(item.iconUrl ? { iconUrl: item.iconUrl.trim() } : {}),
-      }));
+      const finalSlug = slug.trim() || catName.trim().toLowerCase().replace(/\s+/g, "-");
+      const subCatsPayload = updatedSubs
+        .filter((item) => item.name && item.name.trim())
+        .map((item) => ({
+          ...(item._id ? { _id: item._id } : {}),
+          name: item.name.trim(),
+          ...(item.imageUrl ? { imageUrl: item.imageUrl.trim() } : {}),
+          ...(item.iconUrl ? { iconUrl: item.iconUrl.trim() } : {}),
+        }));
 
-    if (editingCategory) {
-      if (editingCategory.id.length === 24) {
-        await updateCategoryApi(editingCategory.id, {
+      if (editingCategory) {
+        if (editingCategory.id.length === 24) {
+          await updateCategoryApi(editingCategory.id, {
+            categoryName: catName.trim(),
+            slug: finalSlug,
+            iconUrl: primaryIconUrl,
+            subCategories: subCatsPayload,
+            status: status === "Active",
+          });
+          await fetchCategoriesFromBackend();
+        } else {
+          const updatedList = categories.map((c) =>
+            c.id === editingCategory.id
+              ? {
+                ...c,
+                name: catName,
+                slug: finalSlug,
+                icon,
+                iconUrl: primaryIconUrl,
+                status,
+                subcategories: subCatsPayload.map((s) => s.name),
+                subCategoriesObj: subCatsPayload,
+                subcategoriesCount: subCatsPayload.length,
+              }
+              : c
+          );
+          setCategories(updatedList);
+        }
+      } else {
+        const apiRes = await createCategoryApi({
           categoryName: catName.trim(),
           slug: finalSlug,
           iconUrl: primaryIconUrl,
           subCategories: subCatsPayload,
           status: status === "Active",
         });
-        await fetchCategoriesFromBackend();
-      } else {
-        const updatedList = categories.map((c) =>
-          c.id === editingCategory.id
-            ? {
-              ...c,
-              name: catName,
-              slug: finalSlug,
-              icon,
-              iconUrl: primaryIconUrl,
-              status,
-              subcategories: subCatsPayload.map((s) => s.name),
-              subCategoriesObj: subCatsPayload,
-              subcategoriesCount: subCatsPayload.length,
-            }
-            : c
-        );
-        setCategories(updatedList);
-      }
-    } else {
-      const apiRes = await createCategoryApi({
-        categoryName: catName.trim(),
-        slug: finalSlug,
-        iconUrl: primaryIconUrl,
-        subCategories: subCatsPayload,
-        status: status === "Active",
-      });
 
-      if (apiRes.success && apiRes.data) {
-        await fetchCategoriesFromBackend();
-      } else {
-        const newCat: CategoryItem = {
-          id: `cat-${Date.now()}`,
-          name: catName,
-          slug: finalSlug,
-          icon,
-          iconUrl: primaryIconUrl,
-          subcategories: subCatsPayload.map((s) => s.name),
-          subCategoriesObj: subCatsPayload,
-          subcategoriesCount: subCatsPayload.length,
-          servicesCount: 0,
-          status,
-        };
-        setCategories([newCat, ...categories]);
+        if (apiRes.success && apiRes.data) {
+          await fetchCategoriesFromBackend();
+        } else {
+          const newCat: CategoryItem = {
+            id: `cat-${Date.now()}`,
+            name: catName,
+            slug: finalSlug,
+            icon,
+            iconUrl: primaryIconUrl,
+            subcategories: subCatsPayload.map((s) => s.name),
+            subCategoriesObj: subCatsPayload,
+            subcategoriesCount: subCatsPayload.length,
+            servicesCount: 0,
+            status,
+          };
+          setCategories([newCat, ...categories]);
+        }
       }
+
+      setIsDrawerOpen(false);
+    } catch (err) {
+      console.error("Save category error:", err);
+    } finally {
+      setIsSavingCategory(false);
     }
-
-    setIsDrawerOpen(false);
   };
 
   const catColumns: Column<CategoryItem>[] = [
@@ -436,14 +457,15 @@ export default function CategoriesPage() {
                   className="px-2 py-0.5 rounded-lg bg-purple-50 text-purple-700 dark:bg-purple-950 dark:text-purple-300 font-extrabold text-[10px] border border-purple-200 dark:border-purple-800 flex items-center gap-1.5 shadow-2xs"
                 >
                   {imgUrl ? (
-                    <img
-                      src={imgUrl}
-                      alt={sub.name}
-                      className="w-3.5 h-3.5 rounded object-cover border border-purple-300 dark:border-purple-700 shrink-0"
-                      onError={(e) => {
-                        (e.currentTarget as HTMLElement).style.display = "none";
-                      }}
-                    />
+                    <div className="relative w-3.5 h-3.5 rounded overflow-hidden border border-purple-300 dark:border-purple-700 shrink-0">
+                      <Image
+                        src={imgUrl}
+                        alt={sub.name}
+                        fill
+                        unoptimized
+                        className="object-cover"
+                      />
+                    </div>
                   ) : (
                     <Layers className="w-2.5 h-2.5 shrink-0" />
                   )}
@@ -824,10 +846,12 @@ export default function CategoriesPage() {
                           <div className="relative w-12 h-12 rounded-xl border-2 border-dashed border-purple-300 dark:border-purple-700 bg-purple-50 dark:bg-purple-950/40 flex items-center justify-center overflow-hidden shrink-0 group">
                             {subCategoryImageUrl ? (
                               <>
-                                <img
+                                <Image
                                   src={subCategoryImageUrl}
                                   alt="Subcategory preview"
-                                  className="w-full h-full object-cover"
+                                  fill
+                                  unoptimized
+                                  className="object-cover"
                                 />
                                 <button
                                   type="button"
@@ -954,10 +978,12 @@ export default function CategoriesPage() {
                                 <div className="flex items-center gap-2 pt-1 border-t border-slate-100 dark:border-slate-800">
                                   <div className="relative w-9 h-9 rounded-lg border border-purple-200 dark:border-purple-700 bg-purple-50 dark:bg-purple-950/40 flex items-center justify-center overflow-hidden shrink-0">
                                     {editingSubcatImageUrl ? (
-                                      <img
+                                      <Image
                                         src={editingSubcatImageUrl}
                                         alt="Editing preview"
-                                        className="w-full h-full object-cover"
+                                        fill
+                                        unoptimized
+                                        className="object-cover"
                                       />
                                     ) : (
                                       <ImageIcon className="w-4 h-4 text-purple-400" />
@@ -1002,14 +1028,15 @@ export default function CategoriesPage() {
                             ) : (
                               <span className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-purple-200 dark:border-purple-800 text-purple-900 dark:text-purple-200 font-extrabold text-xs flex items-center gap-2 shadow-xs group">
                                 {item.imageUrl || item.iconUrl ? (
-                                  <img
-                                    src={item.imageUrl || item.iconUrl}
-                                    alt={item.name}
-                                    className="w-5 h-5 rounded-md object-cover border border-purple-200 dark:border-purple-700 shrink-0"
-                                    onError={(e) => {
-                                      (e.currentTarget as HTMLElement).style.display = "none";
-                                    }}
-                                  />
+                                  <div className="relative w-5 h-5 rounded-md overflow-hidden border border-purple-200 dark:border-purple-700 shrink-0">
+                                    <Image
+                                      src={(item.imageUrl || item.iconUrl)!}
+                                      alt={item.name}
+                                      fill
+                                      unoptimized
+                                      className="object-cover"
+                                    />
+                                  </div>
                                 ) : (
                                   <Layers className="w-3.5 h-3.5 text-purple-500 shrink-0" />
                                 )}
@@ -1057,17 +1084,28 @@ export default function CategoriesPage() {
                 )}
                 <button
                   type="button"
+                  disabled={isSavingCategory}
                   onClick={() => setIsDrawerOpen(false)}
-                  className="flex-1 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 transition-colors cursor-pointer"
+                  className="flex-1 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-3 bg-brand-500 hover:bg-brand-600 text-white rounded-xl font-extrabold text-xs shadow-lux transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                  disabled={isSavingCategory}
+                  className="flex-1 py-3 bg-brand-500 hover:bg-brand-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-extrabold text-xs shadow-lux transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
                 >
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>{editingCategory ? "Edit Category" : "Add Category"}</span>
+                  {isSavingCategory ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>{editingCategory ? "Updating Category..." : "Adding Category..."}</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>{editingCategory ? "Edit Category" : "Add Category"}</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>

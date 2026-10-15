@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { initialBookings, Booking } from "@/lib/mockData";
 import {
   FileText,
@@ -341,9 +342,11 @@ export default function InvoiceDetailPage() {
           <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-6 border-b border-slate-200 dark:border-slate-800 pb-5">
             <div className="flex items-start gap-3">
               <div className="p-2 rounded-2xl bg-white border border-slate-200 dark:border-slate-700 shrink-0 shadow-xs flex items-center justify-center">
-                <img
+                <Image
                   src="/logo.png"
                   alt="HelpMate Logo"
+                  width={36}
+                  height={36}
                   className="h-9 w-9 object-contain"
                 />
               </div>
@@ -519,9 +522,11 @@ export default function InvoiceDetailPage() {
           <div className="flex flex-row items-start justify-between gap-2 border-b border-slate-300 pb-3">
             <div className="flex items-start gap-3">
               <div className="p-1.5 rounded-xl bg-white border border-slate-300 shrink-0 flex items-center justify-center">
-                <img
+                <Image
                   src="/logo.png"
                   alt="HelpMate Logo"
+                  width={32}
+                  height={32}
                   className="h-8 w-8 object-contain"
                 />
               </div>

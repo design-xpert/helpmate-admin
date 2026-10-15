@@ -37,6 +37,7 @@ import {
   Sliders,
   Filter,
   RotateCcw,
+  Loader2,
 } from "lucide-react";
 import {
   Booking,
@@ -138,6 +139,7 @@ export function BookingWizardModal({
   const [isSendingOtp, setIsSendingOtp] = useState<boolean>(false);
   const [isVerifyingOtp, setIsVerifyingOtp] = useState<boolean>(false);
   const [otpMessage, setOtpMessage] = useState<string>("");
+  const [isSavingBooking, setIsSavingBooking] = useState<boolean>(false);
   const [isOtpSkipped, setIsOtpSkipped] = useState<boolean>(false);
 
   // STEP 3: API Catalog States (Categories, Service Actions, Packages)
@@ -1296,7 +1298,10 @@ export function BookingWizardModal({
   };
 
   const handleCompleteBooking = async () => {
-    const tech = partnerListFromApi.find((t) => t.id === preferredPartnerId || t.partnerId === preferredPartnerId) || initialTechnicians.find((t) => t.id === preferredPartnerId);
+    if (isSavingBooking) return;
+    setIsSavingBooking(true);
+    try {
+      const tech = partnerListFromApi.find((t) => t.id === preferredPartnerId || t.partnerId === preferredPartnerId) || initialTechnicians.find((t) => t.id === preferredPartnerId);
     const combinedServiceTitle =
       selectedServicesList.length > 0
         ? selectedServicesList.map((s) => `${s.title} (x${s.quantity})`).join(", ")
@@ -1529,7 +1534,10 @@ export function BookingWizardModal({
       onBookingCreated(created);
     }
     handleClose();
-  };
+  } finally {
+    setIsSavingBooking(false);
+  }
+};
 
   // Validation for mandatory fields per step:
   // Step 1: Customer selected + OTP verified (or trusted VIP / skipped)
@@ -3154,10 +3162,18 @@ export function BookingWizardModal({
             ) : (
               <button
                 type="button"
+                disabled={isSavingBooking}
                 onClick={handleCompleteBooking}
-                className="px-6 sm:px-8 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-lux transition-colors cursor-pointer"
+                className="px-6 sm:px-8 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-extrabold text-xs shadow-lux transition-colors flex items-center justify-center gap-2 cursor-pointer"
               >
-                Confirm & Create Booking
+                {isSavingBooking ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>{bookingToEdit ? "Updating Booking..." : "Creating Booking..."}</span>
+                  </>
+                ) : (
+                  <span>{bookingToEdit ? "Confirm & Update Booking" : "Confirm & Create Booking"}</span>
+                )}
               </button>
             )}
           </div>

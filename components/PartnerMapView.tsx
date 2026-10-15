@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { Technician, varanasiLocalities } from "@/lib/mockData";
 import {
   MapPin,
@@ -306,11 +307,17 @@ export function PartnerMapView({ technicians, onSelectTechnician }: PartnerMapVi
                     }`}
                   >
                     <div className="relative">
-                      <img
-                        src={tech.avatar}
-                        alt={tech.name}
-                        className="w-7 h-7 rounded-xl object-cover border border-white/20"
-                      />
+                      <div className="relative w-7 h-7 rounded-xl overflow-hidden border border-white/20">
+                        {tech.avatar ? (
+                          <Image
+                            src={tech.avatar}
+                            alt={tech.name}
+                            fill
+                            unoptimized
+                            className="object-cover"
+                          />
+                        ) : null}
+                      </div>
                       <span
                         className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-slate-900 ${
                           isOnJob
@@ -339,11 +346,17 @@ export function PartnerMapView({ technicians, onSelectTechnician }: PartnerMapVi
               <div className="absolute bottom-4 left-4 right-4 z-40 max-w-lg mx-auto bg-slate-900/95 backdrop-blur-xl border border-slate-800 p-4 rounded-3xl shadow-2xl animate-in slide-in-from-bottom duration-300 text-white text-xs">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <img
-                      src={activePartner.avatar}
-                      alt={activePartner.name}
-                      className="w-12 h-12 rounded-2xl object-cover border-2 border-brand-500 shadow-md shrink-0"
-                    />
+                    <div className="relative w-12 h-12 rounded-2xl overflow-hidden border-2 border-brand-500 shadow-md shrink-0">
+                      {activePartner.avatar ? (
+                        <Image
+                          src={activePartner.avatar}
+                          alt={activePartner.name}
+                          fill
+                          unoptimized
+                          className="object-cover"
+                        />
+                      ) : null}
+                    </div>
                     <div>
                       <div className="flex items-center gap-2">
                         <h4 className="font-extrabold text-sm text-white">{activePartner.name}</h4>
@@ -463,11 +476,17 @@ export function PartnerMapView({ technicians, onSelectTechnician }: PartnerMapVi
                     >
                       <div className="flex items-center justify-between gap-3">
                         <div className="flex items-center gap-2.5 min-w-0">
-                          <img
-                            src={tech.avatar}
-                            alt={tech.name}
-                            className="w-9 h-9 rounded-xl object-cover border border-slate-200 dark:border-slate-700 shrink-0"
-                          />
+                          <div className="relative w-9 h-9 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0">
+                            {tech.avatar ? (
+                              <Image
+                                src={tech.avatar}
+                                alt={tech.name}
+                                fill
+                                unoptimized
+                                className="object-cover"
+                              />
+                            ) : null}
+                          </div>
                           <div className="min-w-0">
                             <span className="font-extrabold text-slate-900 dark:text-white text-xs truncate block">
                               {tech.name}

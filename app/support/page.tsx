@@ -4,6 +4,7 @@ import { useState, useMemo } from "react";
 import { useRbac } from "@/context/RbacContext";
 import { CustomSelect } from "@/components/CustomSelect";
 import Link from "next/link";
+import Image from "next/image";
 import { DataTable, Column } from "@/components/DataTable";
 import { RowActionMenu } from "@/components/RowActionMenu";
 import {
@@ -294,14 +295,18 @@ export default function SupportPage() {
               className="inline-flex items-center gap-2 p-1 pr-3 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 transition-all cursor-pointer group"
               title={`Click to view profile of ${assignedAdminName}`}
             >
-              <img
-                src={
-                  adminProfile?.avatar ||
-                  `https://ui-avatars.com/api/?name=${encodeURIComponent(assignedAdminName)}&background=6366f1&color=fff`
-                }
-                alt={assignedAdminName}
-                className="w-6 h-6 rounded-full object-cover ring-2 ring-brand-500/40"
-              />
+              <div className="relative w-6 h-6 rounded-full overflow-hidden shrink-0 ring-2 ring-brand-500/40">
+                <Image
+                  src={
+                    adminProfile?.avatar ||
+                    `https://ui-avatars.com/api/?name=${encodeURIComponent(assignedAdminName)}&background=6366f1&color=fff`
+                  }
+                  alt={assignedAdminName}
+                  fill
+                  unoptimized
+                  className="object-cover"
+                />
+              </div>
               <span className="text-xs font-black text-slate-900 dark:text-white group-hover:text-brand-600 dark:group-hover:text-brand-400">
                 {assignedAdminName}
               </span>
@@ -496,11 +501,17 @@ export default function SupportPage() {
               </div>
 
               <div className="flex items-center gap-4">
-                <img
-                  src={selectedAdminForProfile.avatar}
-                  alt={selectedAdminForProfile.name}
-                  className="w-16 h-16 rounded-2xl object-cover ring-4 ring-brand-500/30 shadow-md"
-                />
+                <div className="relative w-16 h-16 rounded-2xl overflow-hidden shrink-0 ring-4 ring-brand-500/30 shadow-md">
+                  {selectedAdminForProfile.avatar ? (
+                    <Image
+                      src={selectedAdminForProfile.avatar}
+                      alt={selectedAdminForProfile.name}
+                      fill
+                      unoptimized
+                      className="object-cover"
+                    />
+                  ) : null}
+                </div>
                 <div>
                   <h4 className="text-lg font-black text-slate-900 dark:text-white">{selectedAdminForProfile.name}</h4>
                   <span className="px-2.5 py-0.5 rounded-full bg-brand-50 text-brand-700 dark:bg-brand-950 dark:text-brand-300 text-[11px] font-extrabold border border-brand-200 dark:border-brand-800 inline-block mt-0.5">

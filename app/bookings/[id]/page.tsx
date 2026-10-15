@@ -2,6 +2,7 @@
 
 import React, { useState, use, useMemo, useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { initialBookings, Booking, initialTechnicians, Technician, initialCustomers, SelectedAddOnItem } from "@/lib/mockData";
 import { mapApiBooking } from "../page";
@@ -1191,9 +1192,11 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
             {/* Left: Logo & Company Address */}
             <div className="flex items-start gap-3">
               <div className="p-1.5 rounded-xl bg-white border border-slate-300 shrink-0 flex items-center justify-center">
-                <img
+                <Image
                   src="/logo.png"
                   alt="HelpMate Logo"
+                  width={32}
+                  height={32}
                   className="h-8 w-8 object-contain"
                 />
               </div>

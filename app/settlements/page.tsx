@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { DataTable, Column } from "@/components/DataTable";
 import { RowActionMenu } from "@/components/RowActionMenu";
 import { Portal } from "@/components/Portal";
@@ -193,11 +194,17 @@ export default function SettlementsPage() {
           href={`/settlements/${row.id}`}
           className="flex items-center gap-2.5 group cursor-pointer"
         >
-          <img
-            src={row.avatar}
-            alt={row.name}
-            className="w-8 h-8 shrink-0 rounded-full object-cover border border-slate-200 dark:border-slate-700"
-          />
+          <div className="relative w-8 h-8 shrink-0 rounded-full overflow-hidden border border-slate-200 dark:border-slate-700">
+            {row.avatar ? (
+              <Image
+                src={row.avatar}
+                alt={row.name}
+                fill
+                unoptimized
+                className="object-cover"
+              />
+            ) : null}
+          </div>
           <div className="flex flex-col">
             <span className="font-extrabold text-slate-900 dark:text-white group-hover:text-brand-600 transition-colors">{row.name}</span>
             <span className="text-[10px] text-slate-400">{row.role} ({row.locality})</span>
@@ -531,11 +538,17 @@ export default function SettlementsPage() {
             >
               <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
                 <div className="flex items-center gap-2.5">
-                  <img
-                    src={selectedTechForPayout.avatar}
-                    alt={selectedTechForPayout.name}
-                    className="w-10 h-10 rounded-full object-cover border border-slate-200"
-                  />
+                  <div className="relative w-10 h-10 rounded-full overflow-hidden border border-slate-200 shrink-0">
+                    {selectedTechForPayout.avatar ? (
+                      <Image
+                        src={selectedTechForPayout.avatar}
+                        alt={selectedTechForPayout.name}
+                        fill
+                        unoptimized
+                        className="object-cover"
+                      />
+                    ) : null}
+                  </div>
                   <div>
                     <h3 className="font-extrabold text-slate-900 dark:text-white text-base">
                       Process Manual Settlement: {selectedTechForPayout.name}

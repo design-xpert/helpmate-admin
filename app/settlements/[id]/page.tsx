@@ -3,6 +3,7 @@
 import { useState, Suspense } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { initialTechnicians, Technician, initialSettlementRecords, SettlementRecord } from "@/lib/mockData";
 import { Portal } from "@/components/Portal";
 import { ToastContainer, ToastMessage } from "@/components/Toast";
@@ -391,11 +392,17 @@ function SettlementDetailContent() {
             </div>
 
             <div className="flex items-center gap-3.5">
-              <img
-                src={tech.avatar}
-                alt={tech.name}
-                className="w-12 h-12 rounded-2xl object-cover border border-slate-200 shadow-xs"
-              />
+              <div className="relative w-12 h-12 rounded-2xl overflow-hidden border border-slate-200 shadow-xs shrink-0">
+                {tech.avatar ? (
+                  <Image
+                    src={tech.avatar}
+                    alt={tech.name}
+                    fill
+                    unoptimized
+                    className="object-cover"
+                  />
+                ) : null}
+              </div>
               <div>
                 <h4 className="text-base font-black text-slate-900 dark:text-white">{tech.name}</h4>
                 <span className="text-xs font-bold text-brand-600 dark:text-brand-400 block">{tech.category}</span>
@@ -486,11 +493,15 @@ function SettlementDetailContent() {
                 </a>
               </h3>
               <div className="relative rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700 h-48 bg-slate-100 dark:bg-slate-800">
-                <img
-                  src={settlement.proofUrl}
-                  alt="Bank UTR Receipt Proof"
-                  className="w-full h-full object-cover"
-                />
+                {settlement.proofUrl ? (
+                  <Image
+                    src={settlement.proofUrl}
+                    alt="Bank UTR Receipt Proof"
+                    fill
+                    unoptimized
+                    className="object-cover"
+                  />
+                ) : null}
               </div>
             </div>
           )}
@@ -572,11 +583,17 @@ function SettlementDetailContent() {
             >
               <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
                 <div className="flex items-center gap-3">
-                  <img
-                    src={tech.avatar}
-                    alt={tech.name}
-                    className="w-10 h-10 rounded-full object-cover border border-slate-200"
-                  />
+                  <div className="relative w-10 h-10 rounded-full overflow-hidden border border-slate-200 shrink-0">
+                    {tech.avatar ? (
+                      <Image
+                        src={tech.avatar}
+                        alt={tech.name}
+                        fill
+                        unoptimized
+                        className="object-cover"
+                      />
+                    ) : null}
+                  </div>
                   <div>
                     <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
                       Process Manual Settlement

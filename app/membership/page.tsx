@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
+import Image from "next/image";
 import {
   Crown,
   Sparkles,
@@ -1184,11 +1185,15 @@ export default function MembershipManagementPage() {
                   <div>
                     {/* Dynamic Aspect-Ratio Banner Container displaying image in its exact size */}
                     <div className={`relative ${aspectClass} bg-slate-100 dark:bg-slate-800 overflow-hidden w-full mx-auto`}>
-                      <img
-                        src={banner.imageUrl}
-                        alt="Membership Banner Image"
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                      />
+                      {banner.imageUrl ? (
+                        <Image
+                          src={banner.imageUrl}
+                          alt="Membership Banner Image"
+                          fill
+                          unoptimized
+                          className="object-cover group-hover:scale-105 transition-transform duration-300"
+                        />
+                      ) : null}
 
                       <div className="absolute top-3 left-3 z-10 flex gap-1.5 flex-wrap">
                         <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider shadow-xs flex items-center gap-1 ${
@@ -1276,7 +1281,13 @@ export default function MembershipManagementPage() {
                 <div className="space-y-3">
                   {newMbImageUrl && (
                     <div className="relative aspect-[16/9] rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 shadow-sm">
-                      <img src={newMbImageUrl} alt="Uploaded Banner Preview" className="w-full h-full object-cover" />
+                      <Image
+                        src={newMbImageUrl}
+                        alt="Uploaded Banner Preview"
+                        fill
+                        unoptimized
+                        className="object-cover"
+                      />
                       <div className="absolute top-2 right-2 bg-slate-950/80 text-white text-[10px] font-bold px-2 py-0.5 rounded-full backdrop-blur-md">
                         Live Preview
                       </div>

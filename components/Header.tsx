@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useMemo } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter, usePathname } from "next/navigation";
 import {
   Search,
@@ -233,9 +234,11 @@ export function Header({ onOpenMobileSidebar }: HeaderProps) {
           href={isPartner ? "/partner" : "/"}
           className="flex items-center gap-1.5 sm:gap-2 md:hidden min-w-0 group shrink"
         >
-          <img
+          <Image
             src="/logo.png"
             alt="HelpMate"
+            width={28}
+            height={28}
             className="h-6 sm:h-7 w-auto object-contain shrink-0 group-hover:scale-105 transition-transform"
           />
           <div className="flex flex-col min-w-0">

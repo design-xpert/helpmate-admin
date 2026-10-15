@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
   Lock,
@@ -81,9 +82,11 @@ export default function LoginPage() {
         {/* Project Logo & Header */}
         <div className="text-center space-y-3 flex flex-col items-center">
           <div className="p-3 rounded-2xl bg-white border border-slate-200 shadow-sm inline-block">
-            <img
+            <Image
               src="/logo.png"
               alt="HelpMate Logo"
+              width={48}
+              height={48}
               className="h-12 w-auto object-contain"
             />
           </div>

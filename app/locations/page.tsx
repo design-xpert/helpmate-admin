@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { getStoredModuleData, setCachedModuleData, isModuleCacheFresh, clearModuleCache } from "@/lib/moduleCache";
 import { DataTable, Column } from "@/components/DataTable";
 import { RowActionMenu } from "@/components/RowActionMenu";
 import {
@@ -33,9 +34,12 @@ import {
 import { Portal } from "@/components/Portal";
 
 export default function LocationsPage() {
+  const initialCachedLocalities = getStoredModuleData<ApiLocality[]>("locations_localities") || [];
+  const initialCachedCities = getStoredModuleData<ApiCity[]>("locations_cities") || [];
+
   // Locality State
-  const [localities, setLocalities] = useState<ApiLocality[]>([]);
-  const [isLocalitiesLoading, setIsLocalitiesLoading] = useState(false);
+  const [localities, setLocalities] = useState<ApiLocality[]>(() => initialCachedLocalities);
+  const [isLocalitiesLoading, setIsLocalitiesLoading] = useState(() => !(isModuleCacheFresh("locations_localities", 30000) && initialCachedLocalities.length > 0));
   const [localitySearch, setLocalitySearch] = useState("");
   const [activeTab, setActiveTab] = useState<"pincodes" | "cities">("pincodes");
 
@@ -48,6 +52,7 @@ export default function LocationsPage() {
     mode: "add",
     data: {},
   });
+  const [isSavingLocality, setIsSavingLocality] = useState(false);
 
   const [deleteLocalityModal, setDeleteLocalityModal] = useState<{
     open: boolean;
@@ -58,8 +63,8 @@ export default function LocationsPage() {
   });
 
   // Cities Backend State
-  const [cities, setCities] = useState<ApiCity[]>([]);
-  const [isCitiesLoading, setIsCitiesLoading] = useState(false);
+  const [cities, setCities] = useState<ApiCity[]>(() => initialCachedCities);
+  const [isCitiesLoading, setIsCitiesLoading] = useState(() => !(isModuleCacheFresh("locations_cities", 30000) && initialCachedCities.length > 0));
   const [citySearch, setCitySearch] = useState("");
   const [cityModal, setCityModal] = useState<{
     open: boolean;
@@ -70,6 +75,7 @@ export default function LocationsPage() {
     mode: "add",
     data: {},
   });
+  const [isSavingCity, setIsSavingCity] = useState(false);
   const [deleteCityModal, setDeleteCityModal] = useState<{
     open: boolean;
     city: ApiCity | null;
@@ -78,14 +84,25 @@ export default function LocationsPage() {
     city: null,
   });
 
-  const fetchLocalities = async () => {
-    setIsLocalitiesLoading(true);
+  const fetchLocalities = async (force: boolean = false) => {
+    if (!force && isModuleCacheFresh("locations_localities", 30000)) {
+      const cached = getStoredModuleData<ApiLocality[]>("locations_localities");
+      if (cached && cached.length > 0) {
+        setLocalities(cached);
+        setIsLocalitiesLoading(false);
+        return;
+      }
+    }
+    if (localities.length === 0 && (!initialCachedLocalities || initialCachedLocalities.length === 0)) {
+      setIsLocalitiesLoading(true);
+    }
     try {
-      const res = await getLocalitiesApi({ forceRefresh: true });
+      const res = await getLocalitiesApi({ forceRefresh: force });
       if (res && res.success) {
         const rawLocalities = res.data?.localities || (Array.isArray(res.data) ? res.data : (res.localities || []));
         if (Array.isArray(rawLocalities)) {
           setLocalities(rawLocalities);
+          setCachedModuleData("locations_localities", rawLocalities);
         } else {
           setLocalities([]);
         }
@@ -100,12 +117,23 @@ export default function LocationsPage() {
     }
   };
 
-  const fetchCities = async () => {
-    setIsCitiesLoading(true);
+  const fetchCities = async (force: boolean = false) => {
+    if (!force && isModuleCacheFresh("locations_cities", 30000)) {
+      const cached = getStoredModuleData<ApiCity[]>("locations_cities");
+      if (cached && cached.length > 0) {
+        setCities(cached);
+        setIsCitiesLoading(false);
+        return;
+      }
+    }
+    if (cities.length === 0 && (!initialCachedCities || initialCachedCities.length === 0)) {
+      setIsCitiesLoading(true);
+    }
     try {
-      const res = await getCitiesApi({ forceRefresh: true });
+      const res = await getCitiesApi({ forceRefresh: force });
       if (res && res.success && Array.isArray(res.data)) {
         setCities(res.data);
+        setCachedModuleData("locations_cities", res.data);
       }
     } catch (err) {
       console.error("Failed to fetch cities:", err);
@@ -115,18 +143,24 @@ export default function LocationsPage() {
   };
 
   useEffect(() => {
-    fetchLocalities();
-    fetchCities();
+    if (!isModuleCacheFresh("locations_localities", 30000) || initialCachedLocalities.length === 0) {
+      fetchLocalities();
+    }
+    if (!isModuleCacheFresh("locations_cities", 30000) || initialCachedCities.length === 0) {
+      fetchCities();
+    }
   }, []);
 
   const handleSaveLocality = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSavingLocality) return;
     const d = localityModal.data;
     if (!d.localityName?.trim() || !d.pincode?.trim()) {
       toast.error("Locality Name and Pincode are required.");
       return;
     }
 
+    setIsSavingLocality(true);
     try {
       if (localityModal.mode === "add") {
         const res = await addLocalityApi({
@@ -160,6 +194,8 @@ export default function LocationsPage() {
     } catch (err) {
       console.error("Locality save error:", err);
       toast.error("An error occurred while saving locality.");
+    } finally {
+      setIsSavingLocality(false);
     }
   };
 
@@ -198,12 +234,14 @@ export default function LocationsPage() {
 
   const handleSaveCity = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSavingCity) return;
     const d = cityModal.data;
     if (!d.cityName?.trim() || !d.stateName?.trim()) {
       toast.error("City Name and State Name are required.");
       return;
     }
 
+    setIsSavingCity(true);
     try {
       if (cityModal.mode === "add") {
         const res = await addCityApi({
@@ -238,6 +276,8 @@ export default function LocationsPage() {
     } catch (err) {
       console.error("City save error:", err);
       toast.error("An error occurred while saving city.");
+    } finally {
+      setIsSavingCity(false);
     }
   };
 
@@ -679,16 +719,25 @@ export default function LocationsPage() {
                 <div className="flex gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
                   <button
                     type="button"
+                    disabled={isSavingLocality}
                     onClick={() => setLocalityModal({ open: false, mode: "add", data: {} })}
-                    className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 font-bold text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors"
+                    className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 font-bold text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-lux cursor-pointer transition-colors"
+                    disabled={isSavingLocality}
+                    className="flex-1 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-extrabold text-xs shadow-lux flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
                   >
-                    {localityModal.mode === "add" ? "Add Locality" : "Save Changes"}
+                    {isSavingLocality ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>{localityModal.mode === "add" ? "Adding Locality..." : "Updating Locality..."}</span>
+                      </>
+                    ) : (
+                      <span>{localityModal.mode === "add" ? "Add Locality" : "Save Changes"}</span>
+                    )}
                   </button>
                 </div>
               </form>
@@ -823,16 +872,25 @@ export default function LocationsPage() {
                 <div className="flex gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
                   <button
                     type="button"
+                    disabled={isSavingCity}
                     onClick={() => setCityModal({ open: false, mode: "add", data: {} })}
-                    className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 font-bold text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors"
+                    className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 font-bold text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-lux cursor-pointer transition-colors"
+                    disabled={isSavingCity}
+                    className="flex-1 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-extrabold text-xs shadow-lux flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
                   >
-                    {cityModal.mode === "add" ? "Add City" : "Save Changes"}
+                    {isSavingCity ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>{cityModal.mode === "add" ? "Adding City..." : "Updating City..."}</span>
+                      </>
+                    ) : (
+                      <span>{cityModal.mode === "add" ? "Add City" : "Save Changes"}</span>
+                    )}
                   </button>
                 </div>
               </form>

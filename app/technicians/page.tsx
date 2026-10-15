@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { DataTable, Column } from "@/components/DataTable";
 import { RowActionMenu } from "@/components/RowActionMenu";
 import { initialTechnicians, Technician } from "@/lib/mockData";
@@ -168,7 +169,9 @@ import { getStoredModuleData, setCachedModuleData, isModuleCacheFresh } from "@/
 export default function TechniciansPage() {
   const initialCached = getStoredModuleData<Technician[]>("technicians");
   const [techs, setTechs] = useState<Technician[]>(() => initialCached || []);
-  const [isLoadingApi, setIsLoadingApi] = useState<boolean>(() => !initialCached || initialCached.length === 0);
+  const [isLoadingApi, setIsLoadingApi] = useState<boolean>(
+    () => !(isModuleCacheFresh("technicians", 30000) && initialCached && initialCached.length > 0)
+  );
   const [activeTab, setActiveTab] = useState<"partner" | "map" | "settlement">("partner");
   const [settlementStartDate, setSettlementStartDate] = useState<string>("");
   const [settlementEndDate, setSettlementEndDate] = useState<string>("");
@@ -179,11 +182,15 @@ export default function TechniciansPage() {
   const [isAddPartnerOpen, setIsAddPartnerOpen] = useState(false);
 
   const fetchPartners = useCallback(async (force: boolean = false) => {
-    if (!force && isModuleCacheFresh("technicians", 30000) && techs.length > 0) {
-      setIsLoadingApi(false);
-      return;
+    if (!force && isModuleCacheFresh("technicians", 30000)) {
+      const cached = getStoredModuleData<Technician[]>("technicians");
+      if (cached && cached.length > 0) {
+        setTechs(cached);
+        setIsLoadingApi(false);
+        return;
+      }
     }
-    if (techs.length === 0) {
+    if (techs.length === 0 && (!initialCached || initialCached.length === 0)) {
       setIsLoadingApi(true);
     }
     try {
@@ -201,6 +208,10 @@ export default function TechniciansPage() {
   }, [techs.length]);
 
   useEffect(() => {
+    if (isModuleCacheFresh("technicians", 30000) && initialCached && initialCached.length > 0) {
+      setIsLoadingApi(false);
+      return;
+    }
     fetchPartners();
   }, [fetchPartners]);
 
@@ -291,11 +302,17 @@ export default function TechniciansPage() {
       header: "Partner & Role",
       accessor: (row) => (
         <div className="flex items-center gap-3">
-          <img
-            src={row.avatar}
-            alt={row.name}
-            className="w-8 h-8 shrink-0 rounded-xl object-cover border border-slate-200 shadow-xs"
-          />
+          <div className="relative w-8 h-8 shrink-0 rounded-xl overflow-hidden border border-slate-200 shadow-xs">
+            {row.avatar ? (
+              <Image
+                src={row.avatar}
+                alt={row.name}
+                fill
+                unoptimized
+                className="object-cover"
+              />
+            ) : null}
+          </div>
           <Link href={`/technicians/${row.id}`} className="flex flex-col hover:underline">
             <span className="font-extrabold text-slate-900 dark:text-white text-xs">{row.name}</span>
             <span className="text-[10px] text-slate-400">{row.role}</span>
@@ -435,11 +452,17 @@ export default function TechniciansPage() {
           href={`/settlements/${row.id}`}
           className="flex items-center gap-2.5 group cursor-pointer"
         >
-          <img
-            src={row.avatar}
-            alt={row.name}
-            className="w-8 h-8 shrink-0 rounded-full object-cover border border-slate-200 dark:border-slate-700"
-          />
+          <div className="relative w-8 h-8 shrink-0 rounded-full overflow-hidden border border-slate-200 dark:border-slate-700">
+            {row.avatar ? (
+              <Image
+                src={row.avatar}
+                alt={row.name}
+                fill
+                unoptimized
+                className="object-cover"
+              />
+            ) : null}
+          </div>
           <div className="flex flex-col">
             <span className="font-extrabold text-slate-900 dark:text-white group-hover:text-brand-600 transition-colors">{row.name}</span>
             <span className="text-[10px] text-slate-400 font-bold">{row.category} ({row.locality})</span>
@@ -574,11 +597,17 @@ export default function TechniciansPage() {
         {/* Executive Partner Header Profile Banner */}
         <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-6 shadow-sm">
           <div className="flex items-center gap-4">
-            <img
-              src={viewTech.avatar}
-              alt={viewTech.name}
-              className="w-16 h-16 rounded-2xl object-cover border-2 border-brand-500 shadow-md"
-            />
+            <div className="relative w-16 h-16 rounded-2xl overflow-hidden border-2 border-brand-500 shadow-md shrink-0">
+              {viewTech.avatar ? (
+                <Image
+                  src={viewTech.avatar}
+                  alt={viewTech.name}
+                  fill
+                  unoptimized
+                  className="object-cover"
+                />
+              ) : null}
+            </div>
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-xl font-black text-slate-900 dark:text-white">
@@ -1033,11 +1062,17 @@ export default function TechniciansPage() {
             >
               <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
                 <div className="flex items-center gap-3">
-                  <img
-                    src={proofTech.avatar}
-                    alt={proofTech.name}
-                    className="w-10 h-10 rounded-full object-cover border border-slate-200"
-                  />
+                  <div className="relative w-10 h-10 rounded-full overflow-hidden border border-slate-200 shrink-0">
+                    {proofTech.avatar ? (
+                      <Image
+                        src={proofTech.avatar}
+                        alt={proofTech.name}
+                        fill
+                        unoptimized
+                        className="object-cover"
+                      />
+                    ) : null}
+                  </div>
                   <div>
                     <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
                       Process Manual Settlement
@@ -1344,7 +1379,13 @@ export default function TechniciansPage() {
                   <div className="p-4 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 flex flex-col sm:flex-row items-center gap-4">
                     <div className="relative w-16 h-16 rounded-2xl overflow-hidden bg-slate-100 dark:bg-slate-700 shrink-0 border border-slate-200 dark:border-slate-600 flex items-center justify-center shadow-xs">
                       {partnerAvatar ? (
-                        <img src={partnerAvatar} alt="Partner Profile Preview" className="w-full h-full object-cover" />
+                        <Image
+                          src={partnerAvatar}
+                          alt="Partner Profile Preview"
+                          fill
+                          unoptimized
+                          className="object-cover"
+                        />
                       ) : (
                         <User className="w-8 h-8 text-slate-400" />
                       )}
@@ -1533,7 +1574,15 @@ export default function TechniciansPage() {
                     <div className="p-3.5 rounded-xl border border-dashed border-blue-300 dark:border-blue-700 bg-white dark:bg-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3">
                       <div className="flex items-center gap-3 w-full sm:w-auto">
                         {partnerAadhaarDoc ? (
-                          <img src={partnerAadhaarDoc} alt="Partner Aadhaar Doc" className="w-10 h-10 object-cover rounded-lg border border-blue-300 shrink-0" />
+                          <div className="relative w-10 h-10 rounded-lg overflow-hidden border border-blue-300 shrink-0">
+                            <Image
+                              src={partnerAadhaarDoc}
+                              alt="Partner Aadhaar Doc"
+                              fill
+                              unoptimized
+                              className="object-cover"
+                            />
+                          </div>
                         ) : (
                           <div className="w-10 h-10 rounded-lg bg-blue-50 dark:bg-blue-950 flex items-center justify-center shrink-0 border border-blue-200">
                             <Upload className="w-5 h-5 text-blue-600" />
@@ -1715,7 +1764,15 @@ export default function TechniciansPage() {
                     <div className="p-3.5 rounded-xl border border-dashed border-purple-300 dark:border-purple-700 bg-white dark:bg-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3">
                       <div className="flex items-center gap-3 w-full sm:w-auto">
                         {partnerGuarantorAadhaarDoc ? (
-                          <img src={partnerGuarantorAadhaarDoc} alt="Guarantor Aadhaar Doc" className="w-10 h-10 object-cover rounded-lg border border-purple-300 shrink-0" />
+                          <div className="relative w-10 h-10 rounded-lg overflow-hidden border border-purple-300 shrink-0">
+                            <Image
+                              src={partnerGuarantorAadhaarDoc}
+                              alt="Guarantor Aadhaar Doc"
+                              fill
+                              unoptimized
+                              className="object-cover"
+                            />
+                          </div>
                         ) : (
                           <div className="w-10 h-10 rounded-lg bg-purple-50 dark:bg-purple-950 flex items-center justify-center shrink-0 border border-purple-200">
                             <Upload className="w-5 h-5 text-purple-600" />
@@ -1812,7 +1869,15 @@ export default function TechniciansPage() {
                     <div className="p-3.5 rounded-xl border border-dashed border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3">
                       <div className="flex items-center gap-3 w-full sm:w-auto">
                         {partnerPoliceDoc ? (
-                          <img src={partnerPoliceDoc} alt="Police Certificate" className="w-10 h-10 object-cover rounded-lg border border-amber-300 shrink-0" />
+                          <div className="relative w-10 h-10 rounded-lg overflow-hidden border border-amber-300 shrink-0">
+                            <Image
+                              src={partnerPoliceDoc}
+                              alt="Police Certificate"
+                              fill
+                              unoptimized
+                              className="object-cover"
+                            />
+                          </div>
                         ) : (
                           <div className="w-10 h-10 rounded-lg bg-amber-50 dark:bg-amber-950 flex items-center justify-center shrink-0 border border-amber-200">
                             <Upload className="w-5 h-5 text-amber-600" />

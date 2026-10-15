@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, Suspense, useEffect } from "react";
+import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { DataTable, Column } from "@/components/DataTable";
 import { RowActionMenu } from "@/components/RowActionMenu";
@@ -323,7 +324,7 @@ function BookingsPageContent() {
   const [bookings, setBookings] = useState<Booking[]>(() => initialCachedBookings || []);
   const [apiCategories, setApiCategories] = useState<ApiBookingCategoryStat[]>(() => initialCachedCats || []);
   const [dashboardStats, setDashboardStats] = useState<any | null>(null);
-  const [isLoadingData, setIsLoadingData] = useState(() => !initialCachedBookings || initialCachedBookings.length === 0);
+  const [isLoadingData, setIsLoadingData] = useState(() => !(isModuleCacheFresh(cacheKey, 30000) && initialCachedBookings && initialCachedBookings.length > 0));
 
   const updateBookingFilters = (newType?: string | null, newStatus?: string | null) => {
     const params = new URLSearchParams();
@@ -379,6 +380,12 @@ function BookingsPageContent() {
   useEffect(() => {
     let isMounted = true;
     const loadData = async () => {
+      // If cache is fresh (< 30s), DO NOT CALL APIS! Exact data is already rendered
+      if (isModuleCacheFresh(cacheKey, 30000) && initialCachedBookings && initialCachedBookings.length > 0) {
+        setIsLoadingData(false);
+        return;
+      }
+
       try {
         const catRes = await getBookingCategoriesApi();
         const rawCatList = Array.isArray(catRes?.data?.categories)
@@ -401,11 +408,7 @@ function BookingsPageContent() {
         console.error("Error loading categories:", err);
       }
 
-      if (isModuleCacheFresh(cacheKey, 30000) && bookings.length > 0) {
-        setIsLoadingData(false);
-        return;
-      }
-      if (bookings.length === 0) {
+      if (bookings.length === 0 && (!initialCachedBookings || initialCachedBookings.length === 0)) {
         setIsLoadingData(true);
       }
       try {
@@ -1598,9 +1601,11 @@ function BookingsPageContent() {
             <div className="flex flex-row items-start justify-between gap-2 border-b border-slate-300 pb-3">
               <div className="flex items-start gap-3">
                 <div className="p-1.5 rounded-xl bg-white border border-slate-300 shrink-0 flex items-center justify-center">
-                  <img
+                  <Image
                     src="/logo.png"
                     alt="HelpMate Logo"
+                    width={32}
+                    height={32}
                     className="h-8 w-8 object-contain"
                   />
                 </div>

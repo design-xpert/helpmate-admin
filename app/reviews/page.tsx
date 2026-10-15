@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { DataTable, Column } from "@/components/DataTable";
 import {
   getAdminReviewsApi,
@@ -55,7 +56,7 @@ export default function ReviewsPage() {
   const initialCached = getStoredModuleData<ApiAdminReview[]>("reviews");
   const [reviews, setReviews] = useState<ApiAdminReview[]>(() => initialCached || []);
   const [summaryData, setSummaryData] = useState<ApiAdminReviewSummary | null>(null);
-  const [isLoading, setIsLoading] = useState(() => !initialCached || initialCached.length === 0);
+  const [isLoading, setIsLoading] = useState(() => !(isModuleCacheFresh("reviews", 30000) && initialCached && initialCached.length > 0));
 
   // Filters state
   const [searchQuery, setSearchQuery] = useState("");
@@ -77,11 +78,15 @@ export default function ReviewsPage() {
   const [totalCount, setTotalCount] = useState(0);
 
   const fetchReviews = useCallback(async (force: boolean = false) => {
-    if (!force && isModuleCacheFresh("reviews", 30000) && reviews.length > 0) {
-      setIsLoading(false);
-      return;
+    if (!force && !searchQuery.trim() && ratingFilter === "All" && statusFilter === "All" && publishedFilter === "All" && page === 1 && isModuleCacheFresh("reviews", 30000)) {
+      const cached = getStoredModuleData<ApiAdminReview[]>("reviews");
+      if (cached && cached.length > 0) {
+        setReviews(cached);
+        setIsLoading(false);
+        return;
+      }
     }
-    if (reviews.length === 0) {
+    if (reviews.length === 0 && (!initialCached || initialCached.length === 0)) {
       setIsLoading(true);
     }
     try {
@@ -127,9 +132,13 @@ export default function ReviewsPage() {
   }, []);
 
   useEffect(() => {
+    if (page === 1 && ratingFilter === "All" && statusFilter === "All" && publishedFilter === "All" && !searchQuery.trim() && isModuleCacheFresh("reviews", 30000) && initialCached && initialCached.length > 0) {
+      setIsLoading(false);
+      return;
+    }
     fetchReviews();
     fetchSummary();
-  }, [fetchReviews, fetchSummary]);
+  }, [fetchReviews, fetchSummary, page, ratingFilter, statusFilter, publishedFilter, searchQuery]);
 
   // Open Manage Modal & Fetch Review Details
   const handleOpenManageModal = async (review: ApiAdminReview) => {
@@ -418,7 +427,13 @@ export default function ReviewsPage() {
             <div className="flex items-center gap-2 p-1.5 rounded-xl bg-purple-50 dark:bg-purple-950/50 border border-purple-200 dark:border-purple-800/80 w-fit">
               <div className="relative w-7 h-10 rounded-lg overflow-hidden bg-slate-900 shrink-0 border border-purple-300">
                 {row.video?.thumbnailUrl ? (
-                  <img src={row.video.thumbnailUrl} alt="Video Thumbnail" className="w-full h-full object-cover opacity-80" />
+                  <Image
+                    src={row.video.thumbnailUrl}
+                    alt="Video Thumbnail"
+                    fill
+                    unoptimized
+                    className="object-cover opacity-80"
+                  />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center text-white"><Video className="w-3 h-3" /></div>
                 )}

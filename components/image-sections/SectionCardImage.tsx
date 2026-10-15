@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Image from "next/image";
 import { formatImageUrl, getTitleInitials } from "@/lib/api";
 
 export function SectionCardImage({
@@ -20,36 +21,43 @@ export function SectionCardImage({
   badgeSize?: string;
   fallback?: string;
 }) {
-  const [hasError, setHasError] = useState(false);
   const formattedUrl = formatImageUrl(src, packageId);
+  const [hasError, setHasError] = useState(!formattedUrl);
 
   useEffect(() => {
-    setHasError(false);
-  }, [src, packageId]);
+    setHasError(!formattedUrl);
+  }, [formattedUrl]);
 
   const initials = getTitleInitials(title, fallback);
 
-  if (formattedUrl && !hasError) {
+  // 1. If image is not available OR failed to load -> SHOW TEXT FALLBACK
+  if (!formattedUrl || hasError) {
     return (
-      <img
-        src={formattedUrl}
-        alt={title}
-        referrerPolicy="no-referrer"
-        className={className}
-        onError={() => setHasError(true)}
-      />
+      <div
+        className={`w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-[#48073d] via-[#610c52] to-[#801C6E] text-white select-none animate-in fade-in duration-200 ${containerClassName}`}
+      >
+        <div
+          className={`${badgeSize} rounded-2xl bg-white/15 backdrop-blur-md border border-white/25 text-white font-black flex items-center justify-center shadow-lg tracking-wider`}
+        >
+          {initials}
+        </div>
+      </div>
     );
   }
 
+  // 2. Render image directly without opacity-0 blocking
   return (
-    <div
-      className={`w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-[#48073d] via-[#610c52] to-[#801C6E] text-white select-none ${containerClassName}`}
-    >
-      <div
-        className={`${badgeSize} rounded-2xl bg-white/15 backdrop-blur-md border border-white/25 text-white font-black flex items-center justify-center shadow-lg tracking-wider`}
-      >
-        {initials}
-      </div>
+    <div className={`relative w-full h-full overflow-hidden ${containerClassName}`}>
+      <Image
+        src={formattedUrl}
+        alt={title}
+        fill
+        unoptimized
+        className={className}
+        onError={() => {
+          setHasError(true);
+        }}
+      />
     </div>
   );
 }
