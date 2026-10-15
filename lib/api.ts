@@ -1458,7 +1458,7 @@ export function formatImageUrl(imgUrl?: any, packageId?: string): string {
   try {
     return encodeURI(decodeURI(fullUrl));
   } catch {
-    return fullUrl;
+    return fullUrl;  
   }
 }
 
