@@ -839,7 +839,9 @@ export default function CmsPage() {
           {row.duration && (
             <span className="text-[10px] text-slate-400 font-bold flex items-center gap-1 mt-0.5">
               <Clock className="w-2.5 h-2.5 text-slate-400" />
-              {formatDurationLabel(calculateDurationInMinutes(row.duration))}
+              {typeof row.duration === "number" || /^\d+$/.test(String(row.duration).trim())
+                ? formatDurationLabel(calculateDurationInMinutes(row.duration))
+                : row.duration}
             </span>
           )}
         </div>

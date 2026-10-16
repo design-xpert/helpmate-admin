@@ -1552,8 +1552,8 @@ export function calculateDurationInMinutes(input: unknown): number {
   raw = raw.replace(/(\d+(?:\.\d+)?)([a-z]+)/gi, "$1 $2");
 
   // 1. Check for combined hour & minute: e.g. "1 hr 30 mins", "1 hour and 15 min", "2h 45m"
-  const comboMatch = raw.match(/(\d+(?:\.\d+)?)\s*(?:hrs?|hours?|h)\b(?:\s*(?:and|&)?\s*(\d+(?:\.\d+)?)\s*(?:mins?|minutes?|m)\b)?/i);
-  if (comboMatch && comboMatch[2] !== undefined) {
+  const comboMatch = raw.match(/(\d+(?:\.\d+)?)\s*(?:hrs?|hours?|h)\b(?:\s*(?:and|&)?\s*(\d+(?:\.\d+)?)\s*(?:mins?|minutes?|m)\b)/i);
+  if (comboMatch) {
     const hours = parseFloat(comboMatch[1]) || 0;
     const mins = parseFloat(comboMatch[2]) || 0;
     const total = Math.round(hours * 60 + mins);
@@ -1579,26 +1579,22 @@ export function calculateDurationInMinutes(input: unknown): number {
     if (total > 0) return total;
   }
 
-  // 4. Pure hours (with or without decimal): e.g. "1 hr", "1.5 hrs", "2 hours", "0.5 hr", "3 hrs"
-  if (/\b(?:hrs?|hours?|h)\b/i.test(raw)) {
-    const hMatch = raw.match(/(\d+(?:\.\d+)?)/);
-    if (hMatch) {
-      const hours = parseFloat(hMatch[1]) || 0;
-      const total = Math.round(hours * 60);
-      if (total > 0) return total;
-    }
+  // 4. Minutes specified explicitly: e.g. "180 mins (3 hrs)", "45 mins", "60 mins (1 hr)", "90 minutes", "30m"
+  const minMatch = raw.match(/(\d+(?:\.\d+)?)\s*(?:mins?|minutes?|m)\b/i);
+  if (minMatch) {
+    const mins = Math.round(parseFloat(minMatch[1]) || 0);
+    if (mins > 0) return mins;
   }
 
-  // 5. Pure minutes: e.g. "45 mins", "45 min", "90 minutes", "30m"
-  if (/\b(?:mins?|minutes?|m)\b/i.test(raw)) {
-    const mMatch = raw.match(/(\d+(?:\.\d+)?)/);
-    if (mMatch) {
-      const mins = Math.round(parseFloat(mMatch[1]) || 0);
-      if (mins > 0) return mins;
-    }
+  // 5. Pure hours: e.g. "1 hr", "1.5 hrs", "2 hours", "0.5 hr", "3 hrs"
+  const hMatch = raw.match(/(\d+(?:\.\d+)?)\s*(?:hrs?|hours?|h)\b/i);
+  if (hMatch) {
+    const hours = parseFloat(hMatch[1]) || 0;
+    const total = Math.round(hours * 60);
+    if (total > 0) return total;
   }
 
-  // 6. Just numbers: e.g. "45", "60", "120"
+  // 6. Just numbers: e.g. "45", "60", "120", "180" (backend API returns duration in minutes)
   const plainNum = parseFloat(raw);
   if (!isNaN(plainNum) && plainNum > 0) {
     return Math.round(plainNum);
