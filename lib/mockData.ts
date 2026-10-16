@@ -23,6 +23,7 @@ export interface ServiceItem {
   id: string;
   categoryId?: string;
   subCategoryId?: string;
+  serviceActionId?: string;
   category: string;
   subcategory?: string;
   title: string;

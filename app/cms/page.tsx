@@ -284,6 +284,15 @@ export default function CmsPage() {
             const excludePoints = s.excludeFromPackage ?? nestedPackage.excludeFromPackage;
             const actObj = typeof s.serviceActionId === "object" && s.serviceActionId !== null ? s.serviceActionId : (typeof s.serviceAction === "object" && s.serviceAction !== null ? s.serviceAction : null);
 
+            let serviceActionIdStr = "";
+            if (actObj?._id) {
+              serviceActionIdStr = String(actObj._id);
+            } else if (typeof s.serviceActionId === "string" && /^[0-9a-fA-F]{24}$/.test(s.serviceActionId)) {
+              serviceActionIdStr = s.serviceActionId;
+            } else if (typeof s.serviceAction === "string" && /^[0-9a-fA-F]{24}$/.test(s.serviceAction)) {
+              serviceActionIdStr = s.serviceAction;
+            }
+
             // Extract category & subcategory IDs stored in serviceActionId reference
             let categoryIdStr = "";
             if (actObj?.categoryId) {
@@ -370,6 +379,7 @@ export default function CmsPage() {
               id: s._id,
               categoryId: categoryIdStr,
               subCategoryId: subCategoryIdStr,
+              serviceActionId: serviceActionIdStr,
               category: categoryNameStr,
               subcategory: subCategoryNameStr,
               title: titleStr,
@@ -1074,6 +1084,7 @@ export default function CmsPage() {
 
   // Top-level Service Action selection in Add/Edit Drawer
   const [selectedServiceAction, setSelectedServiceAction] = useState<string>("");
+  const [selectedServiceActionId, setSelectedServiceActionId] = useState<string>("");
 
   // Step 2 State: Multiple Add Sub-Service Offerings with Price & Duration & Package Addons
   const [serviceOfferings, setServiceOfferings] = useState<ServiceOfferingRow[]>([
@@ -1392,6 +1403,7 @@ export default function CmsPage() {
     setServiceCategory("");
     setSelectedSubcategory("");
     setSelectedServiceAction("");
+    setSelectedServiceActionId("");
     setInlineAddonPackageIndex(null);
     setInlineAddonTitle("");
     setServiceOfferings([
@@ -1445,10 +1457,19 @@ export default function CmsPage() {
 
     // Prefill Top-Level Service Action
     const actionVal = item.serviceAction || item.systemType?.[0] || "";
-    setSelectedServiceAction(actionVal);
+    const actionId = item.serviceActionId || "";
+    setSelectedServiceActionId(actionId);
+    setSelectedServiceAction(actionId || actionVal);
 
     if (actionVal) {
       setServiceActionsList((prev) => (prev.includes(actionVal) ? prev : [actionVal, ...prev]));
+    }
+
+    // Immediately fetch service actions for this category & subcategory from backend
+    const resolvedCatId = matchedCategory?._id || item.categoryId;
+    const resolvedSubId = matchedSub?._id || item.subCategoryId;
+    if (resolvedCatId) {
+      fetchServiceActionsFromBackend(resolvedCatId, resolvedSubId);
     }
 
     // Prefill Addons & Package Image from existing item
@@ -1555,17 +1576,84 @@ export default function CmsPage() {
           // Send addons in array format (works for 0, 1, or multiple addons)
           form.append("addons", JSON.stringify(packageAddonIds));
 
-          // Use selected action directly if it's an ID or found in existing serviceActionsFromApi (zero network calls)
-          const matchedActionObj = (serviceActionsFromApi || []).find(
-            (act: any) =>
-              act._id === selectedServiceAction ||
-              act.serviceAction === selectedServiceAction ||
-              act.name === selectedServiceAction ||
-              act.serviceName === selectedServiceAction
-          );
-          const actionIdToUse = matchedActionObj?._id || (selectedServiceAction?.length === 24 ? selectedServiceAction : undefined);
-          if (actionIdToUse) {
+          // Strictly resolve serviceActionId as a 24-character hexadecimal ObjectId
+          let actionIdToUse: string | undefined = undefined;
+
+          // 1. Check selectedServiceActionId
+          if (selectedServiceActionId && /^[0-9a-fA-F]{24}$/.test(selectedServiceActionId)) {
+            actionIdToUse = selectedServiceActionId;
+          }
+
+          // 2. Check selectedServiceAction if 24-hex
+          if (!actionIdToUse && selectedServiceAction && /^[0-9a-fA-F]{24}$/.test(selectedServiceAction)) {
+            actionIdToUse = selectedServiceAction;
+          }
+
+          // 3. Match from serviceActionsFromApi
+          if (!actionIdToUse && (selectedServiceAction || selectedServiceActionId)) {
+            const queryStr = selectedServiceAction || selectedServiceActionId;
+            const matchedActionObj = (serviceActionsFromApi || []).find(
+              (act: any) =>
+                act._id === queryStr ||
+                (act.serviceAction && act.serviceAction.toLowerCase().trim() === queryStr.toLowerCase().trim()) ||
+                (act.name && act.name.toLowerCase().trim() === queryStr.toLowerCase().trim()) ||
+                (act.serviceName && act.serviceName.toLowerCase().trim() === queryStr.toLowerCase().trim())
+            );
+            if (matchedActionObj?._id && /^[0-9a-fA-F]{24}$/.test(matchedActionObj._id)) {
+              actionIdToUse = matchedActionObj._id;
+            }
+          }
+
+          // 4. Fallback to original service's serviceActionId
+          if (!actionIdToUse && editingServiceId) {
+            const origItem = services.find((s) => s.id === editingServiceId);
+            if (origItem?.serviceActionId && /^[0-9a-fA-F]{24}$/.test(origItem.serviceActionId)) {
+              actionIdToUse = origItem.serviceActionId;
+            }
+          }
+
+          // 5. Fallback via backend dropdown API if still not resolved
+          if (!actionIdToUse) {
+            const matchedCategory = categoriesFromApi.find(
+              (c) => c.categoryName.toLowerCase().trim() === serviceCategory.toLowerCase().trim() || c._id === serviceCategory
+            );
+            const matchedSub = matchedCategory?.subCategories?.find(
+              (s: any) => s.name.toLowerCase().trim() === selectedSubcategory.toLowerCase().trim() || s._id === selectedSubcategory
+            );
+            const catIdToUse = matchedCategory?._id;
+            const subCatIdToUse = matchedSub?._id;
+
+            if (catIdToUse) {
+              const dropRes = await getServiceActionDropdownApi({ categoryId: catIdToUse, subCategoryId: subCatIdToUse || undefined, forceRefresh: true });
+              const dropList = Array.isArray(dropRes?.data) ? dropRes.data : [];
+              const targetQuery = selectedServiceAction || selectedServiceActionId;
+              const foundInDrop = dropList.find(
+                (act: any) =>
+                  act._id === targetQuery ||
+                  (act.serviceAction && act.serviceAction.toLowerCase().trim() === targetQuery.toLowerCase().trim()) ||
+                  (act.name && act.name.toLowerCase().trim() === targetQuery.toLowerCase().trim())
+              );
+              if (foundInDrop?._id && /^[0-9a-fA-F]{24}$/.test(foundInDrop._id)) {
+                actionIdToUse = foundInDrop._id;
+              } else if (targetQuery && !/^[0-9a-fA-F]{24}$/.test(targetQuery)) {
+                const createActRes = await createServiceActionApi({
+                  categoryId: catIdToUse,
+                  subCategoryId: subCatIdToUse || undefined,
+                  serviceAction: targetQuery,
+                });
+                if (createActRes?.success && createActRes?.data?._id && /^[0-9a-fA-F]{24}$/.test(createActRes.data._id)) {
+                  actionIdToUse = createActRes.data._id;
+                }
+              }
+            }
+          }
+
+          if (actionIdToUse && /^[0-9a-fA-F]{24}$/.test(actionIdToUse)) {
             form.append("serviceActionId", actionIdToUse);
+          } else {
+            toast.error("Invalid Service Action", "Service Action ID is missing or invalid. Please select a valid Service Action.");
+            setIsSavingService(false);
+            return;
           }
 
           if (firstOff.imageFile instanceof File) {
@@ -1597,6 +1685,7 @@ export default function CmsPage() {
               if (s.id === editingServiceId) {
                 return {
                   ...s,
+                  serviceActionId: actionIdToUse,
                   title: firstOff.title,
                   subtitle: safeStr(firstOff.subtitle),
                   description: safeStr(firstOff.description) || s.description,
@@ -1676,11 +1765,14 @@ export default function CmsPage() {
       let matchedActionObj = (serviceActionsFromApi || []).find(
         (act: any) =>
           act._id === selectedServiceAction ||
+          act._id === selectedServiceActionId ||
           act.serviceAction === selectedServiceAction ||
           act.name === selectedServiceAction ||
           act.serviceName === selectedServiceAction
       );
-      let actionIdToUse = matchedActionObj?._id || (selectedServiceAction?.length === 24 ? selectedServiceAction : undefined);
+      let actionIdToUse = (selectedServiceActionId?.length === 24 ? selectedServiceActionId : undefined) ||
+        matchedActionObj?._id ||
+        (selectedServiceAction?.length === 24 ? selectedServiceAction : undefined);
 
       if (!actionIdToUse && selectedServiceAction && catIdToUse) {
         const dropRes = await getServiceActionDropdownApi({ categoryId: catIdToUse, subCategoryId: subCatIdToUse || undefined });
@@ -2200,35 +2292,63 @@ export default function CmsPage() {
 
                     {/* Service Action Dropdown (OUTSIDE package, at step 1 top-level) */}
                     {(() => {
-                      const actionsAvailable = Array.from(
-                        new Set([
-                          ...(serviceActionsFromApi || []).map((a: any) => a.name || a.serviceAction || "").filter(Boolean),
-                          ...serviceActionsList,
-                        ])
-                      );
+                      const optionsMap = new Map<string, { value: string; label: string }>();
+
+                      // 1. Add all from serviceActionsFromApi with _id as value
+                      (serviceActionsFromApi || []).forEach((a: any) => {
+                        const actId = a._id ? String(a._id) : "";
+                        const actLabel = a.serviceAction || a.name || a.serviceName || "Action";
+                        if (actId) {
+                          optionsMap.set(actId, { value: actId, label: actLabel });
+                        }
+                      });
+
+                      // 2. If editing and we have current action ID, ensure it is in the options
+                      const currentService = editingServiceId ? services.find((s) => s.id === editingServiceId) : null;
+                      const currentActionId = selectedServiceActionId || currentService?.serviceActionId || "";
+                      const currentActionName = currentService?.serviceAction || selectedServiceAction || "";
+
+                      if (currentActionId && !optionsMap.has(currentActionId)) {
+                        optionsMap.set(currentActionId, {
+                          value: currentActionId,
+                          label: currentActionName || "Current Action",
+                        });
+                      }
+
+                      // 3. Fallback for names in serviceActionsList
+                      (serviceActionsList || []).forEach((name) => {
+                        const matched = (serviceActionsFromApi || []).find(
+                          (a: any) => (a.serviceAction || a.name) === name
+                        );
+                        if (matched?._id) {
+                          optionsMap.set(matched._id, { value: matched._id, label: name });
+                        }
+                      });
+
+                      const selectOptions = Array.from(optionsMap.values());
 
                       return (
                         <CustomSelect
                           label="Select Service Action *"
                           value={selectedServiceAction}
                           placeholder={
-                            actionsAvailable.length > 0
+                            selectOptions.length > 0
                               ? "Select Service Action..."
                               : "No Service Action Available"
                           }
-                          onChange={(val) => setSelectedServiceAction(val)}
+                          onChange={(val) => {
+                            setSelectedServiceAction(val);
+                            setSelectedServiceActionId(val);
+                          }}
                           options={
-                            actionsAvailable.length > 0
-                              ? actionsAvailable.map((actionName) => ({
-                                value: actionName,
-                                label: actionName,
-                              }))
+                            selectOptions.length > 0
+                              ? selectOptions
                               : [
-                                {
-                                  value: "",
-                                  label: "No Service Action Available",
-                                },
-                              ]
+                                  {
+                                    value: "",
+                                    label: "No Service Action Available",
+                                  },
+                                ]
                           }
                           onAddAction={() => {
                             setTargetOfferingIndexForAction(null);

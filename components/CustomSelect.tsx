@@ -69,7 +69,11 @@ export function CustomSelect({
     }
   }, [isOpen, menuPlacement]);
 
-  const selectedOption = options.find((opt) => opt.value === value);
+  const selectedOption = options.find(
+    (opt) =>
+      opt.value === value ||
+      (Boolean(value) && opt.label?.toLowerCase().trim() === value?.toLowerCase().trim())
+  );
 
   const filteredOptions = searchable && searchTerm.trim()
     ? options.filter((opt) => opt.label.toLowerCase().includes(searchTerm.toLowerCase()))
@@ -152,7 +156,10 @@ export function CustomSelect({
 
           {filteredOptions.length > 0 ? (
             filteredOptions.map((opt, idx) => {
-              const isSelected = opt.value === value || (Array.isArray(selectedValues) && selectedValues.includes(opt.value));
+              const isSelected =
+                opt.value === value ||
+                (Boolean(value) && opt.label?.toLowerCase().trim() === value?.toLowerCase().trim()) ||
+                (Array.isArray(selectedValues) && (selectedValues.includes(opt.value) || selectedValues.includes(opt.label)));
               return (
                 <button
                   key={`${opt.value || opt.label}-${idx}`}

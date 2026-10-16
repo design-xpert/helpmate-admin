@@ -1801,7 +1801,13 @@ export async function updatePackageApi(
     const isFormData = typeof FormData !== "undefined" && payload instanceof FormData;
     let bodyData: BodyInit;
     if (isFormData) {
-      bodyData = payload as FormData;
+      const formPayload = payload as FormData;
+      const sa = formPayload.get("serviceActionId");
+      if (typeof sa === "string" && sa && !/^[0-9a-fA-F]{24}$/.test(sa)) {
+        console.warn("Removing non-ObjectId serviceActionId from FormData in updatePackageApi:", sa);
+        formPayload.delete("serviceActionId");
+      }
+      bodyData = formPayload;
     } else {
       const objPayload = payload as Record<string, any>;
       let fileBlob: Blob | File | null = null;
@@ -1825,7 +1831,7 @@ export async function updatePackageApi(
 
       const formData = new FormData();
       const serviceActionId = objPayload.serviceActionId || objPayload.serviceId || "";
-      if (serviceActionId) {
+      if (serviceActionId && /^[0-9a-fA-F]{24}$/.test(serviceActionId)) {
         formData.append("serviceActionId", serviceActionId);
       }
 
