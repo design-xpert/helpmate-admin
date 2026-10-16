@@ -1,4 +1,4 @@
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://helpmate-api.kvtmedia.com/api";
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 export interface ApiAdmin {
   _id: string;
@@ -1284,8 +1284,9 @@ export interface ApiPackageItem {
 }
 
 export async function getPackagesApi(params?: {
-  search?: string;
+  page?: number;
   limit?: number;
+  search?: string;
   serviceAction?: string;
   serviceActionId?: string;
   serviceId?: string;
@@ -1302,6 +1303,12 @@ export async function getPackagesApi(params?: {
   if (cached) return cached;
   try {
     const query = new URLSearchParams();
+    if (params?.page) query.append("page", String(params.page));
+    if (params?.limit !== undefined) {
+      query.append("limit", String(params.limit));
+    } else {
+      query.append("limit", "10");
+    }
     if (params?.search) query.append("search", params.search);
     if (params?.serviceAction) query.append("serviceAction", params.serviceAction);
     if (params?.serviceActionId) query.append("serviceActionId", params.serviceActionId);
@@ -1312,7 +1319,6 @@ export async function getPackagesApi(params?: {
     if (params?.subCategoryName) query.append("subCategoryName", params.subCategoryName);
     if (params?.category) query.append("category", params.category);
     if (params?.subcategory) query.append("subcategory", params.subcategory);
-    query.append("limit", String(params?.limit || 100));
 
     const res = await authFetch(`${API_BASE_URL}/api/package?${query.toString()}`);
     const data = await safeJsonResponse(res);
@@ -1523,7 +1529,113 @@ export function cleanImagePayload(imgUrl?: string): string {
   return formatImageUrl(imgUrl);
 }
 
+/**
+ * Calculates and converts any duration input (hours, mins, ranges, composite strings) into integer minutes for backend payload.
+ * Examples:
+ * - "1 hr" -> 60
+ * - "1.5 hrs" -> 90
+ * - "2 hrs" -> 120
+ * - "2 - 3 hrs" -> 150
+ * - "1 hr 30 mins" -> 90
+ * - "45 mins" -> 45
+ * - 45 -> 45
+ */
+export function calculateDurationInMinutes(input: unknown): number {
+  if (input === null || input === undefined) return 45;
+  if (typeof input === "number") {
+    return Number.isFinite(input) && input > 0 ? Math.round(input) : 45;
+  }
+  let raw = String(input).trim().toLowerCase();
+  if (!raw) return 45;
 
+  // Insert space between numbers and letters (e.g. "2hrs" -> "2 hrs", "1.5hrs" -> "1.5 hrs")
+  raw = raw.replace(/(\d+(?:\.\d+)?)([a-z]+)/gi, "$1 $2");
+
+  // 1. Check for combined hour & minute: e.g. "1 hr 30 mins", "1 hour and 15 min", "2h 45m"
+  const comboMatch = raw.match(/(\d+(?:\.\d+)?)\s*(?:hrs?|hours?|h)\b(?:\s*(?:and|&)?\s*(\d+(?:\.\d+)?)\s*(?:mins?|minutes?|m)\b)?/i);
+  if (comboMatch && comboMatch[2] !== undefined) {
+    const hours = parseFloat(comboMatch[1]) || 0;
+    const mins = parseFloat(comboMatch[2]) || 0;
+    const total = Math.round(hours * 60 + mins);
+    if (total > 0) return total;
+  }
+
+  // 2. Check for range in hours: e.g. "2 - 3 hrs", "2-3 hours", "1 to 2 hrs", "4 - 5 hrs"
+  const hourRangeMatch = raw.match(/(\d+(?:\.\d+)?)\s*(?:-|to)\s*(\d+(?:\.\d+)?)\s*(?:hrs?|hours?|h)\b/i);
+  if (hourRangeMatch) {
+    const h1 = parseFloat(hourRangeMatch[1]) || 0;
+    const h2 = parseFloat(hourRangeMatch[2]) || 0;
+    const avgHours = (h1 + h2) / 2;
+    const total = Math.round(avgHours * 60);
+    if (total > 0) return total;
+  }
+
+  // 3. Check for range in minutes: e.g. "30 - 45 mins", "45 to 60 mins"
+  const minRangeMatch = raw.match(/(\d+(?:\.\d+)?)\s*(?:-|to)\s*(\d+(?:\.\d+)?)\s*(?:mins?|minutes?|m)\b/i);
+  if (minRangeMatch) {
+    const m1 = parseFloat(minRangeMatch[1]) || 0;
+    const m2 = parseFloat(minRangeMatch[2]) || 0;
+    const total = Math.round((m1 + m2) / 2);
+    if (total > 0) return total;
+  }
+
+  // 4. Pure hours (with or without decimal): e.g. "1 hr", "1.5 hrs", "2 hours", "0.5 hr", "3 hrs"
+  if (/\b(?:hrs?|hours?|h)\b/i.test(raw)) {
+    const hMatch = raw.match(/(\d+(?:\.\d+)?)/);
+    if (hMatch) {
+      const hours = parseFloat(hMatch[1]) || 0;
+      const total = Math.round(hours * 60);
+      if (total > 0) return total;
+    }
+  }
+
+  // 5. Pure minutes: e.g. "45 mins", "45 min", "90 minutes", "30m"
+  if (/\b(?:mins?|minutes?|m)\b/i.test(raw)) {
+    const mMatch = raw.match(/(\d+(?:\.\d+)?)/);
+    if (mMatch) {
+      const mins = Math.round(parseFloat(mMatch[1]) || 0);
+      if (mins > 0) return mins;
+    }
+  }
+
+  // 6. Just numbers: e.g. "45", "60", "120"
+  const plainNum = parseFloat(raw);
+  if (!isNaN(plainNum) && plainNum > 0) {
+    return Math.round(plainNum);
+  }
+
+  return 45;
+}
+
+export function formatDurationLabel(minutes: number): string {
+  if (minutes < 60) return `${minutes} mins`;
+  const hrs = minutes / 60;
+  if (Number.isInteger(hrs)) {
+    return `${minutes} mins (${hrs} ${hrs === 1 ? "hr" : "hrs"})`;
+  }
+  const wholeHrs = Math.floor(hrs);
+  const remMins = minutes % 60;
+  if (remMins === 30) {
+    return `${minutes} mins (${hrs.toFixed(1)} hrs)`;
+  }
+  const hrPart = wholeHrs === 1 ? "1 hr" : `${wholeHrs} hrs`;
+  return `${minutes} mins (${hrPart} ${remMins} mins)`;
+}
+
+export function formatHoursOnly(minutes: number): string {
+  if (minutes < 60) return "";
+  const hrs = minutes / 60;
+  if (Number.isInteger(hrs)) {
+    return `${hrs} ${hrs === 1 ? "hr" : "hrs"}`;
+  }
+  const wholeHrs = Math.floor(hrs);
+  const remMins = minutes % 60;
+  if (remMins === 30) {
+    return `${hrs.toFixed(1)} hrs`;
+  }
+  const hrPart = wholeHrs === 1 ? "1 hr" : `${wholeHrs} hrs`;
+  return `${hrPart} ${remMins} mins`;
+}
 
 export async function createPackageApi(
   payload:
@@ -1615,7 +1727,7 @@ export async function createPackageApi(
             description: p.description || `${p.packageName || "Service"} package`,
             price: Number(p.price) || 0,
             originalPrice: Number(p.originalPrice) || Math.round((Number(p.price) || 0) * 1.3),
-            duration: Number(p.duration) || 60,
+            duration: calculateDurationInMinutes(p.duration),
             addons: Array.isArray(p.addons)
               ? p.addons.filter((id: any) => typeof id === "string" && id.length === 24)
               : [],
@@ -1738,7 +1850,7 @@ export async function updatePackageApi(
       }
 
       if (objPayload.duration !== undefined) {
-        formData.append("duration", String(Number(objPayload.duration) || 60));
+        formData.append("duration", String(calculateDurationInMinutes(objPayload.duration)));
       }
 
       if (Array.isArray(objPayload.includeInPackage)) {

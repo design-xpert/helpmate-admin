@@ -56,6 +56,14 @@ export interface DataTableProps<T extends Record<string, any>> {
   hideActionsColumn?: boolean;
   extraFilters?: React.ReactNode;
   disableDelete?: boolean;
+  currentPage?: number;
+  onPageChange?: (page: number) => void;
+  serverPagination?: boolean;
+  totalRecords?: number;
+  totalPages?: number;
+  pageSize?: number;
+  pageSizeOptions?: number[];
+  onPageSizeChange?: (size: number) => void;
 }
 
 export function DataTable<T extends Record<string, any>>({
@@ -74,6 +82,14 @@ export function DataTable<T extends Record<string, any>>({
   hideActionsColumn = false,
   extraFilters,
   disableDelete = false,
+  currentPage: currentPageProp,
+  onPageChange,
+  serverPagination = false,
+  totalRecords: totalRecordsProp,
+  totalPages: totalPagesProp,
+  pageSize: pageSizeProp,
+  pageSizeOptions,
+  onPageSizeChange,
 }: DataTableProps<T>) {
   const hasDefaultActionsColumn =
     !hideActionsColumn &&
@@ -89,8 +105,31 @@ export function DataTable<T extends Record<string, any>>({
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
 
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const [internalPage, setInternalPage] = useState(currentPageProp || 1);
+  const currentPage = currentPageProp !== undefined ? currentPageProp : internalPage;
+
+  React.useEffect(() => {
+    if (currentPageProp !== undefined) {
+      setInternalPage(currentPageProp);
+    }
+  }, [currentPageProp]);
+
+  const handlePageChange = (newPage: number | ((prev: number) => number)) => {
+    const resolvedPage = typeof newPage === "function" ? newPage(currentPage) : newPage;
+    if (currentPageProp === undefined) {
+      setInternalPage(resolvedPage);
+    }
+    onPageChange?.(resolvedPage);
+  };
+
+  const [internalPageSize, setInternalPageSize] = useState(pageSizeProp || 10);
+  const pageSize = pageSizeProp !== undefined ? pageSizeProp : internalPageSize;
+
+  React.useEffect(() => {
+    if (pageSizeProp !== undefined) {
+      setInternalPageSize(pageSizeProp);
+    }
+  }, [pageSizeProp]);
 
   const [viewingRow, setViewingRow] = useState<T | null>(null);
   const [deletingRow, setDeletingRow] = useState<T | null>(null);
@@ -198,11 +237,19 @@ export function DataTable<T extends Record<string, any>>({
     });
   }, [filteredData, sortKey, sortOrder]);
 
-  const totalPages = Math.ceil(sortedData.length / pageSize) || 1;
+  const totalPages = serverPagination && totalPagesProp !== undefined
+    ? totalPagesProp
+    : serverPagination && totalRecordsProp !== undefined
+    ? Math.ceil(totalRecordsProp / pageSize) || 1
+    : Math.ceil(sortedData.length / pageSize) || 1;
+
   const paginatedData = useMemo(() => {
+    if (serverPagination) {
+      return sortedData;
+    }
     const start = (currentPage - 1) * pageSize;
     return sortedData.slice(start, start + pageSize);
-  }, [sortedData, currentPage, pageSize]);
+  }, [serverPagination, sortedData, currentPage, pageSize]);
 
   const handleSort = (key: string) => {
     if (sortKey === key) {
@@ -370,7 +417,7 @@ export function DataTable<T extends Record<string, any>>({
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value);
-                setCurrentPage(1);
+                handlePageChange(1);
               }}
               placeholder={searchPlaceholder}
               className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl pl-10 pr-4 h-9 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-brand-500 transition-all font-medium shadow-xs"
@@ -386,7 +433,7 @@ export function DataTable<T extends Record<string, any>>({
                 value={selectedStatusFilter}
                 onChange={(val) => {
                   setSelectedStatusFilter(val);
-                  setCurrentPage(1);
+                  handlePageChange(1);
                 }}
                 options={[
                   { value: "All", label: "All Statuses" },
@@ -803,15 +850,20 @@ export function DataTable<T extends Record<string, any>>({
             <select
               value={pageSize}
               onChange={(e) => {
-                setPageSize(Number(e.target.value));
-                setCurrentPage(1);
+                const newSize = Number(e.target.value);
+                if (pageSizeProp === undefined) {
+                  setInternalPageSize(newSize);
+                }
+                onPageSizeChange?.(newSize);
+                handlePageChange(1);
               }}
               className="px-2.5 py-1 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-extrabold cursor-pointer outline-none focus:border-brand-500 shadow-xs"
             >
-              <option value={10}>10</option>
-              <option value={20}>20</option>
-              <option value={50}>50</option>
-              <option value={100}>100</option>
+              {(pageSizeOptions || [10, 20, 50, 100]).map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -820,7 +872,7 @@ export function DataTable<T extends Record<string, any>>({
             {/* Previous Button */}
             <button
               type="button"
-              onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+              onClick={() => handlePageChange((p) => Math.max(p - 1, 1))}
               disabled={currentPage === 1}
               className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 disabled:opacity-40 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
               title="Previous Page"
@@ -865,7 +917,7 @@ export function DataTable<T extends Record<string, any>>({
                     <button
                       key={pageNum}
                       type="button"
-                      onClick={() => setCurrentPage(pageNum)}
+                      onClick={() => handlePageChange(pageNum)}
                       className={`min-w-[32px] h-8 px-2.5 rounded-xl font-black text-xs transition-all cursor-pointer ${
                         isCurrent
                           ? "bg-brand-500 text-white shadow-lux"
@@ -882,7 +934,7 @@ export function DataTable<T extends Record<string, any>>({
             {/* Next Button */}
             <button
               type="button"
-              onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+              onClick={() => handlePageChange((p) => Math.min(p + 1, totalPages))}
               disabled={currentPage === totalPages}
               className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 disabled:opacity-40 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
               title="Next Page"
@@ -893,7 +945,15 @@ export function DataTable<T extends Record<string, any>>({
 
           {/* RIGHT: Showing Entries Info */}
           <div className="text-slate-500 dark:text-slate-400 font-mono text-[11px] font-bold">
-            Showing {sortedData.length > 0 ? (currentPage - 1) * pageSize + 1 : 0}–{Math.min(currentPage * pageSize, sortedData.length)} of {sortedData.length} entries
+            {serverPagination ? (
+              <>
+                Showing {totalRecordsProp && totalRecordsProp > 0 ? (currentPage - 1) * pageSize + 1 : (sortedData.length > 0 ? (currentPage - 1) * pageSize + 1 : 0)}–{Math.min(currentPage * pageSize, totalRecordsProp ?? sortedData.length)} of {totalRecordsProp ?? sortedData.length} entries
+              </>
+            ) : (
+              <>
+                Showing {sortedData.length > 0 ? (currentPage - 1) * pageSize + 1 : 0}–{Math.min(currentPage * pageSize, sortedData.length)} of {sortedData.length} entries
+              </>
+            )}
           </div>
         </div>
       </div>

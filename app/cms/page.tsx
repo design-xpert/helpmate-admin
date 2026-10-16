@@ -30,6 +30,9 @@ import {
   updateServiceActionApi,
   deleteServiceActionApi,
   getLocalitiesApi,
+  calculateDurationInMinutes,
+  formatDurationLabel,
+  formatHoursOnly,
   ApiCategory,
   ApiAddon,
   ApiServiceAction,
@@ -38,7 +41,7 @@ import {
   formatImageUrl,
 } from "@/lib/api";
 import { ShimmerRow, ShimmerCardGrid } from "@/components/ShimmerLoader";
-import { Wrench, Plus, CheckCircle2, MapPin, Tag, X, Filter, Sliders, Briefcase, Trash2, Link, Layers, AlertCircle, Edit, ChevronDown, FileImage, Upload, Megaphone, Eye, Flame, Image as ImageIcon, Link as LinkIcon, Copy, Loader2 } from "lucide-react";
+import { Wrench, Plus, CheckCircle2, MapPin, Tag, X, Filter, Sliders, Briefcase, Trash2, Link, Layers, AlertCircle, Edit, ChevronDown, FileImage, Upload, Megaphone, Eye, Flame, Image as ImageIcon, Link as LinkIcon, Copy, Loader2, Clock } from "lucide-react";
 
 function safeStr(val: any): string {
   if (val === null || val === undefined) return "";
@@ -104,6 +107,24 @@ interface ServiceOfferingRow {
   imageRemoved?: boolean;
   addonIds?: string[];
 }
+
+const DURATION_PRESETS = [
+  { value: "15 mins", label: "15 mins" },
+  { value: "30 mins", label: "30 mins" },
+  { value: "45 mins", label: "45 mins" },
+  { value: "60 mins", label: "60 mins (1 hr)" },
+  { value: "75 mins", label: "75 mins (1 hr 15 mins)" },
+  { value: "90 mins", label: "90 mins (1.5 hrs)" },
+  { value: "120 mins", label: "120 mins (2 hrs)" },
+  { value: "150 mins", label: "150 mins (2.5 hrs)" },
+  { value: "180 mins", label: "180 mins (3 hrs)" },
+  { value: "210 mins", label: "210 mins (3.5 hrs)" },
+  { value: "240 mins", label: "240 mins (4 hrs)" },
+  { value: "300 mins", label: "300 mins (5 hrs)" },
+  { value: "2 - 3 hrs", label: "150 mins (2 - 3 hrs)" },
+  { value: "3 - 4 hrs", label: "210 mins (3 - 4 hrs)" },
+  { value: "4 - 5 hrs", label: "270 mins (4 - 5 hrs)" },
+];
 
 import { CustomSelect } from "@/components/CustomSelect";
 
@@ -185,40 +206,68 @@ export default function CmsPage() {
   // Category Filter Flow State
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>("All Categories");
   const [selectedCategoryIdFilter, setSelectedCategoryIdFilter] = useState<string>("");
+  const [servicesTablePage, setServicesTablePage] = useState<number>(1);
+  const [servicesTotalRecords, setServicesTotalRecords] = useState<number>(0);
+  const [servicesTotalPages, setServicesTotalPages] = useState<number>(1);
+
+  const activeFetchIdRef = useRef(0);
 
   const fetchServicesFromBackend = async (
     catsList?: ApiCategory[],
     force: boolean = false,
-    categoryId?: string
+    categoryId?: string,
+    page: number = 1,
+    limit: number = 10
   ) => {
-    const activeCatId = categoryId !== undefined ? categoryId : "";
-    if (!force && isModuleCacheFresh("cms_services", 30000)) {
-      const cached = getStoredModuleData<ServiceItem[]>("cms_services");
-      if (cached && cached.length > 0) {
-        setServices(cached);
+    const fetchId = ++activeFetchIdRef.current;
+    const activeCatId = categoryId !== undefined ? categoryId : selectedCategoryIdFilter;
+    const cacheKey = activeCatId
+      ? `cms_services_${activeCatId}_p${page}_l${limit}`
+      : `cms_services_p${page}_l${limit}`;
+
+    if (!force && isModuleCacheFresh(cacheKey, 30000)) {
+      const cached = getStoredModuleData<{
+        items: ServiceItem[];
+        totalRecords: number;
+        totalPages: number;
+      }>(cacheKey);
+      if (cached && cached.items && cached.items.length > 0) {
+        setServices(cached.items);
+        setServicesTotalRecords(cached.totalRecords || cached.items.length);
+        setServicesTotalPages(cached.totalPages || 1);
+        setServicesTablePage(page);
         setIsLoading(false);
         return;
       }
     }
-    // Only show full loader if table has no data yet to keep table mounted during refreshes
-    if (services.length === 0 && initialCachedServices.length === 0) {
-      setIsLoading(true);
-    }
+
+    setIsLoading(true);
+
     try {
       const catsToUse = (catsList && catsList.length > 0) ? catsList : categoriesFromApi;
-      const params: any = { limit: 100, forceRefresh: force };
+      const params: any = { page, limit: 10, forceRefresh: force };
       if (activeCatId && activeCatId !== "all" && activeCatId !== "") {
         params.categoryId = activeCatId;
       }
 
       const pkgRes = await getPackagesApi(params);
+      if (fetchId !== activeFetchIdRef.current) return;
+
       const rawPkgList = pkgRes?.data?.packages || (Array.isArray(pkgRes?.data) ? pkgRes.data : (Array.isArray(pkgRes) ? pkgRes : []));
+      const paginationInfo = pkgRes?.pagination || pkgRes?.data?.pagination || {};
+      const totalRecs = Number(paginationInfo.totalRecords ?? (paginationInfo.total ?? rawPkgList.length));
+      const totalPgs = Number(paginationInfo.totalPages ?? Math.ceil(totalRecs / 10) ?? 1);
+
+      setServicesTotalRecords(totalRecs);
+      setServicesTotalPages(Math.max(totalPgs, 1));
+      setServicesTablePage(page);
 
       let rawList = rawPkgList;
 
       if (Array.isArray(rawList)) {
         if (rawList.length === 0) {
           setServices([]);
+          setCachedModuleData(cacheKey, { items: [], totalRecords: 0, totalPages: 1 });
         } else {
           const validOffers = rawList.filter((s: any) => {
             const catObj = s.category;
@@ -236,8 +285,32 @@ export default function CmsPage() {
             const actObj = typeof s.serviceActionId === "object" && s.serviceActionId !== null ? s.serviceActionId : (typeof s.serviceAction === "object" && s.serviceAction !== null ? s.serviceAction : null);
 
             // Extract category & subcategory IDs stored in serviceActionId reference
-            let categoryIdStr = typeof actObj?.categoryId === "object" ? (actObj.categoryId?._id || "") : (typeof actObj?.categoryId === "string" ? actObj.categoryId : (s.categoryId?._id || s.categoryId || ""));
-            let subCategoryIdStr = typeof actObj?.subCategoryId === "object" ? (actObj.subCategoryId?._id || "") : (typeof actObj?.subCategoryId === "string" ? actObj.subCategoryId : (s.subCategoryId?._id || s.subCategoryId || ""));
+            let categoryIdStr = "";
+            if (actObj?.categoryId) {
+              categoryIdStr = typeof actObj.categoryId === "object"
+                ? String(actObj.categoryId._id || actObj.categoryId)
+                : String(actObj.categoryId);
+            }
+            if (!categoryIdStr && (s.categoryId?._id || s.categoryId)) {
+              categoryIdStr = typeof s.categoryId === "object"
+                ? String(s.categoryId._id || s.categoryId)
+                : String(s.categoryId);
+            }
+            if (!categoryIdStr && activeCatId) {
+              categoryIdStr = activeCatId;
+            }
+
+            let subCategoryIdStr = "";
+            if (actObj?.subCategoryId) {
+              subCategoryIdStr = typeof actObj.subCategoryId === "object"
+                ? String(actObj.subCategoryId._id || actObj.subCategoryId)
+                : String(actObj.subCategoryId);
+            }
+            if (!subCategoryIdStr && (s.subCategoryId?._id || s.subCategoryId)) {
+              subCategoryIdStr = typeof s.subCategoryId === "object"
+                ? String(s.subCategoryId._id || s.subCategoryId)
+                : String(s.subCategoryId);
+            }
 
             const actionVal = actObj?.serviceAction || actObj?.name || (typeof s.serviceAction === "string" ? s.serviceAction : (s.systemType?.[0] || ""));
 
@@ -248,20 +321,20 @@ export default function CmsPage() {
                 (sa: any) => (saId && sa._id === saId) || (actionVal && (sa.serviceAction === actionVal || sa.name === actionVal))
               );
               if (foundSa) {
-                categoryIdStr = typeof foundSa.categoryId === "object" ? (foundSa.categoryId?._id || "") : (typeof foundSa.categoryId === "string" ? foundSa.categoryId : "");
-                subCategoryIdStr = typeof foundSa.subCategoryId === "object" ? (foundSa.subCategoryId?._id || "") : (typeof foundSa.subCategoryId === "string" ? foundSa.subCategoryId : "");
+                categoryIdStr = typeof foundSa.categoryId === "object" ? String(foundSa.categoryId?._id || foundSa.categoryId) : String(foundSa.categoryId || "");
+                subCategoryIdStr = typeof foundSa.subCategoryId === "object" ? String(foundSa.subCategoryId?._id || foundSa.subCategoryId) : String(foundSa.subCategoryId || "");
               }
             }
 
             // Match category in catsToUse by ID or Name
             const foundCategory = catsToUse.find(
-              (c) => (categoryIdStr && c._id === categoryIdStr) || (c.categoryName && c.categoryName.toLowerCase().trim() === safeStr(actObj?.categoryId?.categoryName || s.categoryName || s.category).toLowerCase().trim())
+              (c) => (categoryIdStr && String(c._id) === String(categoryIdStr)) || (c.categoryName && c.categoryName.toLowerCase().trim() === safeStr(actObj?.categoryId?.categoryName || s.categoryName || s.category).toLowerCase().trim())
             );
             const categoryNameStr = foundCategory ? foundCategory.categoryName : (safeStr(actObj?.categoryId?.categoryName) || safeStr(s.categoryName) || safeStr(s.category) || "");
 
             // Match subcategory in foundCategory by ID or Name
             const foundSub = foundCategory?.subCategories?.find(
-              (sub: any) => (subCategoryIdStr && sub._id === subCategoryIdStr) || (sub.name && sub.name.toLowerCase().trim() === safeStr(actObj?.subCategoryId?.name || s.subCategoryName || s.subcategory).toLowerCase().trim())
+              (sub: any) => (subCategoryIdStr && String(sub._id) === String(subCategoryIdStr)) || (sub.name && sub.name.toLowerCase().trim() === safeStr(actObj?.subCategoryId?.name || s.subCategoryName || s.subcategory).toLowerCase().trim())
             );
             const subCategoryNameStr = foundSub ? foundSub.name : (safeStr(actObj?.subCategoryId?.name) || safeStr(s.subCategoryName) || safeStr(s.subcategory) || "");
 
@@ -276,7 +349,8 @@ export default function CmsPage() {
 
             const priceVal = s.price !== undefined ? Number(s.price) : 699;
             const origPriceVal = s.originalPrice !== undefined ? Number(s.originalPrice) : Math.round(priceVal * 1.3);
-            const durationVal = typeof s.duration === "number" ? `${s.duration} mins` : (s.duration || "45 mins");
+            const durationMinutes = calculateDurationInMinutes(s.duration);
+            const durationVal = formatDurationLabel(durationMinutes);
             const subtitleVal = s.subtitle ? safeStr(s.subtitle) : "";
             const descriptionVal = s.description ? safeStr(s.description) : `Expert ${titleStr} service with 30-day HelpMate guarantee`;
 
@@ -319,16 +393,22 @@ export default function CmsPage() {
               createdDate: "Just Now",
             };
           });
+
+          if (fetchId !== activeFetchIdRef.current) return;
           setServices(mapped);
-          if (!activeCatId) {
-            setCachedModuleData("cms_services", mapped);
-          }
+          setCachedModuleData(cacheKey, {
+            items: mapped,
+            totalRecords: totalRecs,
+            totalPages: Math.max(totalPgs, 1),
+          });
         }
       }
     } catch (err) {
       console.error("fetchServicesFromBackend error:", err);
     } finally {
-      setIsLoading(false);
+      if (fetchId === activeFetchIdRef.current) {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -480,7 +560,7 @@ export default function CmsPage() {
           fetchAddonsFromBackend(),
           fetchLocalitiesFromBackend(),
         ]);
-        await fetchServicesFromBackend(cats);
+        await fetchServicesFromBackend(cats, false, "", 1, 10);
       } catch (e) {
         console.error("loadAllData error:", e);
       }
@@ -583,10 +663,17 @@ export default function CmsPage() {
   // Selected Service Details & Add-ons Modal State
   const [selectedService, setSelectedService] = useState<ServiceItem | null>(null);
 
-  // Category Filter Flow Actions (instantaneous in-memory filtering)
-  const handleSelectCategoryFilter = (catId: string, catName: string) => {
+  // Category Filter Flow Actions - fetches from /api/package?categoryId=${catId}&page=1&limit=10
+  const handleSelectCategoryFilter = async (catId: string, catName: string) => {
     setSelectedCategoryIdFilter(catId);
     setSelectedCategoryFilter(catName);
+    setServicesTablePage(1);
+    await fetchServicesFromBackend(categoriesFromApi, true, catId, 1, 10);
+  };
+
+  const handleServicesPageChange = async (newPage: number) => {
+    setServicesTablePage(newPage);
+    await fetchServicesFromBackend(categoriesFromApi, true, selectedCategoryIdFilter, newPage, 10);
   };
 
   const categoriesList = [
@@ -735,9 +822,17 @@ export default function CmsPage() {
       key: "price",
       header: "Price (₹)",
       accessor: (row) => (
-        <span className="font-extrabold text-sm text-slate-900 dark:text-white">
-          ₹{row.price}
-        </span>
+        <div className="flex flex-col">
+          <span className="font-extrabold text-sm text-slate-900 dark:text-white">
+            ₹{row.price}
+          </span>
+          {row.duration && (
+            <span className="text-[10px] text-slate-400 font-bold flex items-center gap-1 mt-0.5">
+              <Clock className="w-2.5 h-2.5 text-slate-400" />
+              {formatDurationLabel(calculateDurationInMinutes(row.duration))}
+            </span>
+          )}
+        </div>
       ),
     },
     {
@@ -1365,6 +1460,11 @@ export default function CmsPage() {
     const includedItems = safeStringArray(item.includeInPackage);
     const excludedItems = safeStringArray(item.excludeFromPackage);
 
+    const initialDurationMins = calculateDurationInMinutes(item.duration);
+    const matchedPreset = DURATION_PRESETS.find(
+      (p) => p.value === item.duration || calculateDurationInMinutes(p.value) === initialDurationMins
+    );
+
     setServiceOfferings([
       {
         id: item.id,
@@ -1372,9 +1472,9 @@ export default function CmsPage() {
         subtitle: safeStr(item.subtitle),
         price: Number(item.price),
         originalPrice: Number(item.originalPrice),
-        duration: typeof item.duration === "number"
-          ? `${item.duration} mins`
-          : safeStr(item.duration) || "45 mins",
+        duration: matchedPreset
+          ? matchedPreset.value
+          : "45 mins",
         description: safeStr(item.description) || safeStr(item.subtitle) || "",
         includeInPackage: includedItems.length ? includedItems : ["• "],
         excludeFromPackage: excludedItems.length ? excludedItems : ["• "],
@@ -1447,7 +1547,8 @@ export default function CmsPage() {
           form.append("subtitle", firstOff.subtitle && firstOff.subtitle.trim() ? firstOff.subtitle.trim() : "");
           form.append("description", firstOff.description && firstOff.description.trim() ? firstOff.description.trim() : "");
           form.append("price", String(firstOff.price));
-          form.append("duration", String(parseInt(String(firstOff.duration)) || 45));
+          const firstOffDurationMins = calculateDurationInMinutes(firstOff.duration);
+          form.append("duration", String(firstOffDurationMins));
           form.append("originalPrice", String(firstOff.originalPrice || Math.round((firstOff.price || 699) * 1.3)));
           form.append("includeInPackage", JSON.stringify(cleanPackagePoints(firstOff.includeInPackage)));
           form.append("excludeFromPackage", JSON.stringify(cleanPackagePoints(firstOff.excludeFromPackage)));
@@ -1482,11 +1583,13 @@ export default function CmsPage() {
 
           toast.success("Package Updated", `"${firstOff.title}" package updated successfully.`);
 
-          // 1. Instantly close the sliding form drawer
+          // 1. Instantly close the sliding form drawer on successful update
           setIsAddServiceOpen(false);
           setEditingServiceId(null);
           setIsAddingNewCategory(false);
           setNewCategoryName("");
+
+          const updatedImageUrl = updatePkgRes?.data?.imageUrl || (firstOff.imageRemoved ? "" : firstOff.thumbnailUrl);
 
           // 2. Immediate table update for instant 0ms visual feedback
           setServices((prev) =>
@@ -1499,15 +1602,15 @@ export default function CmsPage() {
                   description: safeStr(firstOff.description) || s.description,
                   price: Number(firstOff.price),
                   originalPrice: Number(firstOff.originalPrice) || Math.round(Number(firstOff.price) * 1.3),
-                  duration: typeof firstOff.duration === "number" ? `${firstOff.duration} mins` : (firstOff.duration || "45 mins"),
+                  duration: formatDurationLabel(firstOffDurationMins),
                   includeInPackage: cleanPackagePoints(firstOff.includeInPackage),
                   excludeFromPackage: cleanPackagePoints(firstOff.excludeFromPackage),
                   thumbnailUrl: firstOff.imageFile instanceof File
-                    ? (firstOff.thumbnailUrl || s.thumbnailUrl || "")
-                    : (firstOff.imageRemoved ? "" : (firstOff.thumbnailUrl || "")),
+                    ? (updatedImageUrl || firstOff.thumbnailUrl || s.thumbnailUrl || "")
+                    : (firstOff.imageRemoved ? "" : (updatedImageUrl || firstOff.thumbnailUrl || "")),
                   imageUrl: firstOff.imageFile instanceof File
-                    ? (firstOff.thumbnailUrl || s.thumbnailUrl || "")
-                    : (firstOff.imageRemoved ? "" : ((s as any).imageUrl || firstOff.thumbnailUrl || "")),
+                    ? (updatedImageUrl || firstOff.thumbnailUrl || s.thumbnailUrl || "")
+                    : (firstOff.imageRemoved ? "" : ((s as any).imageUrl || updatedImageUrl || firstOff.thumbnailUrl || "")),
                 };
               }
               return s;
@@ -1523,7 +1626,7 @@ export default function CmsPage() {
               originalPrice: off.originalPrice || Math.round((off.price || 699) * 1.3),
               includeInPackage: cleanPackagePoints(off.includeInPackage),
               excludeFromPackage: cleanPackagePoints(off.excludeFromPackage),
-              duration: parseInt(String(off.duration)) || 45,
+              duration: calculateDurationInMinutes(off.duration),
               imageUrl: off.thumbnailUrl || "",
               thumbnailUrl: off.thumbnailUrl || "",
               imageFile: off.imageFile,
@@ -1538,7 +1641,7 @@ export default function CmsPage() {
         }
 
         // 3. Recall package API from backend to reload and guarantee 100% perfect, current data
-        await fetchServicesFromBackend(categoriesFromApi, true);
+        await fetchServicesFromBackend(categoriesFromApi, true, selectedCategoryIdFilter, servicesTablePage, 10);
         return;
       }
 
@@ -1625,7 +1728,7 @@ export default function CmsPage() {
         originalPrice: off.originalPrice || Math.round((off.price || 699) * 1.3),
         includeInPackage: cleanPackagePoints(off.includeInPackage),
         excludeFromPackage: cleanPackagePoints(off.excludeFromPackage),
-        duration: parseInt(String(off.duration)) || 45,
+        duration: calculateDurationInMinutes(off.duration),
         imageUrl: off.thumbnailUrl || "",
         thumbnailUrl: off.thumbnailUrl || "",
         imageFile: off.imageFile,
@@ -1643,7 +1746,7 @@ export default function CmsPage() {
       } else {
         toast.success("Package Created", `Successfully created ${packageListPayload.length} service package(s).`);
         // Force-refresh package list to display the new data in the table
-        await fetchServicesFromBackend(categoriesFromApi, true);
+        await fetchServicesFromBackend(categoriesFromApi, true, selectedCategoryIdFilter, 1, 10);
       }
 
       if (isAddingNewCategory && newCategoryName.trim()) {
@@ -1749,17 +1852,18 @@ export default function CmsPage() {
     setIsAddPincodeOpen(false);
   };
 
-  // Dynamic Filtering by Category (instant in-memory, no API spam)
+  // Dynamic Filtering by Category
   const filteredServices = useMemo(() => {
     if (!selectedCategoryIdFilter && (!selectedCategoryFilter || selectedCategoryFilter === "All Categories")) {
       return services;
     }
-    return services.filter((s) => {
+    const matched = services.filter((s) => {
       if (selectedCategoryIdFilter) {
         return s.categoryId === selectedCategoryIdFilter || s.category === selectedCategoryFilter;
       }
       return s.category === selectedCategoryFilter;
     });
+    return matched.length > 0 ? matched : services;
   }, [services, selectedCategoryIdFilter, selectedCategoryFilter]);
 
   return (
@@ -1833,7 +1937,7 @@ export default function CmsPage() {
       </div>
 
       {/* CATEGORY FLOW SELECTION CHIPS (For Services Tab) */}
-      {/* {activeTab === "services" && (
+      {activeTab === "services" && (
         <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs no-scrollbar">
           <span className="font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-wider text-[10px] shrink-0 flex items-center gap-1">
             <Filter className="w-3 h-3" /> Category Flow:
@@ -1878,7 +1982,7 @@ export default function CmsPage() {
             );
           })}
         </div>
-      )} */}
+      )}
 
       {activeTab === "services" ? (
         isLoading ? (
@@ -1888,6 +1992,13 @@ export default function CmsPage() {
             columns={serviceColumns}
             data={filteredServices}
             searchPlaceholder="Search service title or category..."
+            serverPagination={true}
+            currentPage={servicesTablePage}
+            totalPages={servicesTotalPages}
+            totalRecords={servicesTotalRecords}
+            pageSize={10}
+            pageSizeOptions={[10]}
+            onPageChange={handleServicesPageChange}
           />
         )
       ) : activeTab === "addons" ? (
@@ -1919,7 +2030,7 @@ export default function CmsPage() {
                     {selectedService.title}
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Category: <span className="font-bold text-brand-600">{selectedService.category}</span> • Base Rate: ₹{selectedService.price}
+                    Category: <span className="font-bold text-brand-600">{selectedService.category}</span> • Base Rate: ₹{selectedService.price} • Duration: <span className="font-bold text-slate-700 dark:text-slate-300">{formatDurationLabel(calculateDurationInMinutes(selectedService.duration || "45 mins"))}</span>
                   </p>
                 </div>
                 <button
@@ -2248,20 +2359,40 @@ export default function CmsPage() {
                             </div>
 
                             {/* 4. Service Duration */}
-                            <div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 block">
+                                4. Service Duration *
+                              </label>
+
                               <CustomSelect
                                 size="sm"
-                                label="4. Service Duration *"
                                 value={off.duration}
                                 onChange={(val) => handleUpdateOfferingRow(idx, "duration", val)}
-                                options={[
-                                  { value: "30 mins", label: "30 mins" },
-                                  { value: "45 mins", label: "45 mins" },
-                                  { value: "60 mins", label: "60 mins" },
-                                  { value: "90 mins", label: "90 mins" },
-                                  { value: "2 - 3 hrs", label: "2 - 3 hrs" },
-                                ]}
+                                options={DURATION_PRESETS}
                               />
+
+                              {/* Real-time duration calculation feedback */}
+                              {(() => {
+                                const calcMinutes = calculateDurationInMinutes(off.duration);
+                                const hrsText = formatHoursOnly(calcMinutes);
+                                return (
+                                  <div className="flex items-center justify-between text-[10px] bg-slate-50 dark:bg-slate-800/60 px-2.5 py-1.5 rounded-lg border border-slate-200/60 dark:border-slate-700/60 mt-1.5">
+                                    <span className="font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                                      <Clock className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                                      <span>Duration: <strong>{calcMinutes} mins</strong></span>
+                                      {calcMinutes >= 60 && hrsText && (
+                                        <span className="text-slate-500 dark:text-slate-400 font-semibold bg-emerald-500/10 dark:bg-emerald-400/10 px-1.5 py-0.5 rounded text-[9.5px]">
+                                          ({hrsText})
+                                        </span>
+                                      )}
+                                    </span>
+                                    <span className="text-[9px] text-slate-400 font-semibold uppercase tracking-wider">
+                                      Sent in min
+                                    </span>
+                                  </div>
+                                );
+                              })()}
+
                             </div>
                           </div>
 
