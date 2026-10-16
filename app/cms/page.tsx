@@ -1966,17 +1966,6 @@ export default function CmsPage() {
                     : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
                 }`}
               >
-                {cat.iconUrl ? (
-                  <div className="relative w-3.5 h-3.5 rounded overflow-hidden shrink-0">
-                    <Image
-                      src={cat.iconUrl}
-                      alt={cat.categoryName}
-                      fill
-                      className="object-contain"
-                      unoptimized
-                    />
-                  </div>
-                ) : null}
                 <span>{cat.categoryName}</span>
               </button>
             );
