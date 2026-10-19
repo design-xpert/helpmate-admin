@@ -939,29 +939,55 @@ export async function getAddonDropdownApi(params?: { categoryId?: string; subCat
   }
 }
 
-export async function createAddonApi(payload: {
+export interface AddonPayload {
   categoryId?: string;
   subCategoryId?: string;
   addonName?: string;
   title?: string;
   description?: string;
-  price: number;
+  price?: number;
   unit?: string;
   imageUrl?: string;
+  image?: File | Blob | null;
   category?: string;
   status?: boolean;
-}) {
+}
+
+export async function createAddonApi(payload: AddonPayload | FormData) {
   clearApiCache("getAddonsApi");
   clearApiCache("getAddonDropdownApi");
   try {
-    const bodyPayload = {
-      ...payload,
-      addonName: payload.addonName || payload.title,
-      title: payload.title || payload.addonName,
-    };
+    let body: BodyInit;
+    if (typeof FormData !== "undefined" && payload instanceof FormData) {
+      body = payload;
+    } else {
+      const data = payload as AddonPayload;
+      const formData = new FormData();
+      if (data.categoryId) formData.append("categoryId", data.categoryId);
+      if (data.subCategoryId) formData.append("subCategoryId", data.subCategoryId);
+      const name = data.addonName || data.title || "";
+      if (name) formData.append("addonName", name);
+      if (data.description !== undefined) formData.append("description", data.description);
+      if (data.price !== undefined) formData.append("price", String(data.price));
+      if (data.unit) formData.append("unit", data.unit);
+      if (data.status !== undefined) formData.append("status", String(data.status));
+
+      if (data.image instanceof File || data.image instanceof Blob) {
+        formData.append("image", data.image);
+      } else if (data.imageUrl && data.imageUrl.startsWith("data:")) {
+        const blob = dataURLtoBlob(data.imageUrl);
+        if (blob) {
+          formData.append("image", blob, "addon.jpg");
+        }
+      } else if (data.imageUrl && !data.imageUrl.startsWith("blob:")) {
+        formData.append("imageUrl", data.imageUrl);
+      }
+      body = formData;
+    }
+
     const res = await authFetch(`${API_BASE_URL}/api/addon`, {
       method: "POST",
-      body: JSON.stringify(bodyPayload),
+      body,
     });
     return await safeJsonResponse(res);
   } catch (error) {
@@ -972,39 +998,59 @@ export async function createAddonApi(payload: {
 
 export async function updateAddonApi(
   id: string,
-  payload: {
-    categoryId?: string;
-    subCategoryId?: string;
-    addonName?: string;
-    title?: string;
-    description?: string;
-    price?: number;
-    unit?: string;
-    imageUrl?: string;
-    category?: string;
-    status?: boolean;
-  }
+  payload: AddonPayload | FormData
 ) {
   clearApiCache("getAddonsApi");
   clearApiCache("getAddonDropdownApi");
   try {
-    const bodyPayload = {
-      ...payload,
-      ...(payload.addonName || payload.title
-        ? {
-          addonName: payload.addonName || payload.title,
-          title: payload.title || payload.addonName,
+    let body: BodyInit;
+    if (typeof FormData !== "undefined" && payload instanceof FormData) {
+      body = payload;
+    } else {
+      const data = payload as AddonPayload;
+      const formData = new FormData();
+      if (data.categoryId) formData.append("categoryId", data.categoryId);
+      if (data.subCategoryId !== undefined) {
+        formData.append("subCategoryId", data.subCategoryId || "");
+      }
+      const name = data.addonName || data.title;
+      if (name) formData.append("addonName", name);
+      if (data.description !== undefined) formData.append("description", data.description);
+      if (data.price !== undefined) formData.append("price", String(data.price));
+      if (data.unit) formData.append("unit", data.unit);
+      if (data.status !== undefined) formData.append("status", String(data.status));
+
+      if (data.image instanceof File || data.image instanceof Blob) {
+        formData.append("image", data.image);
+      } else if (data.imageUrl && data.imageUrl.startsWith("data:")) {
+        const blob = dataURLtoBlob(data.imageUrl);
+        if (blob) {
+          formData.append("image", blob, "addon.jpg");
         }
-        : {}),
-    };
+      } else if (data.imageUrl && !data.imageUrl.startsWith("blob:")) {
+        formData.append("imageUrl", data.imageUrl);
+      }
+      body = formData;
+    }
+
     const res = await authFetch(`${API_BASE_URL}/api/addon/${id}`, {
       method: "PATCH",
-      body: JSON.stringify(bodyPayload),
+      body,
     });
     return await safeJsonResponse(res);
   } catch (error) {
     console.error("updateAddonApi error:", error);
     return { success: false, message: "Failed to update spare part add-on." };
+  }
+}
+
+export async function getAddonDetailsApi(id: string) {
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/addon/${id}`);
+    return await safeJsonResponse(res);
+  } catch (error) {
+    console.error("getAddonDetailsApi error:", error);
+    return { success: false, message: "Failed to fetch spare part add-on details." };
   }
 }
 
@@ -2232,6 +2278,8 @@ export interface ApiAdminCustomerItem {
   customerCategory?: string;
   propertyHouseholdType?: string;
   status?: boolean;
+  isPasswordSet?: boolean;
+  passwordSetAt?: string;
   createdAt?: string;
   updatedAt?: string;
   primaryAddress?: {
@@ -2284,6 +2332,211 @@ export async function getAdminCustomersApi(params?: {
   } catch (error) {
     console.error("getAdminCustomersApi error:", error);
     return { success: false, message: "Failed to fetch customers." };
+  }
+}
+
+export interface ApiCustomerDetailsAddress {
+  _id: string;
+  customerId: string;
+  recipientName?: string;
+  recipientMobile?: string;
+  addressLabel: string;
+  relationshipType?: string;
+  localityId?: {
+    _id: string;
+    localityName: string;
+    pincode: string;
+  } | string;
+  pincode: string;
+  serviceAddress: string;
+  landmark?: string;
+  isPrimary?: boolean;
+  status?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ApiCustomerDetailsBookingItem {
+  category?: { id?: string; name?: string };
+  subCategory?: { id?: string; name?: string };
+  serviceAction?: { id?: string; name?: string };
+  package?: { id?: string; name?: string; price?: number; duration?: number };
+  selectedAddons?: Array<{
+    addonId?: string;
+    name?: string;
+    unitPrice?: number;
+    quantity?: number;
+    totalPrice?: number;
+    _id?: string;
+  }>;
+  quantity?: number;
+  unitPrice?: number;
+  totalPrice?: number;
+  _id?: string;
+}
+
+export interface ApiCustomerDetailsBooking {
+  _id: string;
+  bookingNumber: string;
+  status: string;
+  bookingSource?: string;
+  customer?: {
+    customerId?: string;
+    name?: string;
+    mobile?: string;
+    otpVerified?: boolean;
+    otpVerificationMethod?: string;
+  };
+  address?: {
+    addressId?: string;
+    addressLabel?: string;
+    localityId?: string;
+    localityName?: string;
+    pincode?: string;
+    serviceAddress?: string;
+    landmark?: string;
+  };
+  items?: ApiCustomerDetailsBookingItem[];
+  schedule?: {
+    bookingDate?: string;
+    timeSlot?: string;
+  };
+  billing?: {
+    mrp?: number;
+    sellingPrice?: number;
+    platformFee?: number;
+    discount?: number;
+    gst?: number;
+    totalAmount?: number;
+    payment?: {
+      paymentMethod?: string;
+      paymentStatus?: string;
+    };
+  };
+  assignment?: {
+    assignmentType?: string;
+    partnerId?: string;
+    partnerName?: string;
+    assignedAt?: string;
+    assignedBy?: string;
+  };
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ApiCustomerDetailsInvoiceItem {
+  categoryName?: string;
+  subCategoryName?: string;
+  serviceActionName?: string;
+  packageName?: string;
+  quantity?: number;
+  unitPrice?: number;
+  selectedAddons?: Array<{
+    name?: string;
+    unitPrice?: number;
+    quantity?: number;
+    totalPrice?: number;
+    _id?: string;
+  }>;
+  totalPrice?: number;
+  _id?: string;
+}
+
+export interface ApiCustomerDetailsInvoice {
+  _id: string;
+  invoiceNumber: string;
+  bookingId?: string;
+  bookingNumber?: string;
+  customer?: {
+    customerId?: string;
+    name?: string;
+    mobile?: string;
+  };
+  address?: {
+    addressLabel?: string;
+    localityName?: string;
+    pincode?: string;
+    serviceAddress?: string;
+    landmark?: string;
+  };
+  items?: ApiCustomerDetailsInvoiceItem[];
+  billing?: {
+    mrp?: number;
+    sellingPrice?: number;
+    discount?: number;
+    platformFee?: number;
+    gst?: number;
+    totalAmount?: number;
+    paymentMethod?: string;
+    paymentStatus?: string;
+  };
+  invoiceStatus?: string;
+  generatedBy?: string | null;
+  generatedAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ApiCustomerDetailsReview {
+  _id: string;
+  customerId: string;
+  packageId?: {
+    _id: string;
+    packageName: string;
+  };
+  bookingId?: string;
+  rating: number;
+  review: string;
+  status: string;
+  isPublished?: boolean;
+  publishedAt?: string;
+  publishedBy?: string;
+  moderationNote?: string;
+  officialResponse?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ApiCustomerDetailsData {
+  customer: ApiAdminCustomerItem;
+  addresses: ApiCustomerDetailsAddress[];
+  bookings: ApiCustomerDetailsBooking[];
+  invoices: ApiCustomerDetailsInvoice[];
+  reviews: ApiCustomerDetailsReview[];
+  summary: {
+    totalAddresses: number;
+    totalBookings: number;
+    totalInvoices: number;
+    totalReviews: number;
+  };
+}
+
+export async function getCustomerDetailsApi(
+  customerId: string,
+  forceRefresh?: boolean,
+  token?: string
+) {
+  const cacheKey = `getCustomerDetailsApi:${customerId}`;
+  if (!forceRefresh && apiCache.has(cacheKey)) {
+    return apiCache.get(cacheKey);
+  }
+  try {
+    const reqHeaders: Record<string, string> = {};
+    if (token) {
+      reqHeaders["Authorization"] = token.startsWith("Bearer ") ? token : `Bearer ${token}`;
+    }
+
+    const res = await authFetch(`${API_BASE_URL}/api/admin/customer/${customerId}/details`, {
+      headers: reqHeaders,
+    });
+    const data = await safeJsonResponse(res);
+    if (data && data.success !== false) {
+      apiCache.set(cacheKey, data);
+    }
+    return data;
+  } catch (error) {
+    console.error("getCustomerDetailsApi error:", error);
+    return { success: false, message: "Failed to fetch customer details." };
   }
 }
 
@@ -2414,12 +2667,14 @@ export async function getCustomerTrustStatusApi(customerId: string, forceRefresh
 export interface ApiCustomerAddressPayload {
   customerId: string;
   addressLabel: string;
-  relationshipType: "self" | "family_member" | "friend_neighbor" | "office_work" | "other_person";
+  relationshipType: "self" | "family_member" | "friend_neighbor" | "office_work" | "other_person" | string;
   localityId: string;
   pincode: string;
   serviceAddress: string;
   landmark?: string;
   isPrimary?: boolean;
+  recipientName?: string;
+  recipientMobile?: string;
 }
 
 export async function createCustomerAddressApi(payload: ApiCustomerAddressPayload & { token?: string }) {
@@ -3063,6 +3318,117 @@ export async function updateAdminQuickServicesApi(packageIds: string[]) {
     return { success: false, message: "Failed to update quick services." };
   }
 }
+
+// ─── QUICK SERVICE SECTIONS (CATEGORY SLIDERS) APIS ───
+
+export interface ApiQuickServiceSectionCategory {
+  _id: string;
+  categoryName: string;
+  slug: string;
+  iconUrl?: string;
+}
+
+export interface ApiQuickServiceSectionPackage {
+  _id: string;
+  packageId?: string;
+  serviceActionId?: string;
+  packageName: string;
+  subtitle?: string;
+  description?: string;
+  price: number;
+  originalPrice?: number;
+  duration?: number;
+  imageUrl?: string;
+  imageMimeType?: string;
+  imageSize?: number;
+  addons?: any[];
+  status?: boolean;
+  serviceAction?: any;
+  categoryName?: string;
+  category?: ApiQuickServiceSectionCategory;
+}
+
+export interface ApiQuickServiceSectionItem {
+  category: ApiQuickServiceSectionCategory;
+  packages: ApiQuickServiceSectionPackage[];
+}
+
+export interface ApiQuickServiceSectionSectionPayload {
+  categoryId: string;
+  packageIds: string[];
+}
+
+export async function getQuickServiceSectionsApi(forceRefresh?: boolean) {
+  const cacheKey = `getQuickServiceSectionsApi`;
+  const cached = getFromCache(cacheKey, forceRefresh);
+  if (cached) return cached;
+
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/quick-service-sections`);
+    const data = await safeJsonResponse(res);
+    if (data && data.success !== false) {
+      apiCache.set(cacheKey, data);
+    }
+    return data;
+  } catch (error) {
+    console.error("getQuickServiceSectionsApi error:", error);
+    return { success: false, message: "Failed to fetch quick service sections." };
+  }
+}
+
+export async function getQuickServiceSectionOptionsApi(
+  categoryIds?: string[],
+  forceRefresh?: boolean
+) {
+  const queryStr =
+    categoryIds && categoryIds.length > 0
+      ? `?categoryIds=${categoryIds.map(encodeURIComponent).join("%2C")}`
+      : "";
+  const cacheKey = `getQuickServiceSectionOptionsApi_${queryStr}`;
+  const cached = getFromCache(cacheKey, forceRefresh);
+  if (cached) return cached;
+
+  try {
+    const res = await authFetch(
+      `${API_BASE_URL}/api/quick-service-sections/options${queryStr}`
+    );
+    const data = await safeJsonResponse(res);
+    if (data && data.success !== false) {
+      apiCache.set(cacheKey, data);
+    }
+    return data;
+  } catch (error) {
+    console.error("getQuickServiceSectionOptionsApi error:", error);
+    return {
+      success: false,
+      message: "Failed to fetch quick service section options.",
+    };
+  }
+}
+
+export async function updateQuickServiceSectionsApi(
+  sections: ApiQuickServiceSectionSectionPayload[]
+) {
+  clearApiCache("getQuickServiceSectionsApi");
+  clearApiCache("getQuickServiceSectionOptionsApi");
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/quick-service-sections`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ sections }),
+    });
+    return await safeJsonResponse(res);
+  } catch (error) {
+    console.error("updateQuickServiceSectionsApi error:", error);
+    return {
+      success: false,
+      message: "Failed to update quick service sections.",
+    };
+  }
+}
+
 
 // ─── CITY MANAGEMENT APIS ───
 

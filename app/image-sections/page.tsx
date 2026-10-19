@@ -49,6 +49,9 @@ import {
   formatImageUrl,
   getAdminSpotlightApi,
   deleteSpotlightApi,
+  getQuickServiceSectionsApi,
+  updateQuickServiceSectionsApi,
+  ApiQuickServiceSectionSectionPayload,
 } from "@/lib/api";
 
 export default function ImageSectionsPage() {
@@ -72,6 +75,7 @@ export default function ImageSectionsPage() {
   const [isZonesLoading, setIsZonesLoading] = useState(() => !(isModuleCacheFresh("website_zones", 30000) && initialCachedZones.length > 0));
   const [isTrendingLoading, setIsTrendingLoading] = useState(() => !(isModuleCacheFresh("website_trending", 30000) && initialCachedTrending.length > 0));
   const [isQuickLoading, setIsQuickLoading] = useState(() => !(isModuleCacheFresh("website_quick", 30000) && initialCachedQuick.length > 0));
+  const [isCategorySectionsLoading, setIsCategorySectionsLoading] = useState(false);
   const [isCategoriesLoading, setIsCategoriesLoading] = useState(false);
   const [isCatalogLoading, setIsCatalogLoading] = useState(false);
 
@@ -124,6 +128,7 @@ export default function ImageSectionsPage() {
     if (!isModuleCacheFresh("website_quick", 30000) || initialCachedQuick.length === 0) fetchQuickServices();
     if (!isModuleCacheFresh("website_categories", 30000) || initialCachedCategories.length === 0) fetchCategories();
     if (!isModuleCacheFresh("website_spotlight", 30000)) fetchSpotlightItems();
+    if (!isModuleCacheFresh("website_category_sections", 30000)) fetchCategorySections();
   }, []);
 
   // Fetch data on active tab switch
@@ -141,6 +146,8 @@ export default function ImageSectionsPage() {
       if (!isModuleCacheFresh("website_quick", 30000)) fetchQuickServices();
     } else if (activeTab === "spotlight") {
       if (!isModuleCacheFresh("website_spotlight", 30000)) fetchSpotlightItems();
+    } else if (activeTab === "categorySections") {
+      if (!isModuleCacheFresh("website_category_sections", 30000)) fetchCategorySections();
     }
   }, [activeTab]);
 
@@ -513,41 +520,135 @@ export default function ImageSectionsPage() {
     });
   };
 
-  const handleAddPackageToCategorySection = (catItem: ApiTrendingCatalogItem) => {
-    if (!targetCatalogSectionId) return;
-    updateCategorySectionsState((prev) =>
-      prev.map((sec) => {
-        if (sec.id === targetCatalogSectionId) {
-          if (sec.services.some((s) => s.id === catItem.packageId)) {
-            alert("This service is already in this section.");
-            return sec;
-          }
+  const fetchCategorySections = async (force: boolean = false) => {
+    if (!force && isModuleCacheFresh("website_category_sections", 30000)) {
+      const cached = getStoredModuleData<CategorySectionData[]>("website_category_sections");
+      if (cached && cached.length > 0) {
+        setCategorySections(cached);
+        setIsCategorySectionsLoading(false);
+        return;
+      }
+    }
+    if (categorySections.length === 0) {
+      setIsCategorySectionsLoading(true);
+    }
+    try {
+      const res = await getQuickServiceSectionsApi(force);
+      if (res && res.success && Array.isArray(res.data) && res.data.length > 0) {
+        const mapped: CategorySectionData[] = res.data.map((item: any, idx: number) => {
+          const cat = item.category || {};
+          const pkgs = Array.isArray(item.packages) ? item.packages : [];
+          const services = pkgs.map((p: any) => ({
+            id: p._id || p.packageId,
+            packageId: p._id || p.packageId,
+            title: p.packageName,
+            image: formatImageUrl(p.imageUrl) || `/api/media/package/${p._id || p.packageId}/image`,
+            targetUrl: `/services/${cat.slug || "services"}?packageId=${p._id || p.packageId}`,
+            price: String(p.price || 0),
+            originalPrice: String(p.originalPrice || 0),
+            duration: p.duration || 30,
+          }));
+
           return {
-            ...sec,
-            services: [
-              ...sec.services,
-              {
-                id: catItem.packageId,
-                title: catItem.packageName,
-                image: formatImageUrl(catItem.imageUrl || catItem.thumbnailUrl),
-                targetUrl: `/services?item=${catItem.packageId}`,
-              },
-            ],
+            id: cat._id || `catsec-${idx + 1}`,
+            title: cat.categoryName || "Category Services",
+            subtitle: `Verified ${cat.categoryName || "category"} packages & doorstep repair solutions in Varanasi`,
+            badge: idx === 0 ? "Top Rated" : "Popular",
+            categoryIds: [cat._id].filter(Boolean),
+            categorySlug: cat.slug || "services",
+            seeAllUrl: `/search?view=packages&category=${encodeURIComponent(cat.categoryName || "")}&categoryId=${cat._id || ""}`,
+            isActive: true,
+            sortOrder: idx + 1,
+            services,
           };
-        }
-        return sec;
-      })
-    );
+        });
+        setCategorySections(mapped);
+        setCachedModuleData("website_category_sections", mapped);
+        try {
+          localStorage.setItem("helpmate_admin_website_category_sections", JSON.stringify(mapped));
+        } catch (e) {}
+      }
+    } catch (err) {
+      console.error("Failed to fetch category service sections:", err);
+    } finally {
+      setIsCategorySectionsLoading(false);
+    }
   };
 
-  const handleRemovePackageFromCategorySection = (sectionId: string, packageId: string) => {
-    updateCategorySectionsState((prev) =>
-      prev.map((sec) =>
-        sec.id === sectionId
-          ? { ...sec, services: sec.services.filter((s) => s.id !== packageId) }
-          : sec
-      )
+  const saveQuickServiceSections = async (
+    sectionsToSave: CategorySectionData[]
+  ): Promise<{ success: boolean; message?: string }> => {
+    try {
+      const payload: ApiQuickServiceSectionSectionPayload[] = sectionsToSave
+        .slice(0, 2)
+        .map((sec) => {
+          const categoryId = (sec.categoryIds && sec.categoryIds[0]) || sec.id;
+          const packageIds = (sec.services || [])
+            .map((s) => s.packageId || s.id)
+            .filter((id) => Boolean(id) && !id.startsWith("svc-"));
+          return { categoryId, packageIds };
+        })
+        .filter((sec) => sec.categoryId && !sec.categoryId.startsWith("catsec-"));
+
+      const res = await updateQuickServiceSectionsApi(payload);
+      if (res && res.success) {
+        await fetchCategorySections(true);
+        return { success: true };
+      }
+      return {
+        success: false,
+        message: res?.message || "Failed to update category service sections.",
+      };
+    } catch (err: any) {
+      console.error("Failed to update quick service sections:", err);
+      return { success: false, message: err?.message || "Error saving sections." };
+    }
+  };
+
+  const handleAddPackageToCategorySection = async (catItem: ApiTrendingCatalogItem) => {
+    if (!targetCatalogSectionId) return;
+    const targetSec = categorySections.find((s) => s.id === targetCatalogSectionId);
+    if (!targetSec) return;
+    if (targetSec.services.some((s) => s.id === catItem.packageId)) {
+      alert("This service is already in this section.");
+      return;
+    }
+
+    const updatedSections = categorySections.map((sec) => {
+      if (sec.id === targetCatalogSectionId) {
+        return {
+          ...sec,
+          services: [
+            ...sec.services,
+            {
+              id: catItem.packageId,
+              packageId: catItem.packageId,
+              title: catItem.packageName,
+              image: formatImageUrl(catItem.imageUrl || catItem.thumbnailUrl),
+              targetUrl: `/services?item=${catItem.packageId}`,
+              price: String(catItem.price || 0),
+              originalPrice: String(catItem.originalPrice || 0),
+              duration: catItem.duration || 30,
+            },
+          ],
+        };
+      }
+      return sec;
+    });
+
+    updateCategorySectionsState(() => updatedSections);
+    await saveQuickServiceSections(updatedSections);
+    setIsCatalogPickerOpen(false);
+  };
+
+  const handleRemovePackageFromCategorySection = async (sectionId: string, packageId: string) => {
+    const updatedSections = categorySections.map((sec) =>
+      sec.id === sectionId
+        ? { ...sec, services: sec.services.filter((s) => s.id !== packageId) }
+        : sec
     );
+    updateCategorySectionsState(() => updatedSections);
+    await saveQuickServiceSections(updatedSections);
   };
 
   const confirmDelete = async () => {
@@ -587,20 +688,22 @@ export default function ImageSectionsPage() {
       }
     }
     if (deleteModal.type === "categorySections") {
+      let updatedList: CategorySectionData[];
       if (deleteModal.sectionId) {
-        updateCategorySectionsState((prev) =>
-          prev.map((sec) =>
-            sec.id === deleteModal.sectionId
-              ? { ...sec, services: sec.services.filter((s) => s.id !== deleteModal.id) }
-              : sec
-          )
+        updatedList = categorySections.map((sec) =>
+          sec.id === deleteModal.sectionId
+            ? { ...sec, services: sec.services.filter((s) => s.id !== deleteModal.id) }
+            : sec
         );
       } else {
-        updateCategorySectionsState((prev) => prev.filter((sec) => sec.id !== deleteModal.id));
+        updatedList = categorySections.filter((sec) => sec.id !== deleteModal.id);
       }
+      updateCategorySectionsState(() => updatedList);
+      await saveQuickServiceSections(updatedList);
     }
     setDeleteModal(null);
   };
+
 
   const tabs: { id: TabType; label: string; icon: React.ElementType; count: number }[] = [
     { id: "zones", label: "Where We Serve (Zones)", icon: MapPin, count: zones.length },
@@ -778,6 +881,9 @@ export default function ImageSectionsPage() {
           fetchCategories={fetchCategories}
           catalogPackages={catalogPackages}
           onUpdateCategorySections={updateCategorySectionsState}
+          onSaveSectionsToBackend={saveQuickServiceSections}
+          onRefreshSections={() => fetchCategorySections(true)}
+          isCategorySectionsLoading={isCategorySectionsLoading}
           onRequestDelete={(id, name, sectionId) =>
             setDeleteModal({
               open: true,

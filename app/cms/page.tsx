@@ -1182,6 +1182,7 @@ export default function CmsPage() {
   const [addonSubCategoryId, setAddonSubCategoryId] = useState("");
   const [addonDescription, setAddonDescription] = useState("");
   const [addonImageUrl, setAddonImageUrl] = useState("");
+  const [addonImageFile, setAddonImageFile] = useState<File | null>(null);
 
   const openAddAddonDrawer = (defaultCatId?: string, defaultSubCatId?: string) => {
     setEditingAddonId(null);
@@ -1190,6 +1191,7 @@ export default function CmsPage() {
     setAddonUnit("Per Unit");
     setAddonDescription("");
     setAddonImageUrl("");
+    setAddonImageFile(null);
 
     const initialCat = (categoriesFromApi.length > 0 ? categoriesFromApi : []).find(
       (c) => c._id === defaultCatId || c.categoryName === serviceCategory
@@ -1216,6 +1218,7 @@ export default function CmsPage() {
     setAddonUnit(item.unit || "Per Unit");
     setAddonDescription(item.description || "");
     setAddonImageUrl(item.imageUrl || "");
+    setAddonImageFile(null);
 
     const matchedCat = categoriesFromApi.find(
       (c) => c._id === item.categoryId || c.categoryName === item.category
@@ -1874,6 +1877,11 @@ export default function CmsPage() {
       ) || categoriesFromApi[0];
 
       const catIdToUse = matchedCat?._id || addonCategoryId;
+      if (!catIdToUse) {
+        toast.error("Category Required", "Please select a category for this add-on.");
+        setIsSavingAddon(false);
+        return;
+      }
 
       const matchedSub = matchedCat?.subCategories?.find(
         (s: any) => s._id === addonSubCategoryId || s.name === addonSubCategory
@@ -1883,13 +1891,14 @@ export default function CmsPage() {
 
       const payload = {
         categoryId: catIdToUse,
-        subCategoryId: subCatIdToUse,
+        subCategoryId: subCatIdToUse || undefined,
         addonName: addonTitle.trim(),
         title: addonTitle.trim(),
         description: addonDescription.trim(),
-        price: parseFloat(addonPrice) || 199,
+        price: parseFloat(addonPrice) || 0,
         unit: addonUnit.trim() || "Per Unit",
-        imageUrl: addonImageUrl.trim(),
+        image: addonImageFile || undefined,
+        imageUrl: addonImageUrl && !addonImageUrl.startsWith("blob:") ? addonImageUrl.trim() : undefined,
         category: matchedCat?.categoryName || addonCategory,
         status: true,
       };
@@ -1916,6 +1925,7 @@ export default function CmsPage() {
       setAddonTitle("");
       setAddonDescription("");
       setAddonImageUrl("");
+      setAddonImageFile(null);
 
       // Recall addons API to reload and show perfect data
       await fetchAddonsFromBackend();
@@ -3091,7 +3101,7 @@ export default function CmsPage() {
                   <div className="space-y-2">
                     <label className="w-full py-2.5 px-4 rounded-xl border border-dashed border-purple-300 dark:border-purple-800 bg-purple-50/50 dark:bg-purple-950/30 hover:bg-purple-100 dark:hover:bg-purple-900/40 font-bold text-xs text-purple-700 dark:text-purple-300 flex items-center justify-center gap-2 cursor-pointer transition-colors">
                       <Upload className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                      <span>Upload Image File</span>
+                      <span>{addonImageFile ? addonImageFile.name : "Upload Image File"}</span>
                       <input
                         type="file"
                         accept="image/*"
@@ -3099,6 +3109,7 @@ export default function CmsPage() {
                         onChange={(e) => {
                           const file = e.target.files?.[0];
                           if (file) {
+                            setAddonImageFile(file);
                             setAddonImageUrl(URL.createObjectURL(file));
                           }
                           e.target.value = "";
@@ -3108,8 +3119,11 @@ export default function CmsPage() {
 
                     <input
                       type="text"
-                      value={addonImageUrl.startsWith("blob:") || addonImageUrl.startsWith("data:") ? "[Uploaded Image File]" : addonImageUrl}
-                      onChange={(e) => setAddonImageUrl(e.target.value)}
+                      value={addonImageFile ? `[Selected File: ${addonImageFile.name}]` : (addonImageUrl.startsWith("blob:") ? "" : addonImageUrl)}
+                      onChange={(e) => {
+                        setAddonImageUrl(e.target.value);
+                        setAddonImageFile(null);
+                      }}
                       placeholder="Or paste image URL (https://...)"
                       className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-semibold outline-none text-xs"
                     />
@@ -3127,15 +3141,20 @@ export default function CmsPage() {
                           showInitialsFallback={false}
                         />
                         <div className="truncate">
-                          <p className="text-xs font-bold text-slate-800 dark:text-slate-200">Image Preview</p>
+                          <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                            {addonImageFile ? addonImageFile.name : "Image Preview"}
+                          </p>
                           <p className="text-[10px] text-slate-400 truncate max-w-[200px]">
-                            {addonImageUrl.startsWith("blob:") || addonImageUrl.startsWith("data:") ? "Local Image File" : addonImageUrl}
+                            {addonImageFile ? `${(addonImageFile.size / 1024).toFixed(1)} KB` : (addonImageUrl.startsWith("blob:") ? "Local Image File" : addonImageUrl)}
                           </p>
                         </div>
                       </div>
                       <button
                         type="button"
-                        onClick={() => setAddonImageUrl("")}
+                        onClick={() => {
+                          setAddonImageUrl("");
+                          setAddonImageFile(null);
+                        }}
                         className="p-1.5 rounded-lg border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950 font-bold text-xs flex items-center gap-1 cursor-pointer shrink-0"
                         title="Remove image"
                       >
