@@ -1,5 +1,5 @@
 /** @type {import('next').NextConfig} */
-const API_BACKEND = process.env.NEXT_PUBLIC_API_URL;
+const API_BACKEND = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5005";
 const nextConfig = {
   reactStrictMode: true,
   images: {
@@ -7,7 +7,11 @@ const nextConfig = {
     remotePatterns: [
       {
         protocol: "https",
-        hostname: "helpmate-api.kvtmedia.com",
+        hostname: "**",
+      },
+      {
+        protocol: "http",
+        hostname: "**",
       },
     ],
   },

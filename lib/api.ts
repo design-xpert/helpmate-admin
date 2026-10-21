@@ -258,10 +258,18 @@ export interface ApiLocality {
   status: boolean;
 }
 
-export async function getLocalitiesApi(params?: { search?: string; limit?: number; forceRefresh?: boolean }) {
+export async function getLocalitiesApi(params?: {
+  search?: string;
+  limit?: number;
+  page?: number;
+  status?: boolean | string;
+  forceRefresh?: boolean;
+}) {
   const query = new URLSearchParams();
   if (params?.search) query.append("search", params.search);
   if (params?.limit) query.append("limit", params.limit.toString());
+  if (params?.page) query.append("page", params.page.toString());
+  if (params?.status !== undefined) query.append("status", params.status.toString());
   const queryString = query.toString();
 
   const cacheKey = `getLocalitiesApi:${queryString}`;
@@ -270,27 +278,67 @@ export async function getLocalitiesApi(params?: { search?: string; limit?: numbe
   try {
     const res = await authFetch(`${API_BASE_URL}/api/locality${queryString ? `?${queryString}` : ""}`);
     const data = await safeJsonResponse(res);
-    if (data && data.success !== false && Array.isArray(data.data) && data.data.length > 0) {
-      apiCache.set(cacheKey, data);
-      return data;
+
+    if (data && data.success !== false && data.data) {
+      const localitiesList: ApiLocality[] = Array.isArray(data.data)
+        ? data.data
+        : Array.isArray(data.data?.localities)
+        ? data.data.localities
+        : [];
+
+      const paginationObj = data.data?.pagination || data.pagination || {
+        total: localitiesList.length,
+        page: params?.page || 1,
+        limit: params?.limit || localitiesList.length,
+        totalPages: Math.ceil(localitiesList.length / (params?.limit || 10)) || 1,
+      };
+
+      const normalized = {
+        success: true,
+        message: data.message || "Localities fetched successfully.",
+        data: localitiesList,
+        localities: localitiesList,
+        pagination: paginationObj,
+        total: paginationObj.total,
+        totalPages: paginationObj.totalPages,
+        raw: data,
+      };
+
+      apiCache.set(cacheKey, normalized);
+      return normalized;
     }
   } catch (error) {
     console.error("getLocalitiesApi error:", error);
   }
 
-  // Fallback to /locality/dropdown
+  // Fallback to /locality/dropdown ONLY if /api/locality fails completely
   try {
     const fallbackRes = await authFetch(`${API_BASE_URL}/api/locality/dropdown`);
     const fallbackData = await safeJsonResponse(fallbackRes);
     if (fallbackData && fallbackData.success !== false) {
-      apiCache.set(cacheKey, fallbackData);
-      return fallbackData;
+      const fallbackList: ApiLocality[] = Array.isArray(fallbackData.data) ? fallbackData.data : [];
+      const normalizedFallback = {
+        success: true,
+        message: fallbackData.message || "Localities fetched from dropdown fallback.",
+        data: fallbackList,
+        localities: fallbackList,
+        pagination: {
+          total: fallbackList.length,
+          page: 1,
+          limit: fallbackList.length,
+          totalPages: 1,
+        },
+        total: fallbackList.length,
+        totalPages: 1,
+      };
+      apiCache.set(cacheKey, normalizedFallback);
+      return normalizedFallback;
     }
   } catch (err) {
     console.error("getLocalitiesApi fallback error:", err);
   }
 
-  return { success: false, message: "Failed to fetch localities." };
+  return { success: false, message: "Failed to fetch localities.", data: [], localities: [], pagination: { total: 0, page: 1, limit: 10, totalPages: 1 } };
 }
 
 export async function getLocalityDropdownApi(params?: { forceRefresh?: boolean }) {
@@ -4206,6 +4254,57 @@ export async function getAdminInvoicePdfBlobApi(idOrBookingId: string): Promise<
   } catch (error) {
     console.error("getAdminInvoicePdfBlobApi error:", error);
     return null;
+  }
+}
+
+export interface ApiWebsiteBanner {
+  _id?: string;
+  badgeText: string;
+  badgePosition: "bottom-left" | "bottom-right" | "top-left" | "top-right";
+  clickTargetUrl: string;
+  popupDelaySeconds: number;
+  displayFrequency: "once-per-session" | "once-per-24-hours";
+  isActive: boolean;
+  mainImageMimeType?: string;
+  mainImageSize?: number;
+  badgeIconMimeType?: string;
+  badgeIconSize?: number;
+  createdAt?: string;
+  updatedAt?: string;
+  mainImageUrl?: string;
+  badgeIconUrl?: string;
+}
+
+export async function getWebsiteBannerApi(): Promise<{
+  success: boolean;
+  message?: string;
+  data?: ApiWebsiteBanner;
+}> {
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/admin/website/banner`, {
+      method: "GET",
+    });
+    return await safeJsonResponse(res);
+  } catch (error) {
+    console.error("getWebsiteBannerApi error:", error);
+    return { success: false, message: "Failed to fetch website banner configuration." };
+  }
+}
+
+export async function updateWebsiteBannerApi(formData: FormData): Promise<{
+  success: boolean;
+  message?: string;
+  data?: ApiWebsiteBanner;
+}> {
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/admin/website/banner`, {
+      method: "PUT",
+      body: formData,
+    });
+    return await safeJsonResponse(res);
+  } catch (error) {
+    console.error("updateWebsiteBannerApi error:", error);
+    return { success: false, message: "Failed to update website banner configuration." };
   }
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { getStoredModuleData, setCachedModuleData, isModuleCacheFresh, clearModuleCache } from "@/lib/moduleCache";
 import { DataTable, Column } from "@/components/DataTable";
 import { RowActionMenu } from "@/components/RowActionMenu";
@@ -34,12 +34,17 @@ import {
 import { Portal } from "@/components/Portal";
 
 export default function LocationsPage() {
-  const initialCachedLocalities = getStoredModuleData<ApiLocality[]>("locations_localities") || [];
+  const initialCachedData = getStoredModuleData<{ localities: ApiLocality[]; total: number; totalPages: number }>("locations_localities_p1_l10_s");
+  const initialCachedLocalities = initialCachedData?.localities || getStoredModuleData<ApiLocality[]>("locations_localities") || [];
   const initialCachedCities = getStoredModuleData<ApiCity[]>("locations_cities") || [];
 
-  // Locality State
+  // Locality Pagination & Search State
   const [localities, setLocalities] = useState<ApiLocality[]>(() => initialCachedLocalities);
-  const [isLocalitiesLoading, setIsLocalitiesLoading] = useState(() => !(isModuleCacheFresh("locations_localities", 30000) && initialCachedLocalities.length > 0));
+  const [localityPage, setLocalityPage] = useState<number>(1);
+  const [localityLimit, setLocalityLimit] = useState<number>(10);
+  const [localityTotalRecords, setLocalityTotalRecords] = useState<number>(() => initialCachedData?.total || 0);
+  const [localityTotalPages, setLocalityTotalPages] = useState<number>(() => initialCachedData?.totalPages || 1);
+  const [isLocalitiesLoading, setIsLocalitiesLoading] = useState<boolean>(() => localities.length === 0);
   const [localitySearch, setLocalitySearch] = useState("");
   const [activeTab, setActiveTab] = useState<"pincodes" | "cities">("pincodes");
 
@@ -84,38 +89,90 @@ export default function LocationsPage() {
     city: null,
   });
 
-  const fetchLocalities = async (force: boolean = false) => {
-    if (!force && isModuleCacheFresh("locations_localities", 30000)) {
-      const cached = getStoredModuleData<ApiLocality[]>("locations_localities");
-      if (cached && cached.length > 0) {
-        setLocalities(cached);
-        setIsLocalitiesLoading(false);
-        return;
+  const fetchLocalities = useCallback(
+    async (
+      page: number = 1,
+      force: boolean = false,
+      search: string = "",
+      limit: number = 10
+    ) => {
+      const cacheKey = `locations_localities_p${page}_l${limit}_s${search.trim()}`;
+      if (!force && isModuleCacheFresh(cacheKey, 30000)) {
+        const cached = getStoredModuleData<{
+          localities: ApiLocality[];
+          total: number;
+          totalPages: number;
+        }>(cacheKey);
+        if (cached && Array.isArray(cached.localities) && cached.localities.length > 0) {
+          setLocalities(cached.localities);
+          setLocalityTotalRecords(cached.total);
+          setLocalityTotalPages(cached.totalPages);
+          setIsLocalitiesLoading(false);
+          return;
+        }
       }
-    }
-    if (localities.length === 0 && (!initialCachedLocalities || initialCachedLocalities.length === 0)) {
+
       setIsLocalitiesLoading(true);
-    }
-    try {
-      const res = await getLocalitiesApi({ forceRefresh: force });
-      if (res && res.success) {
-        const rawLocalities = res.data?.localities || (Array.isArray(res.data) ? res.data : (res.localities || []));
-        if (Array.isArray(rawLocalities)) {
-          setLocalities(rawLocalities);
-          setCachedModuleData("locations_localities", rawLocalities);
+      try {
+        const res = await getLocalitiesApi({
+          page,
+          limit,
+          search: search.trim() || undefined,
+          forceRefresh: force,
+        });
+
+        if (res && res.success && Array.isArray(res.data)) {
+          const list = res.data;
+          const total = res.pagination?.total ?? res.total ?? list.length;
+          const totalPages = res.pagination?.totalPages ?? res.totalPages ?? (Math.ceil(total / limit) || 1);
+
+          setLocalities(list);
+          setLocalityTotalRecords(total);
+          setLocalityTotalPages(totalPages);
+
+          setCachedModuleData(cacheKey, {
+            localities: list,
+            total,
+            totalPages,
+          });
         } else {
           setLocalities([]);
+          setLocalityTotalRecords(0);
+          setLocalityTotalPages(1);
         }
-      } else {
-        setLocalities([]);
+      } catch (err) {
+        console.error("Failed to fetch localities:", err);
+        toast.error("Failed to fetch localities.");
+      } finally {
+        setIsLocalitiesLoading(false);
       }
-    } catch (err) {
-      console.error("Failed to fetch localities:", err);
-      toast.error("Failed to fetch localities.");
-    } finally {
-      setIsLocalitiesLoading(false);
-    }
+    },
+    []
+  );
+
+  const handleLocalityPageChange = (newPage: number) => {
+    setLocalityPage(newPage);
+    fetchLocalities(newPage, true, localitySearch, localityLimit);
   };
+
+  const handleLocalityPageSizeChange = (newSize: number) => {
+    setLocalityLimit(newSize);
+    setLocalityPage(1);
+    fetchLocalities(1, true, localitySearch, newSize);
+  };
+
+  const isFirstMount = useRef(true);
+  useEffect(() => {
+    if (isFirstMount.current) {
+      isFirstMount.current = false;
+      return;
+    }
+    const timer = setTimeout(() => {
+      setLocalityPage(1);
+      fetchLocalities(1, true, localitySearch, localityLimit);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [localitySearch, localityLimit, fetchLocalities]);
 
   const fetchCities = async (force: boolean = false) => {
     if (!force && isModuleCacheFresh("locations_cities", 30000)) {
@@ -143,13 +200,11 @@ export default function LocationsPage() {
   };
 
   useEffect(() => {
-    if (!isModuleCacheFresh("locations_localities", 30000) || initialCachedLocalities.length === 0) {
-      fetchLocalities();
-    }
+    fetchLocalities(1, false, "", 10);
     if (!isModuleCacheFresh("locations_cities", 30000) || initialCachedCities.length === 0) {
       fetchCities();
     }
-  }, []);
+  }, [fetchLocalities]);
 
   const handleSaveLocality = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -170,7 +225,8 @@ export default function LocationsPage() {
 
         if (res && res.success) {
           toast.success("Locality added successfully!");
-          await fetchLocalities();
+          clearModuleCache();
+          await fetchLocalities(1, true, localitySearch, localityLimit);
           setLocalityModal({ open: false, mode: "add", data: {} });
         } else {
           toast.error(res?.message || "Failed to add locality.");
@@ -185,7 +241,8 @@ export default function LocationsPage() {
 
         if (res && res.success) {
           toast.success("Locality updated successfully!");
-          await fetchLocalities();
+          clearModuleCache();
+          await fetchLocalities(localityPage, true, localitySearch, localityLimit);
           setLocalityModal({ open: false, mode: "add", data: {} });
         } else {
           toast.error(res?.message || "Failed to update locality.");
@@ -205,7 +262,8 @@ export default function LocationsPage() {
       const res = await updateLocalityApi(locality._id, { status: newStatus });
       if (res && res.success) {
         toast.success(`Locality status updated to ${newStatus ? "Active" : "Inactive"}`);
-        await fetchLocalities();
+        clearModuleCache();
+        await fetchLocalities(localityPage, true, localitySearch, localityLimit);
       } else {
         toast.error(res?.message || "Failed to update locality status.");
       }
@@ -221,7 +279,8 @@ export default function LocationsPage() {
       const res = await deleteLocalityApi(deleteLocalityModal.locality._id);
       if (res && res.success) {
         toast.success("Locality deleted successfully!");
-        await fetchLocalities();
+        clearModuleCache();
+        await fetchLocalities(localityPage, true, localitySearch, localityLimit);
         setDeleteLocalityModal({ open: false, locality: null });
       } else {
         toast.error(res?.message || "Failed to delete locality.");
@@ -452,13 +511,6 @@ export default function LocationsPage() {
     },
   ];
 
-  const filteredLocalities = localities.filter(
-    (l) =>
-      !localitySearch ||
-      l.localityName?.toLowerCase().includes(localitySearch.toLowerCase()) ||
-      l.pincode?.includes(localitySearch)
-  );
-
   const filteredCities = cities.filter(
     (c) =>
       !citySearch ||
@@ -534,7 +586,7 @@ export default function LocationsPage() {
                   : "bg-slate-200 dark:bg-slate-700 text-slate-500"
               }`}
             >
-              {localities.length}
+              {localityTotalRecords || localities.length}
             </span>
           </button>
 
@@ -595,7 +647,9 @@ export default function LocationsPage() {
               <MapPin className="w-5 h-5" />
             </div>
           </div>
-          <span className="text-2xl font-black text-slate-900 dark:text-white">{localities.length} Pincodes</span>
+          <span className="text-2xl font-black text-slate-900 dark:text-white">
+            {localityTotalRecords || localities.length} Pincodes
+          </span>
         </div>
 
         <div className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2 shadow-sm">
@@ -618,7 +672,7 @@ export default function LocationsPage() {
             </div>
           </div>
           <span className="text-2xl font-black text-emerald-600">
-            {localities.filter((l) => l.status !== false).length} Active
+            {localityTotalRecords || localities.length} Active
           </span>
         </div>
 
@@ -641,7 +695,22 @@ export default function LocationsPage() {
           {isLocalitiesLoading ? (
             <ShimmerRow count={6} />
           ) : (
-            <DataTable columns={pincodeColumns} data={filteredLocalities} idField="_id" />
+            <DataTable
+              columns={pincodeColumns}
+              data={localities}
+              idField="_id"
+              serverPagination={true}
+              currentPage={localityPage}
+              pageSize={localityLimit}
+              totalRecords={localityTotalRecords}
+              totalPages={localityTotalPages}
+              onPageChange={handleLocalityPageChange}
+              pageSizeOptions={[10, 20, 50, 100]}
+              onPageSizeChange={handleLocalityPageSizeChange}
+              searchPlaceholder="Search locality or pincode..."
+              searchValue={localitySearch}
+              onSearchChange={(val) => setLocalitySearch(val)}
+            />
           )}
         </div>
       ) : (

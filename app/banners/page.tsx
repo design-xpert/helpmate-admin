@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Image from "next/image";
 import { Portal } from "@/components/Portal";
 import {
@@ -35,7 +35,12 @@ import {
   Play,
   CheckCircle,
   FileText,
+  Save,
+  RefreshCw,
+  Loader2,
 } from "lucide-react";
+import { getWebsiteBannerApi, updateWebsiteBannerApi, formatImageUrl } from "@/lib/api";
+import { toast } from "@/components/Toast";
 
 interface PromoBannerItem {
   id: string;
@@ -61,13 +66,23 @@ export default function BannersPage() {
   const [activeTab, setActiveTab] = useState<"popupModal" | "homepageBanners">("popupModal");
 
   // POPUP STYLE MODE: "rich_text_image" | "pure_image"
-  const [popupStyle, setPopupStyle] = useState<"rich_text_image" | "pure_image">("rich_text_image");
+  const [popupStyle, setPopupStyle] = useState<"rich_text_image" | "pure_image">("pure_image");
+
+  // WEBSITE VISITOR POPUP API & SYNC STATE
+  const [isLoadingBanner, setIsLoadingBanner] = useState(true);
+  const [isSavingBanner, setIsSavingBanner] = useState(false);
+  const [bannerId, setBannerId] = useState<string | null>(null);
+
+  // File uploads
+  const [mainImageFile, setMainImageFile] = useState<File | null>(null);
+  const [badgeIconFile, setBadgeIconFile] = useState<File | null>(null);
+  const [removeBadgeIcon, setRemoveBadgeIcon] = useState(false);
 
   // WEBSITE VISITOR POPUP COMMON STATE
   const [isBannerEnabled, setIsBannerEnabled] = useState(true);
-  const [targetLinkUrl, setTargetLinkUrl] = useState("https://helpmate-theta.vercel.app/services/ac");
+  const [targetLinkUrl, setTargetLinkUrl] = useState("");
   const [popupDelaySeconds, setPopupDelaySeconds] = useState(3);
-  const [popupFrequency, setPopupFrequency] = useState<"once_per_session" | "every_page" | "once_24h">("once_per_session");
+  const [popupFrequency, setPopupFrequency] = useState<"once-per-session" | "once-per-24-hours">("once-per-session");
   const [isBannerPreviewOpen, setIsBannerPreviewOpen] = useState(false);
   const [previewDevice, setPreviewDevice] = useState<"desktop" | "mobile">("desktop");
   const [copiedLink, setCopiedLink] = useState(false);
@@ -88,14 +103,118 @@ export default function BannersPage() {
   );
 
   // STYLE 2: PURE IMAGE MODE STATE
-  const [pureBannerImageUrl, setPureBannerImageUrl] = useState(
-    "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=1200&auto=format&fit=crop&q=80"
-  );
-  const [secondBannerIconUrl, setSecondBannerIconUrl] = useState(
-    "https://images.unsplash.com/photo-1581094288338-2314dddb7ece?w=300&auto=format&fit=crop&q=80"
-  );
+  const [pureBannerImageUrl, setPureBannerImageUrl] = useState("");
+  const [secondBannerIconUrl, setSecondBannerIconUrl] = useState("");
   const [badgeText, setBadgeText] = useState("Verified Partner Special Offer");
   const [badgePosition, setBadgePosition] = useState<"bottom-left" | "bottom-right" | "top-left" | "top-right">("bottom-left");
+
+  // Fetch website banner configuration from API
+  const fetchWebsiteBanner = useCallback(async () => {
+    try {
+      setIsLoadingBanner(true);
+      const res = await getWebsiteBannerApi();
+      if (res && res.success && res.data) {
+        const d = res.data;
+        if (d._id) setBannerId(d._id);
+        setIsBannerEnabled(d.isActive ?? true);
+        setBadgeText(d.badgeText ?? "");
+        setBadgePosition(d.badgePosition || "bottom-left");
+        setTargetLinkUrl(d.clickTargetUrl || "");
+        setPopupDelaySeconds(d.popupDelaySeconds ?? 3);
+        setPopupFrequency(d.displayFrequency || "once-per-session");
+        if (d.mainImageUrl) setPureBannerImageUrl(formatImageUrl(d.mainImageUrl));
+        if (d.badgeIconUrl) {
+          setSecondBannerIconUrl(formatImageUrl(d.badgeIconUrl));
+          setRemoveBadgeIcon(false);
+        } else {
+          setSecondBannerIconUrl("");
+        }
+      }
+    } catch (err) {
+      console.error("fetchWebsiteBanner error:", err);
+      toast.error("Failed to load website banner configuration.");
+    } finally {
+      setIsLoadingBanner(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchWebsiteBanner();
+  }, [fetchWebsiteBanner]);
+
+  // Handle Save / Update Banner
+  const handleSaveBanner = async () => {
+    if (!pureBannerImageUrl && !mainImageFile) {
+      toast.error("Main banner image is required. Please upload an image file.");
+      return;
+    }
+
+    if (targetLinkUrl.trim()) {
+      try {
+        const parsed = new URL(targetLinkUrl.trim());
+        if (!["http:", "https:"].includes(parsed.protocol)) {
+          toast.error("Target URL must start with http:// or https://");
+          return;
+        }
+      } catch {
+        toast.error("Please enter a valid HTTP(S) URL for the Click Target URL.");
+        return;
+      }
+    }
+
+    try {
+      setIsSavingBanner(true);
+      const formData = new FormData();
+
+      if (mainImageFile) {
+        formData.append("mainImage", mainImageFile);
+      }
+
+      if (badgeIconFile) {
+        formData.append("badgeIcon", badgeIconFile);
+      } else if (removeBadgeIcon) {
+        formData.append("removeBadgeIcon", "true");
+      }
+
+      formData.append("badgeText", badgeText.trim());
+      formData.append("badgePosition", badgePosition);
+      formData.append("clickTargetUrl", targetLinkUrl.trim());
+      formData.append("popupDelaySeconds", String(popupDelaySeconds));
+      formData.append("displayFrequency", popupFrequency);
+      formData.append("isActive", String(isBannerEnabled));
+
+      const res = await updateWebsiteBannerApi(formData);
+      if (res && res.success) {
+        toast.success(res.message || "Website banner saved successfully!");
+        if (res.data) {
+          const d = res.data;
+          if (d._id) setBannerId(d._id);
+          setIsBannerEnabled(d.isActive ?? true);
+          setBadgeText(d.badgeText ?? "");
+          setBadgePosition(d.badgePosition || "bottom-left");
+          setTargetLinkUrl(d.clickTargetUrl || "");
+          setPopupDelaySeconds(d.popupDelaySeconds ?? 3);
+          setPopupFrequency(d.displayFrequency || "once-per-session");
+          if (d.mainImageUrl) setPureBannerImageUrl(formatImageUrl(d.mainImageUrl));
+          if (d.badgeIconUrl) {
+            setSecondBannerIconUrl(formatImageUrl(d.badgeIconUrl));
+            setRemoveBadgeIcon(false);
+          } else {
+            setSecondBannerIconUrl("");
+          }
+          setMainImageFile(null);
+          setBadgeIconFile(null);
+        }
+      } else {
+        toast.error(res?.message || "Failed to save banner configuration.");
+      }
+    } catch (err: any) {
+      console.error("handleSaveBanner error:", err);
+      toast.error(err?.message || "Network error while saving banner configuration.");
+    } finally {
+      setIsSavingBanner(false);
+    }
+  };
 
   // HOMEPAGE PROMO BANNERS STATE
   const [promoBanners, setPromoBanners] = useState<PromoBannerItem[]>([
@@ -196,18 +315,47 @@ export default function BannersPage() {
             <span>Banners & Visitor Popups</span>
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
-            Manage website visitor popups (Rich Text + Image OR Pure Image), category 2nd image badges, and hero offer banners.
+            Manage website visitor popups (Pure Image & Badge), category 2nd image badges, and hero offer banners.
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setIsBannerPreviewOpen(true)}
-          className="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 w-full sm:w-auto"
-        >
-          <Eye className="w-4 h-4" />
-          <span>Test Live Visitor Popup</span>
-        </button>
+        <div className="flex items-center gap-2.5 w-full sm:w-auto">
+          {/* Secondary Button */}
+          <button
+            type="button"
+            onClick={() => setIsBannerPreviewOpen(true)}
+            className="px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 flex-1 sm:flex-none"
+          >
+            <Eye className="w-4 h-4" />
+            <span>Preview Popup</span>
+          </button>
+
+          {/* Strictly ONLY ONE Primary Button per view */}
+          {activeTab === "popupModal" ? (
+            <button
+              type="button"
+              onClick={handleSaveBanner}
+              disabled={isSavingBanner || isLoadingBanner}
+              className="px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 active:scale-95 text-white font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 disabled:opacity-50 flex-1 sm:flex-none"
+            >
+              {isSavingBanner ? (
+                <RefreshCw className="w-4 h-4 animate-spin" />
+              ) : (
+                <Save className="w-4 h-4" />
+              )}
+              <span>{isSavingBanner ? "Saving..." : "Save Banner"}</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setIsAddBannerOpen(true)}
+              className="px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 active:scale-95 text-white font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 flex-1 sm:flex-none"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Banner</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Tabs Header */}
@@ -352,12 +500,10 @@ export default function BannersPage() {
                       {/* Live Image Preview Thumbnail */}
                       <div className="relative aspect-[16/9] rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 shadow-xs">
                         {richBannerImage ? (
-                          <Image
-                            src={richBannerImage}
+                          <img
+                            src={formatImageUrl(richBannerImage)}
                             alt="Banner Showcase Preview"
-                            fill
-                            className="object-cover"
-                            unoptimized
+                            className="w-full h-full object-cover"
                           />
                         ) : null}
                         <div className="absolute bottom-1.5 left-1.5 bg-black/70 text-white text-[9px] font-mono px-1.5 py-0.5 rounded z-10">
@@ -529,120 +675,159 @@ export default function BannersPage() {
                   </div>
                 </div>
               ) : (
-                /* FORM FIELDS FOR STYLE 2: PURE IMAGE */
+                /* FORM FIELDS FOR STYLE 2: PURE IMAGE (API BACKEND SYNCED) */
                 <div className="space-y-4">
+                  {/* Main Banner Image Upload */}
                   <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 space-y-3">
                     <label className="font-extrabold text-slate-900 dark:text-white text-xs block flex items-center justify-between">
                       <span className="flex items-center gap-1.5">
                         <ImageIcon className="w-4 h-4 text-brand-600" />
-                        <span>Main Pure Image Banner</span>
+                        <span>Main Banner Showcase Image</span>
                       </span>
-                      <span className="text-[10px] text-brand-600 dark:text-brand-400 font-bold uppercase">Image File / Direct Link</span>
+                      <span className="text-[10px] text-brand-600 dark:text-brand-400 font-bold uppercase">Required File</span>
                     </label>
 
-                    <div className="flex gap-3 items-center">
-                      <div className="w-28 h-20 rounded-2xl overflow-hidden border-2 border-brand-500 shrink-0 bg-slate-200 dark:bg-slate-700 shadow-md relative group">
+                    <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+                      <div className="w-28 h-20 rounded-2xl overflow-hidden border-2 border-brand-500 shrink-0 bg-slate-200 dark:bg-slate-700 shadow-md relative group flex items-center justify-center">
                         {pureBannerImageUrl ? (
-                          <Image
-                            src={pureBannerImageUrl}
+                          <img
+                            src={formatImageUrl(pureBannerImageUrl)}
                             alt="Visitor Banner Image"
-                            fill
-                            className="object-cover group-hover:scale-105 transition-transform"
-                            unoptimized
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                           />
-                        ) : null}
+                        ) : (
+                          <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 p-2 text-center text-[10px] font-bold">
+                            <ImageIcon className="w-5 h-5 mb-1" />
+                            <span>No Image</span>
+                          </div>
+                        )}
                       </div>
-                      <div className="flex-1 space-y-2">
-                        <div className="flex items-center gap-2">
-                          <label className="px-3 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors">
+                      <div className="flex-1 space-y-2 w-full">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <label className="px-3.5 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors">
                             <Upload className="w-3.5 h-3.5" />
-                            <span>Upload Image</span>
+                            <span>{mainImageFile ? "Change Image File" : "Upload Banner Image"}</span>
                             <input
                               type="file"
-                              accept="image/*"
+                              accept="image/png,image/jpeg,image/webp"
                               className="hidden"
                               onChange={(e) => {
                                 const file = e.target.files?.[0];
                                 if (file) {
-                                  const reader = new FileReader();
-                                  reader.onload = (re) => {
-                                    setPureBannerImageUrl(re.target?.result as string);
-                                  };
-                                  reader.readAsDataURL(file);
+                                  setMainImageFile(file);
+                                  const preview = URL.createObjectURL(file);
+                                  setPureBannerImageUrl(preview);
                                 }
                               }}
                             />
                           </label>
                           <span className="text-[11px] text-slate-400 font-medium">PNG, JPG, WebP up to 5MB</span>
                         </div>
-                        <input
-                          type="url"
-                          value={pureBannerImageUrl}
-                          onChange={(e) => setPureBannerImageUrl(e.target.value)}
-                          placeholder="Or paste direct image URL (https://...)"
-                          className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs outline-none focus:border-brand-500"
-                        />
+                        {mainImageFile ? (
+                          <div className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5 bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800">
+                            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                            <span className="truncate">Selected file: {mainImageFile.name} ({(mainImageFile.size / 1024).toFixed(1)} KB)</span>
+                          </div>
+                        ) : pureBannerImageUrl ? (
+                          <div className="text-[10px] font-mono text-slate-500 dark:text-slate-400 truncate bg-white dark:bg-slate-900 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700">
+                            Current: {pureBannerImageUrl}
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-amber-600 dark:text-amber-400 font-medium">
+                            Please select an image file to display on the visitor modal.
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>
 
+                  {/* Secondary Icon Badge & Overlay Text */}
                   <div className="p-4 rounded-2xl bg-purple-50/60 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-900/60 space-y-3">
                     <label className="font-extrabold text-purple-900 dark:text-purple-300 text-xs block flex items-center justify-between">
                       <span className="flex items-center gap-1.5">
                         <Sparkles className="w-4 h-4 text-purple-600" />
-                        <span>Secondary Icon Badge & Overlay Text</span>
+                        <span>Secondary Icon Badge &amp; Overlay Text</span>
                       </span>
-                      <span className="text-[10px] text-purple-600 font-bold uppercase">Badge Preview</span>
+                      <span className="text-[10px] text-purple-600 font-bold uppercase">Optional Floating Badge</span>
                     </label>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="flex gap-2 items-center">
-                        <div className="w-14 h-14 rounded-2xl overflow-hidden border-2 border-purple-500 shrink-0 bg-white dark:bg-slate-800 shadow-md p-1 relative">
+                        <div className="w-14 h-14 rounded-2xl overflow-hidden border-2 border-purple-500 shrink-0 bg-white dark:bg-slate-800 shadow-md p-1 relative flex items-center justify-center">
                           {secondBannerIconUrl ? (
-                            <Image
-                              src={secondBannerIconUrl}
+                            <img
+                              src={formatImageUrl(secondBannerIconUrl)}
                               alt="Second Icon Badge"
-                              fill
-                              className="object-contain p-1"
-                              unoptimized
+                              className="w-full h-full object-contain p-0.5"
                             />
-                          ) : null}
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-[9px] text-slate-400 text-center font-medium">
+                              No Icon
+                            </div>
+                          )}
                         </div>
                         <div className="flex-1 space-y-1.5">
-                          <label className="px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-bold text-[11px] flex items-center gap-1 cursor-pointer w-fit shadow-xs">
-                            <Upload className="w-3 h-3" />
-                            <span>Upload Icon</span>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              className="hidden"
-                              onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (file) {
-                                  const reader = new FileReader();
-                                  reader.onload = (re) => {
-                                    setSecondBannerIconUrl(re.target?.result as string);
-                                  };
-                                  reader.readAsDataURL(file);
-                                }
-                              }}
-                            />
-                          </label>
-                          <input
-                            type="url"
-                            value={secondBannerIconUrl}
-                            onChange={(e) => setSecondBannerIconUrl(e.target.value)}
-                            placeholder="Icon URL..."
-                            className="w-full p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-[10px] outline-none"
-                          />
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <label className="px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-bold text-[11px] flex items-center gap-1 cursor-pointer w-fit shadow-xs">
+                              <Upload className="w-3 h-3" />
+                              <span>{badgeIconFile ? "Change Icon" : "Upload Icon"}</span>
+                              <input
+                                type="file"
+                                accept="image/png,image/jpeg,image/webp"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) {
+                                    setBadgeIconFile(file);
+                                    setRemoveBadgeIcon(false);
+                                    const preview = URL.createObjectURL(file);
+                                    setSecondBannerIconUrl(preview);
+                                  }
+                                }}
+                              />
+                            </label>
+
+                            {secondBannerIconUrl && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setBadgeIconFile(null);
+                                  setSecondBannerIconUrl("");
+                                  setRemoveBadgeIcon(true);
+                                }}
+                                className="px-2 py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 dark:bg-red-950 dark:text-red-300 font-bold text-[11px] flex items-center gap-1 cursor-pointer border border-red-200 dark:border-red-800 transition-colors"
+                                title="Remove badge icon"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                                <span>Remove</span>
+                              </button>
+                            )}
+                          </div>
+
+                          {badgeIconFile ? (
+                            <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 block truncate">
+                              ✓ {badgeIconFile.name}
+                            </span>
+                          ) : removeBadgeIcon ? (
+                            <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium block">
+                              Icon will be removed on save
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-slate-400 font-medium block">
+                              PNG, JPG, WebP icon
+                            </span>
+                          )}
                         </div>
                       </div>
 
                       <div className="space-y-2">
                         <div>
-                          <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-0.5">Badge Text</label>
+                          <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-0.5">
+                            Badge Text (Max 150 chars)
+                          </label>
                           <input
                             type="text"
+                            maxLength={150}
                             value={badgeText}
                             onChange={(e) => setBadgeText(e.target.value)}
                             placeholder="e.g. Verified Partner Special Offer"
@@ -682,7 +867,7 @@ export default function BannersPage() {
                         value={targetLinkUrl}
                         onChange={(e) => setTargetLinkUrl(e.target.value)}
                         className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-mono text-xs outline-none focus:border-brand-500"
-                        placeholder="https://helpmate-theta.vercel.app/services/ac"
+                        placeholder="https://example.com/services"
                       />
                     </div>
                     <button
@@ -722,12 +907,42 @@ export default function BannersPage() {
                       onChange={(e) => setPopupFrequency(e.target.value as any)}
                       className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs outline-none font-bold cursor-pointer"
                     >
-                      <option value="once_per_session">Once Per Session</option>
-                      <option value="once_24h">Once Every 24 Hours</option>
-                      <option value="every_page">Every Page Load (Test Mode)</option>
+                      <option value="once-per-session">Once Per Session</option>
+                      <option value="once-per-24-hours">Once Every 24 Hours</option>
                     </select>
                   </div>
                 </div>
+              </div>
+
+              {/* SAVE ACTION BUTTON ROW AT FORM BOTTOM */}
+              <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
+                <div className="text-xs text-slate-500">
+                  {isLoadingBanner ? (
+                    <span className="flex items-center gap-1.5 text-slate-400">
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Fetching live settings...
+                    </span>
+                  ) : bannerId ? (
+                    <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5" /> Synced with backend
+                    </span>
+                  ) : (
+                    <span>Ready to save configuration</span>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleSaveBanner}
+                  disabled={isSavingBanner || isLoadingBanner}
+                  className="px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 active:scale-95 text-white font-extrabold text-xs shadow-xs transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {isSavingBanner ? (
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Save className="w-4 h-4" />
+                  )}
+                  <span>{isSavingBanner ? "Saving Changes..." : "Save Banner Configuration"}</span>
+                </button>
               </div>
 
             </div>
@@ -796,12 +1011,10 @@ export default function BannersPage() {
                         {/* Left image half */}
                         <div className="md:col-span-5 relative bg-slate-800 min-h-[140px] md:min-h-[220px]">
                           {richBannerImage ? (
-                            <Image
-                              src={richBannerImage}
+                            <img
+                              src={formatImageUrl(richBannerImage)}
                               alt="Showcase"
-                              fill
-                              className="object-cover"
-                              unoptimized
+                              className="w-full h-full object-cover"
                             />
                           ) : null}
                           {warrantyBadgeText && (
@@ -870,35 +1083,40 @@ export default function BannersPage() {
                         <X className="w-3.5 h-3.5" />
                       </div>
 
-                      <div className="relative w-full aspect-[16/10] bg-slate-800 overflow-hidden">
+                      <div className="relative w-full aspect-[16/10] bg-slate-800 overflow-hidden flex items-center justify-center">
                         {pureBannerImageUrl ? (
-                          <Image
-                            src={pureBannerImageUrl}
+                          <img
+                            src={formatImageUrl(pureBannerImageUrl)}
                             alt="Pure Image Promo Popup"
-                            fill
-                            className="object-cover group-hover:scale-105 transition-transform duration-300"
-                            unoptimized
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                           />
-                        ) : null}
+                        ) : (
+                          <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 p-4 text-center">
+                            <ImageIcon className="w-8 h-8 mb-2 opacity-50" />
+                            <span className="text-[11px] font-semibold">No Banner Image</span>
+                          </div>
+                        )}
 
-                        {secondBannerIconUrl && (
+                        {(secondBannerIconUrl || badgeText) && (
                           <div className={`absolute z-20 p-1.5 rounded-xl bg-white/95 dark:bg-slate-900/95 backdrop-blur-md shadow-2xl border border-white/40 flex items-center gap-1.5 max-w-[170px] ${
                             badgePosition === "bottom-left" ? "bottom-2.5 left-2.5" :
                             badgePosition === "bottom-right" ? "bottom-2.5 right-2.5" :
                             badgePosition === "top-left" ? "top-2.5 left-2.5" : "top-2.5 right-2.5"
                           }`}>
-                            <div className="relative w-6 h-6 shrink-0 overflow-hidden">
-                              <Image
-                                src={secondBannerIconUrl}
-                                alt="Second Icon Badge"
-                                fill
-                                className="object-contain rounded-md"
-                                unoptimized
-                              />
-                            </div>
-                            <span className="text-[9px] font-black text-slate-900 dark:text-white leading-tight truncate">
-                              {badgeText}
-                            </span>
+                            {secondBannerIconUrl && (
+                              <div className="relative w-6 h-6 shrink-0 overflow-hidden flex items-center justify-center">
+                                <img
+                                  src={formatImageUrl(secondBannerIconUrl)}
+                                  alt="Second Icon Badge"
+                                  className="w-full h-full object-contain rounded-md"
+                                />
+                              </div>
+                            )}
+                            {badgeText && (
+                              <span className="text-[9px] font-black text-slate-900 dark:text-white leading-tight truncate">
+                                {badgeText}
+                              </span>
+                            )}
                           </div>
                         )}
                       </div>
@@ -960,12 +1178,10 @@ export default function BannersPage() {
                 <div>
                   <div className="relative aspect-[16/9] bg-slate-100 dark:bg-slate-800 overflow-hidden">
                     {banner.imageUrl ? (
-                      <Image
-                        src={banner.imageUrl}
+                      <img
+                        src={formatImageUrl(banner.imageUrl)}
                         alt={banner.title}
-                        fill
-                        className="object-cover group-hover:scale-105 transition-transform duration-300"
-                        unoptimized
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                       />
                     ) : null}
 
@@ -980,13 +1196,11 @@ export default function BannersPage() {
                     </div>
 
                     {banner.secondImageIconUrl && (
-                      <div className="absolute bottom-3 right-3 z-10 w-9 h-9 rounded-xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-md p-1 shadow-md border border-white/40 overflow-hidden">
-                        <Image
-                          src={banner.secondImageIconUrl}
+                      <div className="absolute bottom-3 right-3 z-10 w-9 h-9 rounded-xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-md p-1 shadow-md border border-white/40 overflow-hidden flex items-center justify-center">
+                        <img
+                          src={formatImageUrl(banner.secondImageIconUrl)}
                           alt="2nd Badge"
-                          fill
-                          className="object-contain p-0.5"
-                          unoptimized
+                          className="w-full h-full object-contain p-0.5"
                         />
                       </div>
                     )}
@@ -1175,12 +1389,10 @@ export default function BannersPage() {
                           }`}
                         >
                           <div className="relative w-7 h-7 rounded overflow-hidden shrink-0">
-                            <Image
+                            <img
                               src={preset.url}
                               alt={preset.label}
-                              fill
-                              className="object-cover"
-                              unoptimized
+                              className="w-full h-full object-cover"
                             />
                           </div>
                           <div className="min-w-0">
@@ -1238,12 +1450,10 @@ export default function BannersPage() {
                   {/* Left Side: Photo + Badges */}
                   <div className="md:col-span-5 relative bg-slate-800 overflow-hidden min-h-[260px] md:min-h-full">
                     {richBannerImage ? (
-                      <Image
-                        src={richBannerImage}
+                      <img
+                        src={formatImageUrl(richBannerImage)}
                         alt="Service Technician Showcase"
-                        fill
-                        className="object-cover"
-                        unoptimized
+                        className="w-full h-full object-cover"
                       />
                     ) : null}
 
@@ -1358,35 +1568,40 @@ export default function BannersPage() {
                   <X className="w-5 h-5" />
                 </button>
 
-                <div className="relative w-full aspect-[16/9] sm:aspect-[16/8] bg-slate-900 overflow-hidden">
+                <div className="relative w-full aspect-[16/9] sm:aspect-[16/8] bg-slate-900 overflow-hidden flex items-center justify-center">
                   {pureBannerImageUrl ? (
-                    <Image
-                      src={pureBannerImageUrl}
+                    <img
+                      src={formatImageUrl(pureBannerImageUrl)}
                       alt="Pure Image Visitor Promo Popup Banner"
-                      fill
-                      className="object-cover"
-                      unoptimized
+                      className="w-full h-full object-cover"
                     />
-                  ) : null}
+                  ) : (
+                    <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 p-6 text-center">
+                      <ImageIcon className="w-12 h-12 mb-2 opacity-50" />
+                      <span className="text-sm font-semibold">No Banner Image</span>
+                    </div>
+                  )}
 
-                  {secondBannerIconUrl && (
+                  {(secondBannerIconUrl || badgeText) && (
                     <div className={`absolute z-20 p-2.5 rounded-2xl bg-white/95 dark:bg-slate-900/95 backdrop-blur-md shadow-2xl border border-white/40 flex items-center gap-2 max-w-[220px] ${
                       badgePosition === "bottom-left" ? "bottom-4 left-4" :
                       badgePosition === "bottom-right" ? "bottom-4 right-4" :
                       badgePosition === "top-left" ? "top-4 left-4" : "top-4 right-4"
                     }`}>
-                      <div className="relative w-8 h-8 rounded-lg shrink-0 overflow-hidden">
-                        <Image
-                          src={secondBannerIconUrl}
-                          alt="Second Icon Badge"
-                          fill
-                          className="object-contain"
-                          unoptimized
-                        />
-                      </div>
-                      <span className="text-[11px] font-extrabold text-slate-900 dark:text-white leading-tight">
-                        {badgeText}
-                      </span>
+                      {secondBannerIconUrl && (
+                        <div className="relative w-8 h-8 rounded-lg shrink-0 overflow-hidden flex items-center justify-center">
+                          <img
+                            src={formatImageUrl(secondBannerIconUrl)}
+                            alt="Second Icon Badge"
+                            className="w-full h-full object-contain"
+                          />
+                        </div>
+                      )}
+                      {badgeText && (
+                        <span className="text-[11px] font-extrabold text-slate-900 dark:text-white leading-tight">
+                          {badgeText}
+                        </span>
+                      )}
                     </div>
                   )}
                 </div>

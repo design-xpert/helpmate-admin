@@ -64,6 +64,8 @@ export interface DataTableProps<T extends Record<string, any>> {
   pageSize?: number;
   pageSizeOptions?: number[];
   onPageSizeChange?: (size: number) => void;
+  searchValue?: string;
+  onSearchChange?: (val: string) => void;
 }
 
 export function DataTable<T extends Record<string, any>>({
@@ -90,6 +92,8 @@ export function DataTable<T extends Record<string, any>>({
   pageSize: pageSizeProp,
   pageSizeOptions,
   onPageSizeChange,
+  searchValue: searchValueProp,
+  onSearchChange,
 }: DataTableProps<T>) {
   const hasDefaultActionsColumn =
     !hideActionsColumn &&
@@ -99,6 +103,7 @@ export function DataTable<T extends Record<string, any>>({
   const [data, setData] = useState<T[]>(initialData);
   const [deletedTrash, setDeletedTrash] = useState<T[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const effectiveSearchQuery = searchValueProp !== undefined ? searchValueProp : searchQuery;
   const [selectedStatusFilter, setSelectedStatusFilter] = useState("All");
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -211,18 +216,21 @@ export function DataTable<T extends Record<string, any>>({
   const hasLeftSticky = leftStickyCols.length > 0;
 
   const filteredData = useMemo(() => {
+    if (serverPagination && onSearchChange) {
+      return data;
+    }
     return data.filter((row) => {
       if (selectedStatusFilter !== "All" && row[statusField]) {
         if (String(row[statusField]).toLowerCase() !== selectedStatusFilter.toLowerCase()) return false;
       }
-      if (!searchQuery.trim()) return true;
-      const q = searchQuery.toLowerCase();
+      if (!effectiveSearchQuery.trim()) return true;
+      const q = effectiveSearchQuery.toLowerCase();
       return Object.values(row).some((val) => {
         if (val === null || val === undefined) return false;
         return String(val).toLowerCase().includes(q);
       });
     });
-  }, [data, searchQuery, selectedStatusFilter, statusField]);
+  }, [data, effectiveSearchQuery, selectedStatusFilter, statusField, serverPagination, onSearchChange]);
 
   const sortedData = useMemo(() => {
     if (!sortKey) return filteredData;
@@ -414,9 +422,11 @@ export function DataTable<T extends Record<string, any>>({
             <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              value={searchQuery}
+              value={effectiveSearchQuery}
               onChange={(e) => {
-                setSearchQuery(e.target.value);
+                const val = e.target.value;
+                setSearchQuery(val);
+                onSearchChange?.(val);
                 handlePageChange(1);
               }}
               placeholder={searchPlaceholder}
