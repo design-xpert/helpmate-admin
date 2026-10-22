@@ -4308,5 +4308,121 @@ export async function updateWebsiteBannerApi(formData: FormData): Promise<{
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// MEDIA LIBRARY APIS
+// ─────────────────────────────────────────────────────────────────────────────
 
+export interface ApiMediaAsset {
+  id: string;
+  fileName: string;
+  contentType: string;
+  size: number;
+  dimensions: string | null;
+  uploadedAt: string;
+  folder: string;
+  url: string;
+  title: string;
+  altText: string;
+  caption: string;
+  description: string;
+}
 
+export interface ApiMediaLibraryResponse {
+  assets: ApiMediaAsset[];
+  pagination: {
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  };
+}
+
+export async function getMediaLibraryFoldersApi(): Promise<{
+  success: boolean;
+  message?: string;
+  data?: string[];
+}> {
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/admin/media-library/folders`, {
+      method: "GET",
+    });
+    return await safeJsonResponse(res);
+  } catch (error) {
+    console.error("getMediaLibraryFoldersApi error:", error);
+    return { success: false, message: "Failed to fetch media library folders." };
+  }
+}
+
+export async function getMediaLibraryApi(params: {
+  folder?: string;
+  search?: string;
+  page?: number;
+  limit?: number;
+  contentType?: string;
+  sortBy?: string;
+  sortOrder?: string;
+} = {}): Promise<{
+  success: boolean;
+  message?: string;
+  data?: ApiMediaLibraryResponse;
+}> {
+  try {
+    const query = new URLSearchParams();
+    if (params.folder) query.set("folder", params.folder);
+    if (params.search) query.set("search", params.search);
+    if (params.page) query.set("page", String(params.page));
+    if (params.limit) query.set("limit", String(params.limit));
+    if (params.contentType) query.set("contentType", params.contentType);
+    if (params.sortBy) query.set("sortBy", params.sortBy);
+    if (params.sortOrder) query.set("sortOrder", params.sortOrder);
+
+    const queryString = query.toString();
+    const url = `${API_BASE_URL}/api/admin/media-library${queryString ? `?${queryString}` : ""}`;
+    const res = await authFetch(url, { method: "GET" });
+    return await safeJsonResponse(res);
+  } catch (error) {
+    console.error("getMediaLibraryApi error:", error);
+    return { success: false, message: "Failed to fetch media library assets." };
+  }
+}
+
+export async function updateMediaAssetDetailsApi(
+  mediaAssetId: string,
+  payload: {
+    title?: string;
+    altText?: string;
+    caption?: string;
+    description?: string;
+  }
+): Promise<{
+  success: boolean;
+  message?: string;
+  data?: ApiMediaAsset;
+}> {
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/admin/media-library/${mediaAssetId}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+    return await safeJsonResponse(res);
+  } catch (error) {
+    console.error("updateMediaAssetDetailsApi error:", error);
+    return { success: false, message: "Failed to update media asset details." };
+  }
+}
+
+export async function syncMediaLibraryApi(): Promise<{
+  success: boolean;
+  message?: string;
+  data?: any;
+}> {
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/admin/media-library/sync`, {
+      method: "POST",
+    });
+    return await safeJsonResponse(res);
+  } catch (error) {
+    console.error("syncMediaLibraryApi error:", error);
+    return { success: false, message: "Failed to synchronize media library with MinIO." };
+  }
+}

@@ -1,385 +1,509 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useEffect, useCallback, useTransition } from "react";
 import Image from "next/image";
 import {
   FileImage,
-  Upload,
   Search,
   Image as ImageIcon,
-  CheckCircle2,
-  Download,
-  Trash2,
   Copy,
   Check,
-  Plus,
   Edit2,
   X,
-  Tag,
   Grid,
   List,
-  Eye,
-  Sparkles,
   HardDrive,
   FolderOpen,
   Filter,
   ExternalLink,
   ShieldCheck,
-  FileText,
+  RefreshCw,
+  ChevronLeft,
+  ChevronRight,
+  Layers,
+  Sparkles,
+  Info,
+  Calendar,
+  FileCode,
+  SlidersHorizontal,
 } from "lucide-react";
 import { Portal } from "@/components/Portal";
+import { toast } from "@/components/Toast";
+import {
+  getMediaLibraryFoldersApi,
+  getMediaLibraryApi,
+  updateMediaAssetDetailsApi,
+  syncMediaLibraryApi,
+  ApiMediaAsset,
+  formatImageUrl,
+} from "@/lib/api";
 
-export interface MediaAsset {
-  id: string;
-  name: string;
-  altText: string;
-  type: string;
-  dimensions: string;
-  size: string;
-  category: "Branding" | "Campaigns" | "Services" | "Badges" | "Partners";
-  tags: string[];
-  url: string;
-  uploadedAt: string;
+// Helper: Format raw MinIO folder paths to human-friendly display labels
+function formatFolderLabel(folder: string): string {
+  if (!folder) return "General";
+  const name = folder.replace(/^helpMate\//i, "");
+  return name
+    .split(/[-_/]/)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+// Helper: Format bytes to human readable sizes
+function formatBytes(bytes?: number): string {
+  if (!bytes || bytes <= 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+}
+
+// Helper: Format date strings
+function formatDate(dateStr?: string): string {
+  if (!dateStr) return "-";
+  try {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return dateStr;
+  }
+}
+
+// Helper: Pagination page numbers with ellipses (standard pattern from DataTable)
+function getPageNumbers(current: number, total: number): (number | string)[] {
+  if (total <= 3) return Array.from({ length: total }, (_, i) => i + 1);
+
+  const set = new Set<number>();
+  set.add(1); // First page
+  set.add(current); // Current page
+  set.add(total); // Last page
+
+  const sorted = Array.from(set).sort((a, b) => a - b);
+  const result: (number | string)[] = [];
+
+  for (let i = 0; i < sorted.length; i++) {
+    if (i > 0 && sorted[i] - sorted[i - 1] > 1) {
+      result.push("...");
+    }
+    result.push(sorted[i]);
+  }
+  return result;
 }
 
 export default function MediaPage() {
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+  // Folder & Asset Data
+  const [folders, setFolders] = useState<string[]>([]);
+  const [selectedFolder, setSelectedFolder] = useState<string>("all");
+  const [assets, setAssets] = useState<ApiMediaAsset[]>([]);
+  const [pagination, setPagination] = useState({
+    total: 0,
+    page: 1,
+    limit: 20,
+    totalPages: 1,
+  });
+
+  // UI & Filter States
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState<string>("All");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [sortBy, setSortBy] = useState<"uploadedAt" | "fileName" | "size">("uploadedAt");
+  const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
 
-  // Modals
-  const [isUploadOpen, setIsUploadOpen] = useState(false);
-  const [editingAsset, setEditingAsset] = useState<MediaAsset | null>(null);
-  const [previewAsset, setPreviewAsset] = useState<MediaAsset | null>(null);
+  // Loading & Async Flags
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [, startTransition] = useTransition();
 
-  // File Upload Extra Metadata State
-  const [fileMeta, setFileMeta] = useState<{ type: string; size: string; dimensions: string } | null>(null);
-
-  // Upload Form State
-  const [uploadForm, setUploadForm] = useState({
-    name: "",
-    altText: "",
-    category: "Campaigns" as MediaAsset["category"],
-    url: "",
-    tagsStr: "Varanasi, Marketing",
-  });
-
-  // Edit Form State
+  // Active Edit Drawer State
+  const [editingAsset, setEditingAsset] = useState<ApiMediaAsset | null>(null);
   const [editForm, setEditForm] = useState({
-    name: "",
+    title: "",
     altText: "",
-    category: "Campaigns" as MediaAsset["category"],
-    tagsStr: "",
+    caption: "",
+    description: "",
   });
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
 
-  // Initial Media Items
-  const [assets, setAssets] = useState<MediaAsset[]>([
-    {
-      id: "media-1",
-      name: "HelpMate Brand Logo (Magenta #8D397E)",
-      altText: "Official HelpMate brand vector logo high resolution",
-      type: "PNG Logo",
-      dimensions: "1254 x 1254",
-      size: "142 KB",
-      category: "Branding",
-      tags: ["Logo", "Brand", "Vector"],
-      url: "https://helpmate-theta.vercel.app/logo.png",
-      uploadedAt: "24 Jul 2026",
-    },
-    {
-      id: "media-2",
-      name: "Power Jet AC Service Campaign Banner",
-      altText: "AC Foam Jet Servicing promotional banner for Varanasi households",
-      type: "WebP Banner",
-      dimensions: "1920 x 1080",
-      size: "480 KB",
-      category: "Campaigns",
-      tags: ["AC Service", "Banner", "Summer Campaign"],
-      url: "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=800&auto=format&fit=crop&q=80",
-      uploadedAt: "22 Jul 2026",
-    },
-    {
-      id: "media-3",
-      name: "Elite Deep Cleaning Equipment Showcase",
-      altText: "Industrial vacuum and hydro cleaning machines in action",
-      type: "JPEG Photo",
-      dimensions: "1200 x 800",
-      size: "320 KB",
-      category: "Services",
-      tags: ["Deep Cleaning", "Equipment", "Varanasi"],
-      url: "https://images.unsplash.com/photo-1581578731548-c64695cc6952?w=800&auto=format&fit=crop&q=80",
-      uploadedAt: "20 Jul 2026",
-    },
-    {
-      id: "media-4",
-      name: "Ayurvedic Home Spa & Wellness Banner",
-      altText: "Home salon and massage therapy promotional imagery",
-      type: "JPEG Photo",
-      dimensions: "1200 x 800",
-      size: "290 KB",
-      category: "Services",
-      tags: ["Salon", "Spa", "Wellness"],
-      url: "https://images.unsplash.com/photo-1540555700478-4be289fbecef?w=800&auto=format&fit=crop&q=80",
-      uploadedAt: "18 Jul 2026",
-    },
-    {
-      id: "media-5",
-      name: "Biometric Aadhaar & Police Verified Seal",
-      altText: "100% Aadhaar & Police Verified HelpMate Partner Security Seal",
-      type: "SVG Vector",
-      dimensions: "512 x 512",
-      size: "45 KB",
-      category: "Badges",
-      tags: ["Badge", "KYC", "Security"],
-      url: "https://images.unsplash.com/photo-1563013544-824ae1b704d3?w=800&auto=format&fit=crop&q=80",
-      uploadedAt: "15 Jul 2026",
-    },
-    {
-      id: "media-6",
-      name: "Smart Home Wiring & Circuit Inspection",
-      altText: "Certified electrician installing MCB fuse box in Sigra locality",
-      type: "JPEG Photo",
-      dimensions: "1200 x 800",
-      size: "380 KB",
-      category: "Services",
-      tags: ["Electrician", "MCB", "Safety"],
-      url: "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=800&auto=format&fit=crop&q=80",
-      uploadedAt: "12 Jul 2026",
-    },
-  ]);
+  // Copy feedback
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  // Filtered Assets
-  const filteredAssets = useMemo(() => {
-    return assets.filter((asset) => {
-      const matchCategory = selectedCategory === "All" || asset.category === selectedCategory;
-      const matchSearch =
-        searchQuery === "" ||
-        asset.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        asset.altText.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        asset.tags.some((t) => t.toLowerCase().includes(searchQuery.toLowerCase()));
-      return matchCategory && matchSearch;
-    });
-  }, [assets, selectedCategory, searchQuery]);
+  // Debounce search input
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
-  const handleCopy = (url: string, id: string) => {
-    navigator.clipboard.writeText(url);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
+  // Fetch Folders from API
+  const fetchFolders = useCallback(async () => {
+    try {
+      const res = await getMediaLibraryFoldersApi();
+      if (res.success && Array.isArray(res.data)) {
+        setFolders(res.data);
+      }
+    } catch (error) {
+      console.error("fetchFolders error:", error);
+    }
+  }, []);
+
+  // Fetch Media Assets from API
+  const fetchAssets = useCallback(
+    async (pageToFetch: number = 1, limitToFetch?: number) => {
+      setIsLoading(true);
+      const effectiveLimit = limitToFetch !== undefined ? limitToFetch : pagination.limit;
+      try {
+        const res = await getMediaLibraryApi({
+          folder: selectedFolder === "all" ? undefined : selectedFolder,
+          search: debouncedSearch.trim() || undefined,
+          page: pageToFetch,
+          limit: effectiveLimit,
+          sortBy,
+          sortOrder,
+        });
+
+        if (res.success && res.data) {
+          setAssets(res.data.assets || []);
+          if (res.data.pagination) {
+            setPagination({
+              total: res.data.pagination.total,
+              page: res.data.pagination.page,
+              limit: res.data.pagination.limit,
+              totalPages: res.data.pagination.totalPages || 1,
+            });
+          }
+        } else {
+          setAssets([]);
+          toast.error(res.message || "Failed to fetch media assets.");
+        }
+      } catch (error) {
+        console.error("fetchAssets error:", error);
+        toast.error("Failed to connect to media server.");
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [selectedFolder, debouncedSearch, pagination.limit, sortBy, sortOrder]
+  );
+
+  const handlePageChange = (newPage: number) => {
+    fetchAssets(newPage, pagination.limit);
   };
 
-  const handleDeleteAsset = (id: string) => {
-    if (confirm("Are you sure you want to delete this media asset?")) {
-      setAssets(assets.filter((a) => a.id !== id));
+  const handlePageSizeChange = (newSize: number) => {
+    setPagination((prev) => ({ ...prev, limit: newSize }));
+    fetchAssets(1, newSize);
+  };
+
+  // Initial load
+  useEffect(() => {
+    fetchFolders();
+  }, [fetchFolders]);
+
+  // Fetch assets whenever filters or folder changes
+  useEffect(() => {
+    fetchAssets(1);
+  }, [fetchAssets]);
+
+  // Sync Library with MinIO
+  const handleSync = async () => {
+    setIsSyncing(true);
+    try {
+      const res = await syncMediaLibraryApi();
+      if (res.success) {
+        toast.success(res.message || "Media library synchronized with MinIO!");
+        await fetchFolders();
+        await fetchAssets(pagination.page);
+      } else {
+        toast.error(res.message || "Sync failed.");
+      }
+    } catch (error) {
+      console.error("handleSync error:", error);
+      toast.error("An error occurred during synchronization.");
+    } finally {
+      setIsSyncing(false);
     }
   };
 
-  // Local File Selector Handler
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const formattedSize = file.size > 1024 * 1024
-      ? `${(file.size / (1024 * 1024)).toFixed(2)} MB`
-      : `${(file.size / 1024).toFixed(0)} KB`;
-
-    const formattedType = file.type.includes("png") ? "PNG Image"
-      : file.type.includes("jpeg") || file.type.includes("jpg") ? "JPEG Photo"
-      : file.type.includes("svg") ? "SVG Vector"
-      : file.type.includes("webp") ? "WebP Asset" : "Image File";
-
-    const cleanTitle = file.name
-      .replace(/\.[^/.]+$/, "")
-      .replace(/[-_]/g, " ")
-      .replace(/\b\w/g, (l) => l.toUpperCase());
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target?.result as string;
-      
-      // Calculate image dimensions
-      const img = new window.Image();
-      img.onload = () => {
-        setFileMeta({
-          type: formattedType,
-          size: formattedSize,
-          dimensions: `${img.width} x ${img.height}`,
-        });
-      };
-      img.src = dataUrl;
-
-      setUploadForm((prev) => ({
-        ...prev,
-        url: dataUrl,
-        name: prev.name || cleanTitle,
-        altText: prev.altText || `${cleanTitle} for HelpMate Varanasi`,
-      }));
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleUploadSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!uploadForm.name || !uploadForm.url) return;
-
-    const newAsset: MediaAsset = {
-      id: `media-${Date.now()}`,
-      name: uploadForm.name,
-      altText: uploadForm.altText || uploadForm.name,
-      type: fileMeta?.type || "WebP Asset",
-      dimensions: fileMeta?.dimensions || "1200 x 800",
-      size: fileMeta?.size || "350 KB",
-      category: uploadForm.category,
-      tags: uploadForm.tagsStr.split(",").map((t) => t.trim()).filter(Boolean),
-      url: uploadForm.url,
-      uploadedAt: "Just now",
-    };
-
-    setAssets([newAsset, ...assets]);
-    setIsUploadOpen(false);
-    setFileMeta(null);
-    setUploadForm({
-      name: "",
-      altText: "",
-      category: "Campaigns",
-      url: "",
-      tagsStr: "Varanasi, Marketing",
+  // Open Edit Drawer for an Asset
+  const handleOpenEdit = (asset: ApiMediaAsset) => {
+    setEditingAsset(asset);
+    setEditForm({
+      title: asset.title || "",
+      altText: asset.altText || "",
+      caption: asset.caption || "",
+      description: asset.description || "",
     });
   };
 
-  const handleEditSubmit = (e: React.FormEvent) => {
+  // Submit Metadata Changes
+  const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingAsset || !editForm.name) return;
+    if (!editingAsset) return;
 
-    setAssets(
-      assets.map((a) =>
-        a.id === editingAsset.id
-          ? {
-              ...a,
-              name: editForm.name,
-              altText: editForm.altText,
-              category: editForm.category,
-              tags: editForm.tagsStr.split(",").map((t) => t.trim()).filter(Boolean),
-            }
-          : a
-      )
-    );
+    setIsSavingEdit(true);
+    try {
+      const res = await updateMediaAssetDetailsApi(editingAsset.id, {
+        title: editForm.title.trim(),
+        altText: editForm.altText.trim(),
+        caption: editForm.caption.trim(),
+        description: editForm.description.trim(),
+      });
 
-    setEditingAsset(null);
+      if (res.success && res.data) {
+        toast.success("Media metadata updated successfully!");
+        const updated = res.data;
+        // Update local asset in state immediately
+        setAssets((prev) =>
+          prev.map((a) => (a.id === updated.id ? { ...a, ...updated } : a))
+        );
+        setEditingAsset(updated);
+      } else {
+        toast.error(res.message || "Failed to update media asset details.");
+      }
+    } catch (error) {
+      console.error("handleSaveEdit error:", error);
+      toast.error("An error occurred while saving media metadata.");
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
+  // One-click URL copy
+  const handleCopyUrl = (url: string, id: string) => {
+    const formatted = formatImageUrl(url);
+    const fullUrl =
+      typeof window !== "undefined"
+        ? `${window.location.origin}${formatted}`
+        : formatted;
+    navigator.clipboard.writeText(fullUrl);
+    setCopiedId(id);
+    toast.success("Media URL copied to clipboard!");
+    setTimeout(() => setCopiedId(null), 2500);
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-300 pb-10">
-
-      {/* Simple Clean Header */}
+    <div className="space-y-6 animate-in fade-in duration-300 pb-12">
+      {/* ─── 1. PAGE HEADER (Strictly ONE Primary Button per AGENTS.md) ─── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
         <div>
-          <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-            <FileImage className="w-6 h-6 text-brand-600" />
-            <span>Media & Brand Asset Management</span>
+          <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-brand-50 dark:bg-brand-950 text-brand-600 flex items-center justify-center border border-brand-200 dark:border-brand-800 shadow-xs">
+              <FileImage className="w-5 h-5 text-brand-600" />
+            </div>
+            <span>Media Library</span>
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
-            Upload, organize, and edit promotional banners, verified badge graphics, and service media files for Varanasi operations.
+            Explore MinIO image assets across all platform modules. Click any image to view details and edit SEO metadata.
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setIsUploadOpen(true)}
-          className="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 w-full sm:w-auto"
-        >
-          <Upload className="w-4 h-4" />
-          <span>Add Media</span>
-        </button>
+        {/* Primary Action Button */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleSync}
+            disabled={isSyncing}
+            className="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 disabled:opacity-60"
+            title="Scan MinIO bucket and index all latest image uploads"
+          >
+            <RefreshCw className={`w-4 h-4 ${isSyncing ? "animate-spin" : ""}`} />
+            <span>{isSyncing ? "Synchronizing..." : "Sync with MinIO"}</span>
+          </button>
+        </div>
       </div>
 
       {/* ─── 2. EXECUTIVE METRICS RIBBON ─── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2 shadow-xs">
+        <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-1">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Total Media Assets</span>
-            <div className="w-9 h-9 rounded-xl bg-brand-50 dark:bg-brand-950 text-brand-600 flex items-center justify-center border border-brand-200 dark:border-brand-800">
-              <ImageIcon className="w-4.5 h-4.5" />
-            </div>
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+              Total Indexed Assets
+            </span>
+            <ImageIcon className="w-4 h-4 text-brand-600" />
           </div>
-          <p className="text-2xl font-black text-slate-900 dark:text-white">{assets.length} Files</p>
-          <p className="text-[11px] text-brand-600 dark:text-brand-400 font-bold">100% CDN Optimized</p>
+          <p className="text-2xl font-black text-slate-900 dark:text-white">
+            {pagination.total.toLocaleString()}
+          </p>
+          <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
+            <ShieldCheck className="w-3.5 h-3.5" /> High-Resolution CDN Ready
+          </p>
         </div>
 
-        <div className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2 shadow-xs">
+        <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-1">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Storage Utilized</span>
-            <div className="w-9 h-9 rounded-xl bg-purple-50 dark:bg-purple-950 text-purple-600 flex items-center justify-center border border-purple-200 dark:border-purple-800">
-              <HardDrive className="w-4.5 h-4.5" />
-            </div>
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+              MinIO Storage Folders
+            </span>
+            <FolderOpen className="w-4 h-4 text-blue-600" />
           </div>
-          <p className="text-2xl font-black text-purple-600 dark:text-purple-400">1.68 MB</p>
-          <p className="text-[11px] text-purple-700 dark:text-purple-300 font-bold">Limit: 10.0 GB Cloud Storage</p>
+          <p className="text-2xl font-black text-slate-900 dark:text-white">
+            {folders.length}
+          </p>
+          <p className="text-[11px] text-blue-600 dark:text-blue-400 font-bold">
+            Addons, Packages, Banners, Zones
+          </p>
         </div>
 
-        <div className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2 shadow-xs">
+        <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-1">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Asset Categories</span>
-            <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950 text-blue-600 flex items-center justify-center border border-blue-200 dark:border-blue-800">
-              <FolderOpen className="w-4.5 h-4.5" />
-            </div>
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+              Active Selection
+            </span>
+            <Layers className="w-4 h-4 text-purple-600" />
           </div>
-          <p className="text-2xl font-black text-slate-900 dark:text-white">5 Categories</p>
-          <p className="text-[11px] text-blue-600 dark:text-blue-400 font-bold">Branding, Campaigns, Badges</p>
+          <p className="text-2xl font-black text-slate-900 dark:text-white truncate" title={selectedFolder === "all" ? "All Folders" : formatFolderLabel(selectedFolder)}>
+            {selectedFolder === "all" ? "All Folders" : formatFolderLabel(selectedFolder)}
+          </p>
+          <p className="text-[11px] text-purple-600 dark:text-purple-400 font-bold">
+            Showing Page {pagination.page} of {pagination.totalPages}
+          </p>
         </div>
 
-        <div className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2 shadow-xs">
+        <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-1">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">SEO Alt Tag Coverage</span>
-            <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950 text-emerald-600 flex items-center justify-center border border-emerald-200 dark:border-emerald-800">
-              <ShieldCheck className="w-4.5 h-4.5" />
-            </div>
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+              Storage Engine
+            </span>
+            <HardDrive className="w-4 h-4 text-emerald-600" />
           </div>
-          <p className="text-2xl font-black text-emerald-600 dark:text-emerald-400">100% Tagged</p>
-          <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold">Optimized for Google Search</p>
+          <p className="text-2xl font-black text-slate-900 dark:text-white">MinIO S3</p>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 font-bold">
+            Automated Upload Indexing
+          </p>
         </div>
       </div>
 
-      {/* ─── 3. FILTER BAR & VIEW TOGGLE ─── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-3">
-        {/* Category Filter Pills */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-          {["All", "Branding", "Campaigns", "Services", "Badges", "Partners"].map((cat) => (
+      {/* ─── 3. FOLDER SELECTOR TABS ─── */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+            <FolderOpen className="w-3.5 h-3.5" />
+            <span>Folder Directory ({folders.length})</span>
+          </span>
+          {selectedFolder !== "all" && (
             <button
-              key={cat}
               type="button"
-              onClick={() => setSelectedCategory(cat)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-colors cursor-pointer ${
-                selectedCategory === cat
-                  ? "bg-brand-500 text-white shadow-xs font-black"
-                  : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50"
-              }`}
+              onClick={() => setSelectedFolder("all")}
+              className="text-[11px] font-bold text-brand-600 hover:text-brand-700 cursor-pointer"
             >
-              {cat}
+              Reset to All Folders
             </button>
-          ))}
+          )}
         </div>
 
-        {/* Search & View Mode Switcher */}
-        <div className="flex items-center gap-3">
-          <div className="relative min-w-[220px]">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Search title, alt text, or tag..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:border-brand-500"
-            />
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-thin">
+          {/* "All" Tab */}
+          <button
+            type="button"
+            onClick={() => setSelectedFolder("all")}
+            className={`px-3.5 py-2 rounded-xl text-xs font-black whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
+              selectedFolder === "all"
+                ? "bg-brand-600 text-white shadow-xs"
+                : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+            }`}
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>All Folders</span>
+            <span
+              className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                selectedFolder === "all"
+                  ? "bg-white/20 text-white"
+                  : "bg-slate-100 dark:bg-slate-800 text-slate-500"
+              }`}
+            >
+              {pagination.total}
+            </span>
+          </button>
+
+          {/* Dynamic Folders from API */}
+          {folders.map((folder) => {
+            const isSelected = selectedFolder === folder;
+            return (
+              <button
+                key={folder}
+                type="button"
+                onClick={() => setSelectedFolder(folder)}
+                className={`px-3 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
+                  isSelected
+                    ? "bg-brand-600 text-white font-black shadow-xs"
+                    : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                }`}
+                title={folder}
+              >
+                <FolderOpen className={`w-3.5 h-3.5 ${isSelected ? "text-white" : "text-slate-400"}`} />
+                <span>{formatFolderLabel(folder)}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ─── 4. SEARCH, SORT & VIEW BAR ─── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-slate-900 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
+        {/* Search Input */}
+        <div className="relative flex-1 min-w-[260px]">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            placeholder="Search by file name, title, alt text, or description..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-10 pr-9 py-2 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-brand-500 focus:bg-white dark:focus:bg-slate-800 transition-all font-medium"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        {/* Sort & View Mode Controls */}
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Sort Field */}
+          <div className="flex items-center gap-1.5 text-xs">
+            <SlidersHorizontal className="w-3.5 h-3.5 text-slate-400" />
+            <select
+              value={`${sortBy}-${sortOrder}`}
+              onChange={(e) => {
+                const [sb, so] = e.target.value.split("-") as [
+                  "uploadedAt" | "fileName" | "size",
+                  "desc" | "asc"
+                ];
+                setSortBy(sb);
+                setSortOrder(so);
+              }}
+              className="px-2.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 outline-none cursor-pointer"
+            >
+              <option value="uploadedAt-desc">Newest Uploaded</option>
+              <option value="uploadedAt-asc">Oldest Uploaded</option>
+              <option value="fileName-asc">File Name (A - Z)</option>
+              <option value="fileName-desc">File Name (Z - A)</option>
+              <option value="size-desc">Largest File Size</option>
+              <option value="size-asc">Smallest File Size</option>
+            </select>
           </div>
 
+          {/* View Toggle */}
           <div className="flex items-center p-1 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
             <button
               type="button"
               onClick={() => setViewMode("grid")}
               className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                viewMode === "grid" ? "bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-400 shadow-xs" : "text-slate-400"
+                viewMode === "grid"
+                  ? "bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-400 shadow-xs"
+                  : "text-slate-400 hover:text-slate-600"
               }`}
+              title="Grid View"
             >
               <Grid className="w-4 h-4" />
             </button>
@@ -387,8 +511,11 @@ export default function MediaPage() {
               type="button"
               onClick={() => setViewMode("list")}
               className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                viewMode === "list" ? "bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-400 shadow-xs" : "text-slate-400"
+                viewMode === "list"
+                  ? "bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-400 shadow-xs"
+                  : "text-slate-400 hover:text-slate-600"
               }`}
+              title="List View"
             >
               <List className="w-4 h-4" />
             </button>
@@ -396,550 +523,550 @@ export default function MediaPage() {
         </div>
       </div>
 
-      {/* ─── 4. MEDIA DISPLAY (GRID / LIST) ─── */}
-      {filteredAssets.length === 0 ? (
-        <div className="p-12 text-center bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 space-y-3">
-          <ImageIcon className="w-12 h-12 text-slate-300 mx-auto" />
-          <p className="text-sm font-bold text-slate-600 dark:text-slate-400">No media assets found</p>
-          <p className="text-xs text-slate-400">Try adjusting your search query or filter category.</p>
+      {/* ─── 5. ASSETS GALLERY / DATA TABLE ─── */}
+      {isLoading ? (
+        /* Shimmer Loading Grid */
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+          {Array.from({ length: 12 }).map((_, i) => (
+            <div
+              key={i}
+              className="bg-white dark:bg-slate-900 rounded-2xl p-3 border border-slate-200 dark:border-slate-800 space-y-3 animate-pulse"
+            >
+              <div className="w-full aspect-square rounded-xl bg-slate-200 dark:bg-slate-800" />
+              <div className="h-3 w-3/4 rounded bg-slate-200 dark:bg-slate-800" />
+              <div className="h-2 w-1/2 rounded bg-slate-200 dark:bg-slate-800" />
+            </div>
+          ))}
+        </div>
+      ) : assets.length === 0 ? (
+        /* Empty State */
+        <div className="p-16 text-center bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 space-y-3 shadow-xs">
+          <div className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 flex items-center justify-center mx-auto">
+            <ImageIcon className="w-7 h-7" />
+          </div>
+          <h3 className="text-base font-black text-slate-900 dark:text-white">
+            No media assets found
+          </h3>
+          <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
+            {searchQuery
+              ? `No images matched "${searchQuery}". Try a different keyword.`
+              : selectedFolder !== "all"
+              ? `No assets found in folder "${formatFolderLabel(selectedFolder)}".`
+              : "No media assets currently indexed in MinIO. Click 'Sync with MinIO' above to scan."}
+          </p>
+          {selectedFolder !== "all" && (
+            <button
+              type="button"
+              onClick={() => setSelectedFolder("all")}
+              className="mt-2 px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold hover:bg-slate-200 cursor-pointer"
+            >
+              View All Folders
+            </button>
+          )}
         </div>
       ) : viewMode === "grid" ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredAssets.map((asset) => (
-            <div
-              key={asset.id}
-              className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-200 dark:border-slate-800 hover:border-brand-400 hover:shadow-lg transition-all duration-300 flex flex-col justify-between space-y-4 group"
-            >
-              {/* Image Box */}
-              <div className="h-48 w-full rounded-2xl overflow-hidden bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 relative">
-                {asset.url ? (
+        /* ─── Grid View (Click ANY image to open edit drawer) ─── */
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+          {assets.map((asset) => {
+            const formattedUrl = formatImageUrl(asset.url);
+            const isEditingThis = editingAsset?.id === asset.id;
+            return (
+              <div
+                key={asset.id}
+                onClick={() => handleOpenEdit(asset)}
+                className={`group bg-white dark:bg-slate-900 rounded-2xl p-2.5 border transition-all duration-200 cursor-pointer flex flex-col justify-between relative shadow-xs hover:shadow-md hover:-translate-y-0.5 ${
+                  isEditingThis
+                    ? "border-brand-500 ring-2 ring-brand-500/20 bg-brand-50/20 dark:bg-brand-950/20"
+                    : "border-slate-200 dark:border-slate-800 hover:border-brand-400"
+                }`}
+                title="Click to edit image metadata"
+              >
+                {/* Image Container with Transparent Backdrop */}
+                <div className="w-full aspect-square rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80 relative flex items-center justify-center">
                   <Image
-                    src={asset.url}
-                    alt={asset.altText}
+                    src={formattedUrl}
+                    alt={asset.altText || asset.title || asset.fileName}
                     fill
                     unoptimized
                     className="object-cover group-hover:scale-105 transition-transform duration-300"
                   />
-                ) : null}
-                <span className="absolute top-3 left-3 text-[10px] font-black uppercase bg-white/90 dark:bg-slate-900/90 text-brand-600 dark:text-brand-400 px-2.5 py-1 rounded-full border border-slate-200 dark:border-slate-700 shadow-xs">
-                  {asset.category}
-                </span>
 
-                {/* Hover overlay preview button */}
-                <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setPreviewAsset(asset)}
-                    className="p-2.5 rounded-full bg-white text-slate-900 font-bold hover:scale-110 transition-transform shadow-lg cursor-pointer"
-                    title="Quick Preview"
+                  {/* Folder Tag Badge */}
+                  <span className="absolute top-2 left-2 text-[9px] font-black uppercase tracking-wider bg-white/90 dark:bg-slate-900/90 text-brand-600 dark:text-brand-400 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700 shadow-xs truncate max-w-[80%]">
+                    {formatFolderLabel(asset.folder)}
+                  </span>
+
+                  {/* Hover Overlay with Edit Prompt */}
+                  <div className="absolute inset-0 bg-slate-950/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1.5 p-2 text-white text-center backdrop-blur-2xs">
+                    <div className="w-8 h-8 rounded-full bg-brand-600 text-white flex items-center justify-center shadow-lg">
+                      <Edit2 className="w-4 h-4" />
+                    </div>
+                    <span className="text-[10px] font-black tracking-wide uppercase">
+                      Click to Edit
+                    </span>
+                  </div>
+                </div>
+
+                {/* Information Snippet */}
+                <div className="mt-2.5 space-y-1">
+                  <h4
+                    className="text-xs font-bold text-slate-900 dark:text-white truncate"
+                    title={asset.title || asset.fileName}
                   >
-                    <Eye className="w-4 h-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditingAsset(asset);
-                      setEditForm({
-                        name: asset.name,
-                        altText: asset.altText,
-                        category: asset.category,
-                        tagsStr: asset.tags.join(", "),
-                      });
-                    }}
-                    className="p-2.5 rounded-full bg-brand-500 text-white font-bold hover:scale-110 transition-transform shadow-lg cursor-pointer"
-                    title="Edit Metadata"
-                  >
-                    <Edit2 className="w-4 h-4" />
-                  </button>
+                    {asset.title || asset.fileName}
+                  </h4>
+                  <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                    <span>{formatBytes(asset.size)}</span>
+                    <span className="truncate">{formatDate(asset.uploadedAt).split(",")[0]}</span>
+                  </div>
                 </div>
               </div>
-
-              {/* Asset Information */}
-              <div className="space-y-1.5">
-                <h3 className="text-xs font-black text-slate-900 dark:text-white truncate" title={asset.name}>
-                  {asset.name}
-                </h3>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium line-clamp-2" title={asset.altText}>
-                  <span className="font-bold text-slate-400">Alt:</span> &quot;{asset.altText}&quot;
-                </p>
-                <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono font-bold pt-1">
-                  <span>{asset.type} · {asset.dimensions}</span>
-                  <span>{asset.size}</span>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleCopy(asset.url, asset.id)}
-                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:text-slate-900 text-xs font-bold transition-all cursor-pointer"
-                >
-                  {copiedId === asset.id ? (
-                    <>
-                      <Check className="w-3.5 h-3.5 text-emerald-600" />
-                      <span className="text-emerald-600">Copied</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3.5 h-3.5 text-slate-500" />
-                      <span>Copy URL</span>
-                    </>
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditingAsset(asset);
-                    setEditForm({
-                      name: asset.name,
-                      altText: asset.altText,
-                      category: asset.category,
-                      tagsStr: asset.tags.join(", "),
-                    });
-                  }}
-                  className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-brand-600 transition-colors cursor-pointer"
-                  title="Edit Name & Alt Text"
-                >
-                  <Edit2 className="w-3.5 h-3.5" />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleDeleteAsset(asset.id)}
-                  className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-red-600 transition-colors cursor-pointer"
-                  title="Delete Asset"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
-        /* List View: Responsive High-End Data Table */
-        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xs">
+        /* ─── List View (Table rows click to edit) ─── */
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xs">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs text-slate-700 dark:text-slate-300">
-              <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider text-[10px] border-b border-slate-200 dark:border-slate-800">
+              <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-500 dark:text-slate-400 font-black uppercase tracking-wider text-[10px] border-b border-slate-200 dark:border-slate-800">
                 <tr>
-                  <th className="py-3.5 px-4">Media Artwork</th>
-                  <th className="py-3.5 px-4">Asset Name & SEO Alt Description</th>
-                  <th className="py-3.5 px-4">Category & Tags</th>
-                  <th className="py-3.5 px-4">Type & Resolution</th>
-                  <th className="py-3.5 px-4">Size</th>
-                  <th className="py-3.5 px-4 text-right">Actions</th>
+                  <th className="py-3 px-4">Preview</th>
+                  <th className="py-3 px-4">File Name / Title</th>
+                  <th className="py-3 px-4">Folder</th>
+                  <th className="py-3 px-4">SEO Alt Text</th>
+                  <th className="py-3 px-4">File Size</th>
+                  <th className="py-3 px-4">Uploaded Date</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {filteredAssets.map((asset) => (
-                  <tr key={asset.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors">
-                    {/* Artwork Preview */}
-                    <td className="py-3 px-4">
-                      <div className="w-14 h-14 rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shrink-0 relative group">
-                        {asset.url ? (
+                {assets.map((asset) => {
+                  const formattedUrl = formatImageUrl(asset.url);
+                  const isEditingThis = editingAsset?.id === asset.id;
+                  return (
+                    <tr
+                      key={asset.id}
+                      onClick={() => handleOpenEdit(asset)}
+                      className={`hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors cursor-pointer ${
+                        isEditingThis
+                          ? "bg-brand-50/30 dark:bg-brand-950/30"
+                          : ""
+                      }`}
+                    >
+                      {/* Thumbnail */}
+                      <td className="py-2.5 px-4">
+                        <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shrink-0 relative flex items-center justify-center">
                           <Image
-                            src={asset.url}
-                            alt={asset.altText}
+                            src={formattedUrl}
+                            alt={asset.altText || asset.fileName}
                             fill
                             unoptimized
                             className="object-cover"
                           />
-                        ) : null}
-                        <button
-                          type="button"
-                          onClick={() => setPreviewAsset(asset)}
-                          className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white"
-                          title="Preview"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-
-                    {/* Name & Alt Tag */}
-                    <td className="py-3 px-4 max-w-xs">
-                      <h4 className="font-extrabold text-xs text-slate-900 dark:text-white truncate" title={asset.name}>
-                        {asset.name}
-                      </h4>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5" title={asset.altText}>
-                        Alt: &quot;{asset.altText}&quot;
-                      </p>
-                      <span className="text-[10px] text-slate-400 font-mono block mt-0.5">
-                        Uploaded: {asset.uploadedAt}
-                      </span>
-                    </td>
-
-                    {/* Category & Tags */}
-                    <td className="py-3 px-4">
-                      <div className="space-y-1">
-                        <span className="text-[10px] font-black uppercase text-brand-600 bg-brand-50 dark:bg-brand-950 px-2 py-0.5 rounded border border-brand-200 dark:border-brand-800 inline-block">
-                          {asset.category}
-                        </span>
-                        <div className="flex flex-wrap gap-1">
-                          {asset.tags.map((t) => (
-                            <span key={t} className="text-[9px] font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.2 rounded">
-                              #{t}
-                            </span>
-                          ))}
                         </div>
-                      </div>
-                    </td>
+                      </td>
 
-                    {/* Type & Resolution */}
-                    <td className="py-3 px-4 font-mono text-[11px]">
-                      <div className="font-bold text-slate-900 dark:text-white">{asset.type}</div>
-                      <div className="text-slate-400 text-[10px]">{asset.dimensions}</div>
-                    </td>
+                      {/* Title & File Name */}
+                      <td className="py-2.5 px-4 max-w-xs">
+                        <h5 className="font-bold text-xs text-slate-900 dark:text-white truncate">
+                          {asset.title || asset.fileName}
+                        </h5>
+                        <p className="text-[10px] text-slate-400 font-mono truncate mt-0.5">
+                          {asset.fileName}
+                        </p>
+                      </td>
 
-                    {/* Size */}
-                    <td className="py-3 px-4 font-mono font-bold text-xs text-slate-900 dark:text-white">
-                      {asset.size}
-                    </td>
+                      {/* Folder */}
+                      <td className="py-2.5 px-4">
+                        <span className="text-[10px] font-bold uppercase text-brand-600 bg-brand-50 dark:bg-brand-950 px-2 py-0.5 rounded border border-brand-200 dark:border-brand-800 inline-block">
+                          {formatFolderLabel(asset.folder)}
+                        </span>
+                      </td>
 
-                    {/* Actions */}
-                    <td className="py-3 px-4 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => handleCopy(asset.url, asset.id)}
-                          className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 hover:text-brand-600 border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
+                      {/* Alt text */}
+                      <td className="py-2.5 px-4 max-w-xs">
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate italic">
+                          {asset.altText ? `"${asset.altText}"` : "-"}
+                        </p>
+                      </td>
+
+                      {/* Size */}
+                      <td className="py-2.5 px-4 font-mono font-bold text-[11px] text-slate-700 dark:text-slate-300">
+                        {formatBytes(asset.size)}
+                      </td>
+
+                      {/* Date */}
+                      <td className="py-2.5 px-4 font-mono text-[10px] text-slate-500 dark:text-slate-400">
+                        {formatDate(asset.uploadedAt)}
+                      </td>
+
+                      {/* Action */}
+                      <td className="py-2.5 px-4 text-right">
+                        <div
+                          className="flex items-center justify-end gap-1.5"
+                          onClick={(e) => e.stopPropagation()}
                         >
-                          {copiedId === asset.id ? "Copied!" : "Copy URL"}
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingAsset(asset);
-                            setEditForm({
-                              name: asset.name,
-                              altText: asset.altText,
-                              category: asset.category,
-                              tagsStr: asset.tags.join(", "),
-                            });
-                          }}
-                          className="p-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-brand-600 border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
-                          title="Edit Metadata"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteAsset(asset.id)}
-                          className="p-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-red-600 border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
-                          title="Delete Asset"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                          <button
+                            type="button"
+                            onClick={() => handleCopyUrl(asset.url, asset.id)}
+                            className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-brand-600 border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
+                            title="Copy image URL"
+                          >
+                            {copiedId === asset.id ? (
+                              <Check className="w-3.5 h-3.5 text-emerald-600" />
+                            ) : (
+                              <Copy className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEdit(asset)}
+                            className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-brand-600 border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
+                            title="Edit metadata"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         </div>
       )}
 
-      {/* ─── SLIDE-OVER DRAWER: UPLOAD NEW ASSET ─── */}
-      {isUploadOpen && (
-        <Portal>
-          <div className="fixed inset-0 z-[99999] bg-slate-950/70 backdrop-blur-xs flex justify-end outline-none">
-            <div className="absolute inset-0" onClick={() => setIsUploadOpen(false)} />
-            <form
-              onSubmit={handleUploadSubmit}
-              className="relative z-10 bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 p-6 max-w-lg w-full h-full flex flex-col justify-between shadow-2xl animate-in slide-in-from-right duration-300 outline-none overflow-y-auto"
-            >
-              <div className="space-y-4 text-xs">
-                <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
-                  <div>
-                    <h3 className="font-black text-slate-900 dark:text-white text-base">Add Media</h3>
-                    <p className="text-[11px] text-slate-400">Select local file or enter CDN URL</p>
-                  </div>
-                  <button type="button" onClick={() => setIsUploadOpen(false)} className="text-slate-400 hover:text-slate-600">
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
+      {/* ─── 6. PAGINATION BAR (Matching DataTable standard across all modules) ─── */}
+      <div className="p-4 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-800 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4 text-xs font-semibold text-slate-600 dark:text-slate-300 select-none shadow-xs">
+        {/* LEFT: Rows Per Page Selector */}
+        <div className="flex items-center gap-2">
+          <span className="text-slate-500 font-bold">Rows per page:</span>
+          <select
+            value={pagination.limit}
+            onChange={(e) => handlePageSizeChange(Number(e.target.value))}
+            className="px-2.5 py-1 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-extrabold cursor-pointer outline-none focus:border-brand-500 shadow-xs"
+          >
+            {[10, 20, 50, 100].map((opt) => (
+              <option key={opt} value={opt}>
+                {opt}
+              </option>
+            ))}
+          </select>
+        </div>
 
-                {/* Hidden Native File Input */}
-                <input
-                  id="media-file-input"
-                  type="file"
-                  accept="image/png, image/jpeg, image/webp, image/svg+xml"
-                  onChange={handleFileChange}
-                  className="hidden"
-                />
+        {/* CENTER: Pagination Controls (First, Second ... Current ... Second-to-last, Last) */}
+        <div className="flex items-center gap-1.5 overflow-x-auto max-w-full pb-1 md:pb-0 no-scrollbar">
+          {/* Previous Button */}
+          <button
+            type="button"
+            onClick={() => handlePageChange(Math.max(pagination.page - 1, 1))}
+            disabled={pagination.page <= 1 || isLoading}
+            className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 disabled:opacity-40 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
+            title="Previous Page"
+          >
+            <ChevronLeft className="w-4 h-4 text-slate-700 dark:text-slate-300" />
+          </button>
 
-                {/* Interactive Clickable Upload Dropzone */}
-                <div
-                  onClick={() => document.getElementById("media-file-input")?.click()}
-                  className="p-6 rounded-2xl border-2 border-dashed border-brand-300 dark:border-brand-800 bg-brand-50/40 dark:bg-brand-950/30 hover:bg-brand-50 text-center space-y-3 transition-all cursor-pointer group"
-                >
-                  {uploadForm.url ? (
-                    <div className="space-y-2">
-                      <div className="h-32 w-full rounded-xl overflow-hidden bg-slate-100 border border-slate-200 dark:border-slate-700 relative">
-                        <Image
-                          src={uploadForm.url}
-                          alt="Selected preview"
-                          fill
-                          unoptimized
-                          className="object-contain"
-                        />
-                      </div>
-                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600">
-                        <CheckCircle2 className="w-4 h-4" /> Image Selected ({fileMeta?.dimensions || "Ready"})
-                      </span>
-                      <p className="text-[10px] text-slate-400">Click to pick a different image file</p>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="w-12 h-12 rounded-2xl bg-brand-100 dark:bg-brand-900/60 text-brand-600 dark:text-brand-300 flex items-center justify-center mx-auto group-hover:scale-110 transition-transform">
-                        <Upload className="w-6 h-6" />
-                      </div>
-                      <div>
-                        <p className="font-black text-slate-900 dark:text-white text-sm">Click here to browse & upload local image</p>
-                        <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Supports PNG, JPEG, WebP, SVG files</p>
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                <div>
-                  <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">Image URL / CDN Path *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="https://... or selected file Data URL"
-                    value={uploadForm.url}
-                    onChange={(e) => setUploadForm({ ...uploadForm, url: e.target.value })}
-                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-mono text-xs outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">Asset Name / Title *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Split AC Servicing Campaign Banner"
-                    value={uploadForm.name}
-                    onChange={(e) => setUploadForm({ ...uploadForm, name: e.target.value })}
-                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-bold outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">SEO Alt Text Description *</label>
-                  <textarea
-                    rows={2}
-                    required
-                    placeholder="Describe image for screen readers and search engines..."
-                    value={uploadForm.altText}
-                    onChange={(e) => setUploadForm({ ...uploadForm, altText: e.target.value })}
-                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-medium outline-none"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">Category</label>
-                    <select
-                      value={uploadForm.category}
-                      onChange={(e) => setUploadForm({ ...uploadForm, category: e.target.value as MediaAsset["category"] })}
-                      className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-bold outline-none"
-                    >
-                      <option value="Branding">Branding</option>
-                      <option value="Campaigns">Campaigns</option>
-                      <option value="Services">Services</option>
-                      <option value="Badges">Badges</option>
-                      <option value="Partners">Partners</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">Search Tags (Comma separated)</label>
-                    <input
-                      type="text"
-                      placeholder="AC, Varanasi, Banner"
-                      value={uploadForm.tagsStr}
-                      onChange={(e) => setUploadForm({ ...uploadForm, tagsStr: e.target.value })}
-                      className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-medium outline-none"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
+          {/* Page Number Pills */}
+          <div className="flex items-center gap-1 shrink-0">
+            {getPageNumbers(pagination.page, pagination.totalPages).map((p, idx) => {
+              if (p === "...") {
+                return (
+                  <span key={`ellipsis-${idx}`} className="px-1.5 py-1 text-slate-400 font-mono text-xs">
+                    ...
+                  </span>
+                );
+              }
+              const pageNum = Number(p);
+              const isCurrent = pageNum === pagination.page;
+              return (
                 <button
+                  key={pageNum}
                   type="button"
-                  onClick={() => setIsUploadOpen(false)}
-                  className="flex-1 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 font-bold text-xs text-slate-700 dark:text-slate-300"
+                  disabled={isLoading}
+                  onClick={() => handlePageChange(pageNum)}
+                  className={`min-w-[32px] h-8 px-2.5 rounded-xl font-black text-xs transition-all cursor-pointer ${
+                    isCurrent
+                      ? "bg-brand-500 text-white shadow-lux"
+                      : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  }`}
                 >
-                  Cancel
+                  {pageNum}
                 </button>
-                <button
-                  type="submit"
-                  className="flex-1 py-3 rounded-2xl bg-brand-500 hover:bg-brand-600 text-white font-black text-xs shadow-lux cursor-pointer"
-                >
-                  Upload & Register Asset
-                </button>
-              </div>
-            </form>
+              );
+            })}
           </div>
-        </Portal>
-      )}
 
-      {/* ─── SLIDE-OVER DRAWER: EDIT METADATA (NAME, ALT TEXT, CATEGORY) ─── */}
+          {/* Next Button */}
+          <button
+            type="button"
+            onClick={() => handlePageChange(Math.min(pagination.page + 1, pagination.totalPages))}
+            disabled={pagination.page >= pagination.totalPages || isLoading}
+            className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 disabled:opacity-40 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
+            title="Next Page"
+          >
+            <ChevronRight className="w-4 h-4 text-slate-700 dark:text-slate-300" />
+          </button>
+        </div>
+
+        {/* RIGHT: Showing Entries Info */}
+        <div className="text-slate-500 dark:text-slate-400 font-mono text-[11px] font-bold">
+          Showing {pagination.total > 0 ? (pagination.page - 1) * pagination.limit + 1 : 0}–{Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} entries
+        </div>
+      </div>
+
+      {/* ─── 7. RIGHT-SIDE SLIDE-OVER EDIT DRAWER ─── */}
       {editingAsset && (
         <Portal>
-          <div className="fixed inset-0 z-[99999] bg-slate-950/70 backdrop-blur-xs flex justify-end outline-none">
-            <div className="absolute inset-0" onClick={() => setEditingAsset(null)} />
+          <div className="fixed inset-0 z-[99999] bg-slate-950/60 backdrop-blur-xs flex justify-end outline-none animate-in fade-in duration-200">
+            {/* Backdrop click to close */}
+            <div
+              className="absolute inset-0"
+              onClick={() => setEditingAsset(null)}
+            />
+
+            {/* Slide-over Right Panel */}
             <form
-              onSubmit={handleEditSubmit}
-              className="relative z-10 bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 p-6 max-w-lg w-full h-full flex flex-col justify-between shadow-2xl animate-in slide-in-from-right duration-300 outline-none overflow-y-auto"
+              onSubmit={handleSaveEdit}
+              className="relative z-10 bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 w-full sm:w-[480px] md:w-[520px] h-full flex flex-col justify-between shadow-2xl animate-in slide-in-from-right duration-300 outline-none overflow-hidden"
             >
-              <div className="space-y-4 text-xs">
-                <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
-                  <div>
-                    <h3 className="font-black text-slate-900 dark:text-white text-base">Edit Media Metadata</h3>
-                    <p className="text-[11px] text-slate-400">Update name, SEO alt tag, category, and search tags</p>
-                  </div>
-                  <button type="button" onClick={() => setEditingAsset(null)} className="text-slate-400 hover:text-slate-600">
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-
-                {/* Preview Thumbnail */}
-                <div className="h-40 w-full rounded-2xl overflow-hidden bg-slate-100 border border-slate-200 dark:border-slate-700 relative">
-                  {editingAsset.url ? (
-                    <Image
-                      src={editingAsset.url}
-                      alt={editingAsset.name}
-                      fill
-                      unoptimized
-                      className="object-cover"
-                    />
-                  ) : null}
-                  <span className="absolute bottom-2 left-2 text-[10px] font-mono font-bold bg-slate-900/80 text-white px-2 py-0.5 rounded">
-                    {editingAsset.dimensions} · {editingAsset.size}
-                  </span>
-                </div>
-
+              {/* Drawer Header */}
+              <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0 bg-slate-50/50 dark:bg-slate-800/30">
                 <div>
-                  <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">Asset Name / Title *</label>
-                  <input
-                    type="text"
-                    required
-                    value={editForm.name}
-                    onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-bold outline-none"
-                  />
+                  <h3 className="font-black text-slate-900 dark:text-white text-base flex items-center gap-2">
+                    <Edit2 className="w-4 h-4 text-brand-600" />
+                    <span>Edit Media Metadata</span>
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    Update SEO alt tags, title, and descriptive captions
+                  </p>
                 </div>
-
-                <div>
-                  <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">SEO Alt Text Description *</label>
-                  <textarea
-                    rows={3}
-                    required
-                    value={editForm.altText}
-                    onChange={(e) => setEditForm({ ...editForm, altText: e.target.value })}
-                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-medium outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">Category</label>
-                  <select
-                    value={editForm.category}
-                    onChange={(e) => setEditForm({ ...editForm, category: e.target.value as MediaAsset["category"] })}
-                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-bold outline-none"
-                  >
-                    <option value="Branding">Branding</option>
-                    <option value="Campaigns">Campaigns</option>
-                    <option value="Services">Services</option>
-                    <option value="Badges">Badges</option>
-                    <option value="Partners">Partners</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">Tags (Comma separated)</label>
-                  <input
-                    type="text"
-                    value={editForm.tagsStr}
-                    onChange={(e) => setEditForm({ ...editForm, tagsStr: e.target.value })}
-                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-medium outline-none"
-                  />
-                </div>
-              </div>
-
-              <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
                 <button
                   type="button"
                   onClick={() => setEditingAsset(null)}
-                  className="flex-1 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 font-bold text-xs text-slate-700 dark:text-slate-300"
+                  className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 cursor-pointer transition-colors"
                 >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 py-3 rounded-2xl bg-brand-500 hover:bg-brand-600 text-white font-black text-xs shadow-lux cursor-pointer"
-                >
-                  Save Metadata Changes
-                </button>
-              </div>
-            </form>
-          </div>
-        </Portal>
-      )}
-
-      {/* ─── PREVIEW MODAL ─── */}
-      {previewAsset && (
-        <Portal>
-          <div className="fixed inset-0 z-[99999] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-2xl w-full p-6 space-y-4 shadow-2xl animate-in zoom-in-95 duration-200">
-              <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
-                <h3 className="font-black text-slate-900 dark:text-white text-sm truncate">{previewAsset.name}</h3>
-                <button type="button" onClick={() => setPreviewAsset(null)} className="text-slate-400 hover:text-slate-600">
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
-              <div className="h-80 w-full rounded-2xl overflow-hidden bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center relative">
-                {previewAsset.url ? (
-                  <Image
-                    src={previewAsset.url}
-                    alt={previewAsset.altText}
-                    fill
-                    unoptimized
-                    className="object-contain"
+              {/* Drawer Body (Scrollable) */}
+              <div className="flex-1 overflow-y-auto p-5 space-y-5 text-xs">
+                {/* Visual Image Preview */}
+                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-950/5 dark:bg-slate-950 overflow-hidden relative group">
+                  <div className="h-56 w-full flex items-center justify-center p-3 relative">
+                    <Image
+                      src={formatImageUrl(editingAsset.url)}
+                      alt={editingAsset.altText || editingAsset.fileName}
+                      fill
+                      unoptimized
+                      className="object-contain p-2"
+                    />
+                  </div>
+
+                  {/* Quick Overlay Actions */}
+                  <div className="p-2.5 bg-slate-50 dark:bg-slate-850 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleCopyUrl(editingAsset.url, editingAsset.id)}
+                      className="flex-1 py-1.5 px-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-[11px] text-slate-700 dark:text-slate-300 hover:text-brand-600 transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                    >
+                      {copiedId === editingAsset.id ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-emerald-600" />
+                          <span className="text-emerald-600">Copied URL</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5 text-slate-400" />
+                          <span>Copy Image Link</span>
+                        </>
+                      )}
+                    </button>
+
+                    <a
+                      href={formatImageUrl(editingAsset.url)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="py-1.5 px-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-[11px] text-slate-700 dark:text-slate-300 hover:text-brand-600 transition-colors flex items-center gap-1.5 shadow-2xs"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Open Full Size</span>
+                    </a>
+                  </div>
+                </div>
+
+                {/* Technical File Metadata Card */}
+                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 space-y-2 text-[11px]">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400 font-bold">Folder:</span>
+                    <span className="font-mono font-bold text-brand-600 bg-brand-50 dark:bg-brand-950 px-2 py-0.5 rounded border border-brand-200 dark:border-brand-800 text-[10px]">
+                      {editingAsset.folder}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400 font-bold">File Name:</span>
+                    <span className="font-mono font-bold text-slate-900 dark:text-white truncate max-w-[240px]" title={editingAsset.fileName}>
+                      {editingAsset.fileName}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400 font-bold">Content Type:</span>
+                    <span className="font-mono text-slate-700 dark:text-slate-300">
+                      {editingAsset.contentType || "image/png"}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400 font-bold">File Size:</span>
+                    <span className="font-mono font-bold text-slate-900 dark:text-white">
+                      {formatBytes(editingAsset.size)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400 font-bold">Uploaded At:</span>
+                    <span className="font-mono text-slate-700 dark:text-slate-300">
+                      {formatDate(editingAsset.uploadedAt)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Form Field: Title */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="font-bold text-slate-700 dark:text-slate-300">
+                      Asset Title
+                    </label>
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      {editForm.title.length}/200
+                    </span>
+                  </div>
+                  <input
+                    type="text"
+                    maxLength={200}
+                    placeholder="e.g. Kitchen Chimney Deep Cleaning Service Graphic"
+                    value={editForm.title}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({ ...prev, title: e.target.value }))
+                    }
+                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold text-xs focus:outline-none focus:border-brand-500"
                   />
-                ) : null}
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Display name shown in pickers and admin directories.
+                  </p>
+                </div>
+
+                {/* Form Field: SEO Alt Text */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                      <span>SEO Alt Text</span>
+                      <span className="text-[9px] px-1.5 py-0.2 rounded font-black uppercase bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                        Accessibility
+                      </span>
+                    </label>
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      {editForm.altText.length}/500
+                    </span>
+                  </div>
+                  <textarea
+                    rows={3}
+                    maxLength={500}
+                    placeholder="Describe this image accurately for search engines and visually impaired users..."
+                    value={editForm.altText}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({ ...prev, altText: e.target.value }))
+                    }
+                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-medium text-xs focus:outline-none focus:border-brand-500"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Used as the HTML &lt;img alt=&quot;...&quot;&gt; attribute on public website pages.
+                  </p>
+                </div>
+
+                {/* Form Field: Caption */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="font-bold text-slate-700 dark:text-slate-300">
+                      Caption
+                    </label>
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      {editForm.caption.length}/500
+                    </span>
+                  </div>
+                  <input
+                    type="text"
+                    maxLength={500}
+                    placeholder="Optional sub-caption or brief tagline..."
+                    value={editForm.caption}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({ ...prev, caption: e.target.value }))
+                    }
+                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-medium text-xs focus:outline-none focus:border-brand-500"
+                  />
+                </div>
+
+                {/* Form Field: Description */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="font-bold text-slate-700 dark:text-slate-300">
+                      Detailed Description
+                    </label>
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      {editForm.description.length}/2000
+                    </span>
+                  </div>
+                  <textarea
+                    rows={3}
+                    maxLength={2000}
+                    placeholder="Internal notes or extended description for platform catalog documentation..."
+                    value={editForm.description}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        description: e.target.value,
+                      }))
+                    }
+                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-medium text-xs focus:outline-none focus:border-brand-500"
+                  />
+                </div>
               </div>
 
-              <div className="flex items-center justify-between text-xs pt-1">
-                <div>
-                  <p className="font-bold text-slate-900 dark:text-white">Alt Tag: &quot;{previewAsset.altText}&quot;</p>
-                  <p className="text-[10px] text-slate-400 mt-0.5">{previewAsset.type} · {previewAsset.dimensions} · {previewAsset.size}</p>
-                </div>
-                <a
-                  href={previewAsset.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="px-4 py-2 rounded-xl bg-brand-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md"
+              {/* Drawer Footer Actions (Strictly ONE Primary Button per AGENTS.md) */}
+              <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex items-center gap-3 shrink-0 bg-slate-50/50 dark:bg-slate-800/30">
+                {/* Secondary Button */}
+                <button
+                  type="button"
+                  onClick={() => setEditingAsset(null)}
+                  className="flex-1 py-2.5 px-4 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 font-bold text-xs transition-colors cursor-pointer"
                 >
-                  <ExternalLink className="w-4 h-4" />
-                  <span>Open High Res</span>
-                </a>
+                  Cancel
+                </button>
+
+                {/* Single Primary Button */}
+                <button
+                  type="submit"
+                  disabled={isSavingEdit}
+                  className="flex-1 py-2.5 px-4 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-black text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+                >
+                  {isSavingEdit ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Save Changes</span>
+                    </>
+                  )}
+                </button>
               </div>
-            </div>
+            </form>
           </div>
         </Portal>
       )}
-
     </div>
   );
 }

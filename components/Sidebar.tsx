@@ -253,7 +253,6 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile }: SidebarProps) {
           title: "Media Library",
           icon: FileImage,
           href: "/media",
-          badge: "Coming Soon",
         },
       ],
     },

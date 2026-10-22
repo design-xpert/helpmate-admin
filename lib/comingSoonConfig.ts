@@ -36,10 +36,6 @@ export const COMING_SOON_CONFIGS: Record<string, ComingSoonModuleConfig> = {
     path: "/faq",
     title: "FAQ & Help Center Manager",
   },
-  "/media": {
-    path: "/media",
-    title: "Media Assets Library",
-  },
   "/payments": {
     path: "/payments",
     title: "Payments & Online Gateway",
