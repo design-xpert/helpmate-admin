@@ -41,7 +41,7 @@ import {
   formatImageUrl,
 } from "@/lib/api";
 import { ShimmerRow, ShimmerCardGrid } from "@/components/ShimmerLoader";
-import { Wrench, Plus, CheckCircle2, MapPin, Tag, X, Filter, Sliders, Briefcase, Trash2, Link, Layers, AlertCircle, Edit, ChevronDown, FileImage, Upload, Megaphone, Eye, Flame, Image as ImageIcon, Link as LinkIcon, Copy, Loader2, Clock } from "lucide-react";
+import { Wrench, Plus, CheckCircle2, Check, Search, MapPin, Tag, X, Filter, Sliders, Briefcase, Trash2, Link, Layers, AlertCircle, Edit, ChevronDown, FileImage, Upload, Megaphone, Eye, Flame, Image as ImageIcon, Link as LinkIcon, Copy, Loader2, Clock, Lock } from "lucide-react";
 
 function safeStr(val: any): string {
   if (val === null || val === undefined) return "";
@@ -449,18 +449,33 @@ export default function CmsPage() {
         }
       }
 
-      const mapped: ServiceAddon[] = rawList.map((a: any) => ({
-        id: a._id || a.id,
-        title: a.addonName || a.title || "Spare Part",
-        price: a.price ?? 199,
-        unit: a.unit || "Per Unit",
-        category: a.category || a.categoryName || (typeof a.categoryId === "object" ? a.categoryId?.categoryName : "General"),
-        description: a.description || "",
-        imageUrl: a.imageUrl || a.thumbnailUrl || "",
-        categoryId: typeof a.categoryId === "object" ? a.categoryId?._id : a.categoryId,
-        subCategoryId: a.subCategoryId,
-        status: a.status !== false ? "Active" : "Inactive",
-      }));
+      const catsList = categoriesFromApi.length > 0 ? categoriesFromApi : (getStoredModuleData<ApiCategory[]>("cms_categories_api") || []);
+      const mapped: ServiceAddon[] = rawList.map((a: any) => {
+        const catIdVal = typeof a.categoryId === "object" ? a.categoryId?._id : a.categoryId;
+        const subCatIdVal = typeof a.subCategoryId === "object" ? a.subCategoryId?._id : a.subCategoryId;
+        const matchedCat = catsList.find(
+          (c) => (catIdVal && c._id === catIdVal) || (a.category && c.categoryName.toLowerCase().trim() === a.category.toLowerCase().trim())
+        );
+        const matchedSub = matchedCat?.subCategories?.find(
+          (s: any) => (subCatIdVal && s._id === subCatIdVal) || (a.subcategory && s.name.toLowerCase().trim() === a.subcategory.toLowerCase().trim())
+        );
+        const resolvedCatName = matchedCat?.categoryName || (typeof a.categoryId === "object" ? a.categoryId?.categoryName : a.category) || a.categoryName || "General";
+        const resolvedSubName = matchedSub?.name || (typeof a.subCategoryId === "object" ? a.subCategoryId?.name : a.subcategory) || a.subCategoryName || "";
+
+        return {
+          id: a._id || a.id,
+          title: a.addonName || a.title || "Spare Part",
+          price: a.price ?? 199,
+          unit: a.unit || "Per Unit",
+          category: resolvedCatName,
+          subcategory: resolvedSubName,
+          description: a.description || "",
+          imageUrl: a.imageUrl || a.thumbnailUrl || "",
+          categoryId: catIdVal || matchedCat?._id,
+          subCategoryId: subCatIdVal || matchedSub?._id,
+          status: a.status !== false ? "Active" : "Inactive",
+        };
+      });
       setAddons(mapped);
       if (!catId && !subCatId) {
         setCachedModuleData("cms_addons", mapped);
@@ -638,15 +653,81 @@ export default function CmsPage() {
     });
   };
 
-  const handleDeleteAddon = async (addonId: string) => {
-    if (addonId.length === 24) {
-      await deleteAddonApi(addonId);
+  // Add-ons Management Modal State
+  const [isAddonsModalOpen, setIsAddonsModalOpen] = useState(false);
+  const [offeringAddonModalIndex, setOfferingAddonModalIndex] = useState<number | null>(null);
+  const [addonModalSearch, setAddonModalSearch] = useState("");
+  const [addonModalCategoryFilter, setAddonModalCategoryFilter] = useState("All");
+  const [addonModalSubCategoryFilter, setAddonModalSubCategoryFilter] = useState("All");
+  const [addonModalViewFilter, setAddonModalViewFilter] = useState<"all" | "linked">("all");
+  const [addonToDelete, setAddonToDelete] = useState<ServiceAddon | null>(null);
+  const [isDeletingAddon, setIsDeletingAddon] = useState(false);
+
+  // Selected Service Details & Add-ons Modal State
+  const [selectedService, setSelectedService] = useState<ServiceItem | null>(null);
+
+  const handleOpenAddonsModal = (service?: ServiceItem | null) => {
+    setSelectedService(service || null);
+    setOfferingAddonModalIndex(null);
+    setAddonModalSearch("");
+    setAddonModalViewFilter("all");
+    setAddonToDelete(null);
+
+    if (!service && categoriesFromApi.length > 0) {
+      const firstCat = categoriesFromApi[0];
+      setAddonModalCategoryFilter(firstCat.categoryName);
+      const firstSub = firstCat.subCategories?.[0];
+      setAddonModalSubCategoryFilter(firstSub?.name || "All");
+    } else {
+      setAddonModalCategoryFilter("All");
+      setAddonModalSubCategoryFilter("All");
     }
-    setAddons((prev) => {
-      const updated = prev.filter((a) => a.id !== addonId);
-      setCachedModuleData("cms_addons", updated);
-      return updated;
+
+    setIsAddonsModalOpen(true);
+  };
+
+  const addonModalCategories = useMemo(() => {
+    const set = new Set<string>();
+    addons.forEach((a) => {
+      if (a.category) set.add(a.category);
     });
+    return ["All", ...Array.from(set)];
+  }, [addons]);
+
+  const handleDeleteAddon = async (addonId: string) => {
+    try {
+      setIsDeletingAddon(true);
+      if (addonId.length === 24) {
+        await deleteAddonApi(addonId);
+      }
+      setAddons((prev) => {
+        const updated = prev.filter((a) => a.id !== addonId);
+        setCachedModuleData("cms_addons", updated);
+        return updated;
+      });
+      setServices((prev) =>
+        prev.map((s) => ({
+          ...s,
+          addons: s.addons ? s.addons.filter((a) => a.id !== addonId) : [],
+        }))
+      );
+      setSelectedService((prev) =>
+        prev ? { ...prev, addons: prev.addons ? prev.addons.filter((a) => a.id !== addonId) : [] } : null
+      );
+      setServiceOfferings((prev) =>
+        prev.map((off) => ({
+          ...off,
+          addonIds: off.addonIds ? off.addonIds.filter((id) => id !== addonId) : [],
+        }))
+      );
+      setAddonToDelete(null);
+      toast.success("Add-on Deleted", "Add-on deleted successfully.");
+    } catch (err: any) {
+      console.error("handleDeleteAddon error:", err);
+      toast.error("Delete Error", err?.message || "Failed to delete add-on.");
+    } finally {
+      setIsDeletingAddon(false);
+    }
   };
 
   const handleToggleAddonStatus = async (addonId: string, currentStatus?: string) => {
@@ -661,6 +742,20 @@ export default function CmsPage() {
       setCachedModuleData("cms_addons", updated);
       return updated;
     });
+    setServices((prev) =>
+      prev.map((s) => ({
+        ...s,
+        addons: s.addons ? s.addons.map((a) => (a.id === addonId ? { ...a, status: newStatusStr } : a)) : [],
+      }))
+    );
+    setSelectedService((prev) =>
+      prev
+        ? {
+            ...prev,
+            addons: prev.addons ? prev.addons.map((a) => (a.id === addonId ? { ...a, status: newStatusStr } : a)) : [],
+          }
+        : null
+    );
   };
 
   // Website Visitor Promo Popup Banner State
@@ -669,9 +764,6 @@ export default function CmsPage() {
   const [secondBannerIconUrl, setSecondBannerIconUrl] = useState("");
   const [targetLinkUrl, setTargetLinkUrl] = useState("https://helpmate-theta.vercel.app/services/ac");
   const [isBannerPreviewOpen, setIsBannerPreviewOpen] = useState(false);
-
-  // Selected Service Details & Add-ons Modal State
-  const [selectedService, setSelectedService] = useState<ServiceItem | null>(null);
 
   // Category Filter Flow Actions - fetches from /api/package?categoryId=${catId}&page=1&limit=10
   const handleSelectCategoryFilter = async (catId: string, catName: string) => {
@@ -692,7 +784,8 @@ export default function CmsPage() {
   ];
 
   // Helper to toggle linking an addon to a service
-  const handleToggleLinkAddonToService = (serviceId: string, addon: ServiceAddon) => {
+  const handleToggleLinkAddonToService = async (serviceId: string, addon: ServiceAddon) => {
+    let nextAddons: ServiceAddon[] = [];
     setServices((prevServices) =>
       prevServices.map((srv) => {
         if (srv.id === serviceId) {
@@ -701,6 +794,7 @@ export default function CmsPage() {
           const updatedAddons = exists
             ? currentAddons.filter((a) => a.id !== addon.id)
             : [...currentAddons, addon];
+          nextAddons = updatedAddons;
 
           const updatedService = { ...srv, addons: updatedAddons };
           if (selectedService && selectedService.id === serviceId) {
@@ -711,6 +805,17 @@ export default function CmsPage() {
         return srv;
       })
     );
+
+    if (serviceId.length === 24) {
+      try {
+        const addonIds = nextAddons.map((a) => a.id).filter((id) => id && id.length === 24);
+        const form = new FormData();
+        form.append("addons", JSON.stringify(addonIds));
+        await updatePackageApi(serviceId, form);
+      } catch (err) {
+        console.error("Error updating service addons:", err);
+      }
+    }
   };
 
   const handleAddSubcategoryToCategory = async (catName: string, subName: string) => {
@@ -849,30 +954,25 @@ export default function CmsPage() {
     },
     {
       key: "addons",
-      header: "Linked Spare Part Add-ons",
-      accessor: (row) => (
-        <div className="flex flex-wrap gap-1 items-center">
-          {row.addons && row.addons.length > 0 ? (
-            row.addons.map((a) => (
-              <span
-                key={a.id}
-                className="px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 dark:bg-purple-950 dark:text-purple-300 font-extrabold text-[10px] border border-purple-200 dark:border-purple-800 flex items-center gap-1"
-              >
-                <Tag className="w-2.5 h-2.5" />
-                {a.title} (₹{a.price})
-              </span>
-            ))
-          ) : (
-            <button
-              type="button"
-              onClick={() => setSelectedService(row)}
-              className="text-[10px] font-bold text-brand-600 hover:underline flex items-center gap-1"
-            >
-              <Link className="w-3 h-3" /> + Link Spare Parts
-            </button>
-          )}
-        </div>
-      ),
+      header: "Add-ons",
+      accessor: (row) => {
+        const count = row.addons?.length || 0;
+        return (
+          <button
+            type="button"
+            onClick={() => handleOpenAddonsModal(row)}
+            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold border transition-all cursor-pointer group shadow-2xs ${
+              count > 0
+                ? "bg-purple-50 hover:bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:hover:bg-purple-900/60 dark:text-purple-300 border-purple-200 dark:border-purple-800"
+                : "bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-400 dark:hover:text-slate-200 border-slate-200 dark:border-slate-700"
+            }`}
+            title={`Click to view & manage add-ons (${count} linked)`}
+          >
+            <Wrench className={`w-3.5 h-3.5 transition-transform group-hover:rotate-12 ${count > 0 ? "text-purple-600 dark:text-purple-400" : "text-slate-400"}`} />
+            <span>{count} Add-on{count === 1 ? "" : "s"}</span>
+          </button>
+        );
+      },
     },
     {
       key: "status",
@@ -908,7 +1008,7 @@ export default function CmsPage() {
             {
               label: "Add-ons",
               icon: Wrench,
-              onClick: () => setSelectedService(row),
+              onClick: () => handleOpenAddonsModal(row),
             },
             {
               label: "Delete",
@@ -1194,19 +1294,25 @@ export default function CmsPage() {
     setAddonImageFile(null);
 
     const initialCat = (categoriesFromApi.length > 0 ? categoriesFromApi : []).find(
-      (c) => c._id === defaultCatId || c.categoryName === serviceCategory
+      (c) =>
+        (defaultCatId && c._id === defaultCatId) ||
+        (defaultCatId && c.categoryName.toLowerCase().trim() === defaultCatId.toLowerCase().trim()) ||
+        (serviceCategory && (c._id === serviceCategory || c.categoryName.toLowerCase().trim() === serviceCategory.toLowerCase().trim()))
     ) || categoriesFromApi[0];
 
     const initialCatName = initialCat?.categoryName || serviceCategory || "";
     setAddonCategory(initialCatName);
-    setAddonCategoryId(initialCat?._id || "");
+    setAddonCategoryId(initialCat?._id || defaultCatId || "");
 
     const initialSub = initialCat?.subCategories?.find(
-      (s: any) => s._id === defaultSubCatId || s.name === selectedSubcategory
+      (s: any) =>
+        (defaultSubCatId && s._id === defaultSubCatId) ||
+        (defaultSubCatId && s.name.toLowerCase().trim() === defaultSubCatId.toLowerCase().trim()) ||
+        (selectedSubcategory && (s._id === selectedSubcategory || s.name.toLowerCase().trim() === selectedSubcategory.toLowerCase().trim()))
     ) || initialCat?.subCategories?.[0];
 
     setAddonSubCategory(initialSub?.name || selectedSubcategory || "");
-    setAddonSubCategoryId(initialSub?._id || "");
+    setAddonSubCategoryId(initialSub?._id || defaultSubCatId || "");
 
     setIsAddAddonOpen(true);
   };
@@ -1277,6 +1383,130 @@ export default function CmsPage() {
       return updated;
     });
   };
+
+  const handleOpenAddonsModalForOffering = (packageIndex: number) => {
+    setSelectedService(null);
+    setOfferingAddonModalIndex(packageIndex);
+    setAddonModalSearch("");
+    setAddonModalViewFilter("all");
+    setAddonToDelete(null);
+    setIsAddonsModalOpen(true);
+  };
+
+  const handleToggleLinkAddonToOffering = (addonId: string) => {
+    if (offeringAddonModalIndex === null) return;
+    const currentOff = serviceOfferings[offeringAddonModalIndex];
+    if (!currentOff) return;
+    const currentIds = currentOff.addonIds || [];
+    const exists = currentIds.includes(addonId);
+    const updated = exists ? currentIds.filter((id) => id !== addonId) : [...currentIds, addonId];
+    handleUpdateOfferingRow(offeringAddonModalIndex, "addonIds", updated);
+  };
+
+  // Active Scoped Category & Subcategory for the Addons Modal
+  const activeModalCategoryInfo = useMemo(() => {
+    let catId = "";
+    let catName = "";
+    let subCatId = "";
+    let subCatName = "";
+    let isScopedToService = false;
+
+    if (offeringAddonModalIndex !== null) {
+      isScopedToService = true;
+      const matchedCat = categoriesFromApi.find(
+        (c) => c._id === serviceCategory || c.categoryName.toLowerCase().trim() === (serviceCategory || "").toLowerCase().trim()
+      );
+      catId = matchedCat?._id || serviceCategory || "";
+      catName = matchedCat?.categoryName || serviceCategory || "";
+
+      const matchedSub = matchedCat?.subCategories?.find(
+        (s: any) => s._id === selectedSubcategory || s.name.toLowerCase().trim() === (selectedSubcategory || "").toLowerCase().trim()
+      );
+      subCatId = matchedSub?._id || selectedSubcategory || "";
+      subCatName = matchedSub?.name || selectedSubcategory || "";
+    } else if (selectedService) {
+      isScopedToService = true;
+      const rawCat = selectedService.category || selectedService.categoryId || "";
+      const rawSub = selectedService.subcategory || selectedService.subCategoryId || "";
+
+      const matchedCat = categoriesFromApi.find(
+        (c) => (selectedService.categoryId && c._id === selectedService.categoryId) ||
+               (rawCat && c._id === rawCat) ||
+               (rawCat && c.categoryName.toLowerCase().trim() === rawCat.toLowerCase().trim())
+      );
+      catId = matchedCat?._id || selectedService.categoryId || rawCat;
+      catName = matchedCat?.categoryName || selectedService.category || rawCat;
+
+      const matchedSub = matchedCat?.subCategories?.find(
+        (s: any) => (selectedService.subCategoryId && s._id === selectedService.subCategoryId) ||
+                   (rawSub && s._id === rawSub) ||
+                   (rawSub && s.name.toLowerCase().trim() === rawSub.toLowerCase().trim())
+      );
+      subCatId = matchedSub?._id || selectedService.subCategoryId || rawSub;
+      subCatName = matchedSub?.name || selectedService.subcategory || rawSub;
+    } else {
+      // Standalone mode: using addonModalCategoryFilter and addonModalSubCategoryFilter
+      const matchedCat = categoriesFromApi.find(
+        (c) => c.categoryName === addonModalCategoryFilter || c._id === addonModalCategoryFilter
+      ) || categoriesFromApi[0];
+      catId = matchedCat?._id || "";
+      catName = matchedCat?.categoryName || "";
+
+      const subList = matchedCat?.subCategories || [];
+      const matchedSub = subList.find(
+        (s: any) => s.name === addonModalSubCategoryFilter || s._id === addonModalSubCategoryFilter
+      ) || subList[0];
+      subCatId = matchedSub?._id || "";
+      subCatName = matchedSub?.name || "";
+    }
+
+    return { catId, catName, subCatId, subCatName, isScopedToService };
+  }, [offeringAddonModalIndex, selectedService, serviceCategory, selectedSubcategory, categoriesFromApi, addonModalCategoryFilter, addonModalSubCategoryFilter]);
+
+  const modalFilteredAddons = useMemo(() => {
+    const { catId, catName, subCatId, subCatName } = activeModalCategoryInfo;
+
+    return addons.filter((addon) => {
+      // 1. Linked view filter
+      if (offeringAddonModalIndex !== null) {
+        if (addonModalViewFilter === "linked") {
+          const isLinked = serviceOfferings[offeringAddonModalIndex]?.addonIds?.includes(addon.id);
+          if (!isLinked) return false;
+        }
+      } else if (selectedService && addonModalViewFilter === "linked") {
+        const isLinked = selectedService.addons?.some((a) => a.id === addon.id);
+        if (!isLinked) return false;
+      }
+
+      // 2. Strict Category and Subcategory matching ("addon must show by category and subcategory dont show all addons")
+      if (catId || catName) {
+        const matchesCategory =
+          (catId && addon.categoryId === catId) ||
+          (catName && addon.category && addon.category.toLowerCase().trim() === catName.toLowerCase().trim());
+        if (!matchesCategory) return false;
+      }
+
+      if (subCatId || subCatName) {
+        const matchesSubCategory =
+          (subCatId && addon.subCategoryId === subCatId) ||
+          (subCatName && addon.subcategory && addon.subcategory.toLowerCase().trim() === subCatName.toLowerCase().trim());
+        if (!matchesSubCategory) return false;
+      }
+
+      // 3. Search query
+      if (addonModalSearch.trim()) {
+        const q = addonModalSearch.toLowerCase().trim();
+        const matchesTitle = (addon.title || "").toLowerCase().includes(q);
+        const matchesDesc = (addon.description || "").toLowerCase().includes(q);
+        const matchesPrice = String(addon.price || "").includes(q);
+        if (!matchesTitle && !matchesDesc && !matchesPrice) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [addons, offeringAddonModalIndex, serviceOfferings, selectedService, addonModalViewFilter, addonModalSearch, activeModalCategoryInfo]);
 
   const handlePackageListEnter = (
     event: React.KeyboardEvent<HTMLTextAreaElement>,
@@ -1699,6 +1929,7 @@ export default function CmsPage() {
                   duration: formatDurationLabel(firstOffDurationMins),
                   includeInPackage: cleanPackagePoints(firstOff.includeInPackage),
                   excludeFromPackage: cleanPackagePoints(firstOff.excludeFromPackage),
+                  addons: addons.filter((a) => (firstOff.addonIds || []).includes(a.id)),
                   thumbnailUrl: firstOff.imageFile instanceof File
                     ? (updatedImageUrl || firstOff.thumbnailUrl || s.thumbnailUrl || "")
                     : (firstOff.imageRemoved ? "" : (updatedImageUrl || firstOff.thumbnailUrl || "")),
@@ -1916,6 +2147,22 @@ export default function CmsPage() {
           toast.error("Create Add-on Failed", createRes.message || "Unknown error");
           return;
         }
+        const createdId = (createRes as any)?.data?._id || (createRes as any)?.data?.id || (createRes as any)?._id || (createRes as any)?.id;
+        if (offeringAddonModalIndex !== null && createdId) {
+          setServiceOfferings((prev) => {
+            const updated = [...prev];
+            if (updated[offeringAddonModalIndex]) {
+              const currentIds = updated[offeringAddonModalIndex].addonIds || [];
+              if (!currentIds.includes(createdId)) {
+                updated[offeringAddonModalIndex] = {
+                  ...updated[offeringAddonModalIndex],
+                  addonIds: [...currentIds, createdId],
+                };
+              }
+            }
+            return updated;
+          });
+        }
         toast.success("Add-on Created", `"${addonTitle.trim()}" created successfully.`);
       }
 
@@ -1928,7 +2175,7 @@ export default function CmsPage() {
       setAddonImageFile(null);
 
       // Recall addons API to reload and show perfect data
-      await fetchAddonsFromBackend();
+      await fetchAddonsFromBackend(undefined, undefined, true);
     } catch (err: any) {
       console.error("handleSaveAddon error:", err);
       toast.error("Save Error", err?.message || "Failed to save add-on.");
@@ -1977,10 +2224,10 @@ export default function CmsPage() {
         <div>
           <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
             <Wrench className="w-6 h-6 text-brand-600" />
-            <span>Services & Master Pricing Catalog</span>
+            <span>Services CMS</span>
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
-            Manage fixed service rates, diagnostic inspection charges, spare part add-ons, and Varanasi pincode serviceability rules.
+            Manage fixed service rates, diagnostic inspection charges, Add-ons, and Varanasi pincode serviceability rules.
           </p>
         </div>
 
@@ -2015,11 +2262,14 @@ export default function CmsPage() {
               : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
               }`}
           >
-            Services & Pricing CMS
+            Services CMS
           </button>
           <button
             type="button"
-            onClick={() => setActiveTab("addons")}
+            onClick={() => {
+              setActiveTab("addons");
+              handleOpenAddonsModal(null);
+            }}
             className={`px-3 sm:px-4 py-2 rounded-xl transition-all whitespace-nowrap cursor-pointer ${activeTab === "addons"
               ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm"
               : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
@@ -2098,11 +2348,34 @@ export default function CmsPage() {
         isLoading ? (
           <ShimmerRow count={5} />
         ) : (
-          <DataTable
-            columns={addonColumns}
-            data={addons}
-            searchPlaceholder="Search add-on title..."
-          />
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-purple-50/60 dark:bg-purple-950/30 rounded-2xl border border-purple-200 dark:border-purple-800">
+              <div className="flex items-center gap-2.5">
+                <Wrench className="w-5 h-5 text-purple-600 dark:text-purple-400 shrink-0" />
+                <div>
+                  <h4 className="font-extrabold text-sm text-slate-900 dark:text-white">
+                    Add-on Parts Catalog ({addons.length})
+                  </h4>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                    Manage spare parts, accessories, and unit rates. Add new, edit, or delete items.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleOpenAddonsModal(null)}
+                className="px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-xs shadow-xs transition-all flex items-center gap-1.5 cursor-pointer self-start sm:self-center"
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>Open Add-ons Manager</span>
+              </button>
+            </div>
+            <DataTable
+              columns={addonColumns}
+              data={addons}
+              searchPlaceholder="Search add-on title..."
+            />
+          </div>
         )
       ) : (
         <DataTable
@@ -2112,88 +2385,401 @@ export default function CmsPage() {
         />
       )}
 
-      {/* SERVICE DETAILS & CONNECTED ADD-ONS MODAL */}
-      {selectedService && (
+      {/* COMPREHENSIVE ADD-ONS MANAGEMENT POPUP */}
+      {isAddonsModalOpen && (
         <Portal>
-          <div className="fixed inset-0 z-[99999] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 outline-none">
-            <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl max-w-lg w-full space-y-4 ring-1 ring-slate-900/10 dark:ring-slate-800 shadow-2xl outline-none max-h-[90vh] overflow-y-auto">
-              <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
-                <div>
-                  <h3 className="font-extrabold text-slate-900 dark:text-white text-base">
-                    {selectedService.title}
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Category: <span className="font-bold text-brand-600">{selectedService.category}</span> • Base Rate: ₹{selectedService.price} • Duration: <span className="font-bold text-slate-700 dark:text-slate-300">{formatDurationLabel(calculateDurationInMinutes(selectedService.duration || "45 mins"))}</span>
-                  </p>
+          <div className="fixed inset-0 z-[100000] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 outline-none animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-4xl w-full border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden outline-none animate-in zoom-in-95 duration-200">
+              {/* Modal Header */}
+              <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex items-start justify-between gap-3 bg-slate-50/70 dark:bg-slate-800/40">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-2xl bg-purple-100 dark:bg-purple-950/80 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-800 flex items-center justify-center shrink-0">
+                    <Wrench className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="font-extrabold text-slate-900 dark:text-white text-base truncate">
+                        {offeringAddonModalIndex !== null && serviceOfferings[offeringAddonModalIndex]
+                          ? `Add-ons: ${serviceOfferings[offeringAddonModalIndex].title || `Package #${offeringAddonModalIndex + 1}`}`
+                          : selectedService
+                            ? `Add-ons: ${selectedService.title}`
+                            : "Add-on Catalog"}
+                      </h3>
+                      {offeringAddonModalIndex !== null && serviceOfferings[offeringAddonModalIndex] ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300 border border-purple-200 dark:border-purple-800 shrink-0">
+                          {(serviceOfferings[offeringAddonModalIndex].addonIds || []).length} Linked
+                        </span>
+                      ) : selectedService ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300 border border-purple-200 dark:border-purple-800 shrink-0">
+                          {selectedService.addons?.length || 0} Linked
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="flex items-center gap-2 mt-1 text-xs text-slate-500 dark:text-slate-400 font-medium flex-wrap">
+                      <span className="flex items-center gap-1">
+                        Category: <strong className="text-brand-600 font-bold">{activeModalCategoryInfo.catName || "General"}</strong>
+                      </span>
+                      {activeModalCategoryInfo.subCatName && (
+                        <>
+                          <span className="text-slate-300 dark:text-slate-600">•</span>
+                          <span className="flex items-center gap-1">
+                            Subcategory: <strong className="text-purple-600 dark:text-purple-400 font-bold">{activeModalCategoryInfo.subCatName}</strong>
+                          </span>
+                        </>
+                      )}
+                      {offeringAddonModalIndex !== null && serviceOfferings[offeringAddonModalIndex] && (
+                        <>
+                          <span className="text-slate-300 dark:text-slate-600">•</span>
+                          <span>Base Rate: <strong className="text-slate-700 dark:text-slate-300 font-mono">₹{serviceOfferings[offeringAddonModalIndex].price}</strong></span>
+                        </>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setSelectedService(null)}
-                  className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-white"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  {/* Single Primary Button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const { catId, subCatId } = activeModalCategoryInfo;
+                      openAddAddonDrawer(catId, subCatId);
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add New Add-on</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAddonsModalOpen(false);
+                      setOfferingAddonModalIndex(null);
+                      setAddonToDelete(null);
+                    }}
+                    className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                    title="Close"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
 
-              {/* Connected Add-ons Section */}
-              <div className="space-y-3 text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="font-extrabold text-slate-900 dark:text-white text-xs flex items-center gap-1.5">
-                    <Tag className="w-4 h-4 text-purple-600" />
-                    Connected Spare Part Add-ons ({selectedService.addons?.length || 0})
-                  </span>
+              {/* Search & Filter Toolbar */}
+              <div className="p-3 sm:px-5 sm:py-3 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+                <div className="relative flex-1">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder={`Search add-ons in ${activeModalCategoryInfo.subCatName || activeModalCategoryInfo.catName || "this category"}...`}
+                    value={addonModalSearch}
+                    onChange={(e) => setAddonModalSearch(e.target.value)}
+                    className="w-full pl-9 pr-7 py-1.5 text-xs bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-1 focus:ring-brand-500 font-medium text-slate-900 dark:text-white placeholder:text-slate-400"
+                  />
+                  {addonModalSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setAddonModalSearch("")}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
                 </div>
 
-                <div className="space-y-2">
-                  {addons.map((addon) => {
-                    const isLinked = selectedService.addons?.some((a) => a.id === addon.id);
+                <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 no-scrollbar">
+                  {/* Category & Subcategory Scoped Indicator or Standalone Dropdowns */}
+                  {activeModalCategoryInfo.isScopedToService ? (
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className="px-2.5 py-1 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 text-[11px] font-extrabold flex items-center gap-1 shadow-2xs">
+                        <Lock className="w-3 h-3 text-purple-500" />
+                        <span>{activeModalCategoryInfo.catName}</span>
+                        {activeModalCategoryInfo.subCatName && (
+                          <>
+                            <span className="text-purple-300 dark:text-purple-600">/</span>
+                            <span>{activeModalCategoryInfo.subCatName}</span>
+                          </>
+                        )}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <select
+                        value={addonModalCategoryFilter}
+                        onChange={(e) => {
+                          const newCatName = e.target.value;
+                          setAddonModalCategoryFilter(newCatName);
+                          const matchedCat = categoriesFromApi.find((c) => c.categoryName === newCatName);
+                          const firstSub = matchedCat?.subCategories?.[0];
+                          setAddonModalSubCategoryFilter(firstSub?.name || "All");
+                        }}
+                        aria-label="Filter add-ons by category"
+                        className="text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1.5 font-bold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-brand-500 cursor-pointer"
+                      >
+                        {categoriesFromApi.map((cat) => (
+                          <option key={cat._id} value={cat.categoryName}>
+                            {cat.categoryName}
+                          </option>
+                        ))}
+                      </select>
+
+                      <select
+                        value={addonModalSubCategoryFilter}
+                        onChange={(e) => setAddonModalSubCategoryFilter(e.target.value)}
+                        aria-label="Filter add-ons by subcategory"
+                        className="text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1.5 font-bold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-brand-500 cursor-pointer"
+                      >
+                        <option value="All">All Subcategories</option>
+                        {(() => {
+                          const matchedCat = categoriesFromApi.find(
+                            (c) => c.categoryName === addonModalCategoryFilter || c._id === addonModalCategoryFilter
+                          );
+                          return (matchedCat?.subCategories || []).map((s: any) => (
+                            <option key={s._id} value={s.name}>
+                              {s.name}
+                            </option>
+                          ));
+                        })()}
+                      </select>
+                    </div>
+                  )}
+
+                  {(offeringAddonModalIndex !== null || selectedService) && (
+                    <div className="flex p-0.5 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-[11px] font-bold shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setAddonModalViewFilter("all")}
+                        className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                          addonModalViewFilter === "all"
+                            ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs font-extrabold"
+                            : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+                        }`}
+                      >
+                        All for Subcategory ({modalFilteredAddons.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAddonModalViewFilter("linked")}
+                        className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 cursor-pointer ${
+                          addonModalViewFilter === "linked"
+                            ? "bg-white dark:bg-slate-900 text-purple-700 dark:text-purple-300 shadow-2xs font-extrabold"
+                            : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+                        }`}
+                      >
+                        <Tag className="w-2.5 h-2.5" />
+                        Linked (
+                        {offeringAddonModalIndex !== null && serviceOfferings[offeringAddonModalIndex]
+                          ? (serviceOfferings[offeringAddonModalIndex].addonIds || []).length
+                          : selectedService?.addons?.length || 0}
+                        )
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Addons List */}
+              <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-2.5 min-h-[300px]">
+                {modalFilteredAddons.length === 0 ? (
+                  <div className="text-center py-12 px-4 border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
+                    <Wrench className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
+                    <h4 className="font-extrabold text-sm text-slate-700 dark:text-slate-300">
+                      No Add-ons for {activeModalCategoryInfo.subCatName ? `"${activeModalCategoryInfo.subCatName}"` : (activeModalCategoryInfo.catName || "this Subcategory")}
+                    </h4>
+                    <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto font-medium">
+                      {addonModalSearch || addonModalViewFilter === "linked"
+                        ? "Try clearing your search query or switching to 'All for Subcategory'."
+                        : `No spare parts have been added to ${activeModalCategoryInfo.catName || "this category"} > ${activeModalCategoryInfo.subCatName || "subcategory"} yet.`}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const { catId, subCatId } = activeModalCategoryInfo;
+                        openAddAddonDrawer(catId, subCatId);
+                      }}
+                      className="mt-3 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/80 dark:hover:bg-purple-900 text-purple-700 dark:text-purple-300 font-extrabold text-xs transition-colors border border-purple-200 dark:border-purple-800 cursor-pointer shadow-2xs"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Add New Add-on for {activeModalCategoryInfo.subCatName || "this Subcategory"}</span>
+                    </button>
+                  </div>
+                ) : (
+                  modalFilteredAddons.map((addon) => {
+                    const isLinked = offeringAddonModalIndex !== null && serviceOfferings[offeringAddonModalIndex]
+                      ? (serviceOfferings[offeringAddonModalIndex].addonIds || []).includes(addon.id)
+                      : selectedService?.addons?.some((a) => a.id === addon.id);
+                    const isConfirmingDelete = addonToDelete?.id === addon.id;
+
                     return (
                       <div
                         key={addon.id}
-                        className={`p-3 rounded-2xl border flex items-center justify-between transition-all ${isLinked
-                          ? "bg-purple-50/60 dark:bg-purple-950/40 border-purple-200 dark:border-purple-800"
-                          : "bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700"
-                          }`}
+                        className={`p-3 sm:p-3.5 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                          isLinked
+                            ? "bg-purple-50/40 dark:bg-purple-950/20 border-purple-200/90 dark:border-purple-800/80 shadow-2xs"
+                            : "bg-white dark:bg-slate-800/40 border-slate-200 dark:border-slate-700/80 hover:border-slate-300"
+                        }`}
                       >
-                        <div>
-                          <span className="font-extrabold text-slate-900 dark:text-white block">
-                            {addon.title}
-                          </span>
-                          <span className="text-[10px] text-slate-500 font-semibold">
-                            ₹{addon.price} / {addon.unit} • Category: {addon.category}
-                          </span>
+                        {/* Left: Thumbnail & Details */}
+                        <div className="flex items-start gap-3 min-w-0 flex-1">
+                          <TableImage
+                            src={addon.imageUrl}
+                            alt={addon.title}
+                            fallbackIcon="image"
+                            containerClassName="w-12 h-12 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 shrink-0 flex items-center justify-center relative shadow-2xs"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-extrabold text-slate-900 dark:text-white text-xs sm:text-sm">
+                                {addon.title}
+                              </span>
+                              <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-600 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700/60">
+                                {addon.category}
+                              </span>
+                              {addon.subcategory && (
+                                <span className="px-1.5 py-0.5 rounded bg-slate-50 dark:bg-slate-800/60 text-[10px] text-slate-500 font-medium">
+                                  {addon.subcategory}
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-2 mt-1 text-xs">
+                              <span className="font-extrabold text-slate-900 dark:text-white">
+                                ₹{addon.price}
+                              </span>
+                              <span className="text-slate-400 text-[11px] font-medium">/ {addon.unit}</span>
+                              <span className="text-slate-300 dark:text-slate-600">•</span>
+                              <button
+                                type="button"
+                                onClick={() => handleToggleAddonStatus(addon.id, addon.status)}
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold transition-all cursor-pointer flex items-center gap-1 border ${
+                                  addon.status === "Active"
+                                    ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100"
+                                    : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-200"
+                                }`}
+                                title="Click to toggle Active/Inactive"
+                              >
+                                <span className={`w-1.5 h-1.5 rounded-full ${addon.status === "Active" ? "bg-emerald-500" : "bg-slate-400"}`} />
+                                {addon.status || "Active"}
+                              </button>
+                            </div>
+
+                            {addon.description && (
+                              <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1 mt-1 font-medium">
+                                {addon.description}
+                              </p>
+                            )}
+                          </div>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => handleToggleLinkAddonToService(selectedService.id, addon)}
-                          className={`px-3 py-1.5 rounded-xl font-extrabold text-[11px] transition-all flex items-center gap-1 ${isLinked
-                            ? "bg-purple-600 text-white shadow-lux"
-                            : "bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-300"
-                            }`}
-                        >
-                          {isLinked ? (
-                            <>
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                              Linked
-                            </>
+
+                        {/* Right: Actions */}
+                        <div className="flex items-center gap-1.5 self-end sm:self-center shrink-0">
+                          {isConfirmingDelete ? (
+                            <div className="flex items-center gap-1.5 bg-rose-50 dark:bg-rose-950/50 p-1.5 rounded-xl border border-rose-200 dark:border-rose-900 animate-in fade-in duration-150">
+                              <span className="text-[10px] font-bold text-rose-700 dark:text-rose-300 pl-1">
+                                Delete?
+                              </span>
+                              <button
+                                type="button"
+                                disabled={isDeletingAddon}
+                                onClick={() => handleDeleteAddon(addon.id)}
+                                className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-[10px] transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
+                              >
+                                {isDeletingAddon ? <Loader2 className="w-3 h-3 animate-spin" /> : "Confirm"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setAddonToDelete(null)}
+                                className="px-2 py-1 rounded-lg bg-white dark:bg-slate-800 hover:bg-slate-100 text-slate-600 dark:text-slate-300 font-bold text-[10px] border border-slate-200 dark:border-slate-700 cursor-pointer"
+                              >
+                                Cancel
+                              </button>
+                            </div>
                           ) : (
                             <>
-                              <Plus className="w-3.5 h-3.5" />
-                              Link Add-on
+                              {/* Link / Unlink Toggle (when offering or service context is active) */}
+                              {(offeringAddonModalIndex !== null || selectedService) && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (offeringAddonModalIndex !== null) {
+                                      handleToggleLinkAddonToOffering(addon.id);
+                                    } else if (selectedService) {
+                                      handleToggleLinkAddonToService(selectedService.id, addon);
+                                    }
+                                  }}
+                                  className={`px-3 py-1.5 rounded-xl font-extrabold text-xs transition-all flex items-center gap-1 cursor-pointer border ${
+                                    isLinked
+                                      ? "bg-purple-100 hover:bg-purple-200 text-purple-700 dark:bg-purple-950/80 dark:hover:bg-purple-900 dark:text-purple-300 border-purple-300 dark:border-purple-700 shadow-2xs"
+                                      : "bg-slate-100 hover:bg-purple-50 hover:text-purple-700 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700"
+                                  }`}
+                                >
+                                  {isLinked ? (
+                                    <>
+                                      <Check className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                                      <span>Linked</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Plus className="w-3.5 h-3.5 text-slate-500" />
+                                      <span>Link Add-on</span>
+                                    </>
+                                  )}
+                                </button>
+                              )}
+
+                              {/* Edit Button */}
+                              <button
+                                type="button"
+                                onClick={() => openEditAddonDrawer(addon)}
+                                className="px-2.5 py-1.5 rounded-xl text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                                title="Edit add-on details"
+                              >
+                                <Edit className="w-3.5 h-3.5" />
+                                <span className="hidden sm:inline">Edit</span>
+                              </button>
+
+                              {/* Delete Button */}
+                              <button
+                                type="button"
+                                onClick={() => setAddonToDelete(addon)}
+                                className="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-transparent hover:border-rose-200 dark:hover:border-rose-900/60 transition-all cursor-pointer"
+                                title="Delete add-on from catalog"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
                             </>
                           )}
-                        </button>
+                        </div>
                       </div>
                     );
-                  })}
-                </div>
+                  })
+                )}
               </div>
 
-              <div className="pt-2">
+              {/* Modal Footer */}
+              <div className="p-3 sm:px-5 sm:py-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 flex items-center justify-between gap-3 text-xs">
+                <span className="text-slate-500 dark:text-slate-400 font-medium">
+                  Showing <strong className="text-slate-800 dark:text-slate-200">{modalFilteredAddons.length}</strong> add-on(s) for{" "}
+                  <strong className="text-purple-600 dark:text-purple-400">{activeModalCategoryInfo.subCatName || activeModalCategoryInfo.catName || "Subcategory"}</strong>
+                  {offeringAddonModalIndex !== null && serviceOfferings[offeringAddonModalIndex] ? (
+                    <>
+                      {" "}• <strong className="text-purple-600 dark:text-purple-400">{(serviceOfferings[offeringAddonModalIndex].addonIds || []).length}</strong> linked to this package
+                    </>
+                  ) : selectedService ? (
+                    <>
+                      {" "}• <strong className="text-purple-600 dark:text-purple-400">{selectedService.addons?.length || 0}</strong> linked to this service
+                    </>
+                  ) : null}
+                </span>
+
                 <button
                   type="button"
-                  onClick={() => setSelectedService(null)}
-                  className="w-full py-2.5 bg-brand-500 hover:bg-brand-600 text-white rounded-xl font-bold text-xs shadow-lux"
+                  onClick={() => {
+                    setIsAddonsModalOpen(false);
+                    setOfferingAddonModalIndex(null);
+                    setAddonToDelete(null);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-slate-200/80 hover:bg-slate-300/80 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-extrabold text-xs border border-slate-300/60 dark:border-slate-700 transition-colors cursor-pointer"
                 >
                   Done
                 </button>
@@ -2206,7 +2792,7 @@ export default function CmsPage() {
       {/* ADD SERVICE DRAWER WITH LINKED ADD-ONS SECTION */}
       {isAddServiceOpen && (
         <Portal>
-          <div className="fixed inset-0 z-[99999] bg-slate-950/60 backdrop-blur-xs flex justify-end outline-none">
+          <div className="fixed inset-0 z-[99990] bg-slate-950/60 backdrop-blur-xs flex justify-end outline-none">
             <div className="absolute inset-0" onClick={() => setIsAddServiceOpen(false)} />
             <form
               onSubmit={handleCreateService}
@@ -2618,303 +3204,221 @@ export default function CmsPage() {
                             </div>
                           </div>
 
-                          {/* COMBINED ROW: PACKAGE IMAGE & SPARE PART ADD-ONS DROPDOWN IN SAME LINE */}
-                          <div className="pt-2.5 border-t border-slate-100 dark:border-slate-700/60 space-y-2.5">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
-                              {/* Left Column: Package Image */}
-                              <div className="space-y-1.5">
-                                <label className="text-[10px] font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
-                                  <span>Package Image</span>
-                                  <span className="text-brand-600 font-extrabold text-[9px] uppercase">
-                                    {(!off.imageRemoved && (off.thumbnailUrl || off.imageFile)) ? "Image Attached" : "Upload File"}
-                                  </span>
-                                </label>
+                          {/* PACKAGE IMAGE ROW */}
+                          <div className="pt-2.5 border-t border-slate-100 dark:border-slate-700/60">
+                            <div className="p-3 rounded-2xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/70 flex items-center justify-between gap-3">
+                              <div className="flex items-center gap-3 min-w-0">
                                 {(() => {
                                   const pkgIdToUse = !off.imageRemoved ? (off.id && off.id.length === 24 ? off.id : (editingServiceId && editingServiceId.length === 24 ? editingServiceId : undefined)) : undefined;
                                   const activeImage = !off.imageRemoved ? (off.thumbnailUrl || (off as any).imageUrl || "") : "";
                                   const hasImage = Boolean(activeImage || off.imageFile);
                                   return (
-                                    <div className="flex items-center gap-2.5">
+                                    <>
                                       <TableImage
                                         src={activeImage}
                                         packageId={pkgIdToUse}
                                         alt="Package Thumbnail"
-                                        containerClassName="w-12 h-12 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-slate-100 dark:bg-slate-800 flex items-center justify-center relative shadow-xs"
+                                        containerClassName="w-12 h-12 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-white dark:bg-slate-800 flex items-center justify-center relative shadow-xs"
                                         className="w-full h-full object-cover"
                                         fallbackIcon="image"
                                         showInitialsFallback={false}
                                       />
-
-                                      {hasImage ? (
-                                        <div className="flex items-center gap-1.5">
-                                          {/* Change / Reupload image */}
-                                          <label className="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-[10px] flex items-center gap-1 cursor-pointer shrink-0 shadow-xs transition-colors">
-                                            <Upload className="w-3.5 h-3.5 text-brand-600" />
-                                            <span>Change</span>
-                                            <input
-                                              type="file"
-                                              accept="image/*"
-                                              className="hidden"
-                                              onChange={(e) => {
-                                                const file = e.target.files?.[0];
-                                                if (file) {
-                                                  handleUpdateOfferingRow(idx, {
-                                                    imageFile: file,
-                                                    thumbnailUrl: URL.createObjectURL(file),
-                                                    imageRemoved: false,
-                                                  });
-                                                }
-                                                e.target.value = "";
-                                              }}
-                                            />
-                                          </label>
-
-                                          {/* Delete / Remove image */}
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              handleUpdateOfferingRow(idx, {
-                                                thumbnailUrl: "",
-                                                imageFile: undefined,
-                                                imageRemoved: true,
-                                              });
-                                            }}
-                                            className="px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 dark:hover:bg-rose-900 border border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-400 font-bold text-[10px] flex items-center gap-1 cursor-pointer shrink-0 shadow-xs transition-colors"
-                                            title="Delete Image"
-                                          >
-                                            <Trash2 className="w-3.5 h-3.5" />
-                                            <span>Delete</span>
-                                          </button>
-                                        </div>
-                                      ) : (
-                                        <label className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:bg-slate-200 text-slate-700 dark:text-slate-200 font-bold text-[10px] flex items-center gap-1 cursor-pointer shrink-0 shadow-xs transition-colors">
-                                          <Upload className="w-3.5 h-3.5 text-brand-600" />
-                                          <span>Upload Image</span>
-                                          <input
-                                            type="file"
-                                            accept="image/*"
-                                            className="hidden"
-                                            onChange={(e) => {
-                                              const file = e.target.files?.[0];
-                                              if (file) {
-                                                handleUpdateOfferingRow(idx, {
-                                                  imageFile: file,
-                                                  thumbnailUrl: URL.createObjectURL(file),
-                                                  imageRemoved: false,
-                                                });
-                                              }
-                                              e.target.value = "";
-                                            }}
-                                          />
-                                        </label>
-                                      )}
-                                    </div>
+                                      <div className="min-w-0">
+                                        <p className="font-extrabold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                                          <span>Package Thumbnail</span>
+                                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${hasImage ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300" : "bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400"}`}>
+                                            {hasImage ? "Attached" : "No image"}
+                                          </span>
+                                        </p>
+                                        <p className="text-[11px] text-slate-400 font-medium truncate mt-0.5">
+                                          {off.imageFile ? off.imageFile.name : (hasImage ? "Display image for this package" : "Upload an image banner or thumbnail")}
+                                        </p>
+                                      </div>
+                                    </>
                                   );
                                 })()}
                               </div>
 
-                              {/* Right Column: Spare Part Add-ons Dropdown */}
-                              <div>
-                                <CustomSelect
-                                  label={`Spare Part Add-ons (${(off.addonIds || []).length} Selected)`}
-                                  value=""
-                                  selectedValues={off.addonIds || []}
-                                  placeholder={addons.length > 0 ? "Select Spare Part Add-on to link..." : "No spare parts available"}
-                                  disabled={addons.length === 0}
-                                  menuPlacement="top"
-                                  onChange={(selectedAddonId) => {
-                                    const currentIds = off.addonIds || [];
-                                    if (currentIds.includes(selectedAddonId)) {
-                                      handleUpdateOfferingRow(idx, "addonIds", currentIds.filter((id) => id !== selectedAddonId));
-                                    } else {
-                                      handleUpdateOfferingRow(idx, "addonIds", [...currentIds, selectedAddonId]);
-                                    }
-                                  }}
-                                  options={addons.map((addon) => ({
-                                    value: addon.id,
-                                    label: `${addon.title} — ₹${addon.price} / ${addon.unit}`,
-                                  }))}
-                                  onAddAction={() => {
-                                    setInlineAddonPackageIndex(inlineAddonPackageIndex === idx ? null : idx);
-                                  }}
-                                  addActionLabel="+ Add New Add-on"
-                                />
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {(!off.imageRemoved && (off.thumbnailUrl || off.imageFile)) ? (
+                                  <>
+                                    <label className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-extrabold text-xs flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors">
+                                      <Upload className="w-3.5 h-3.5 text-brand-600" />
+                                      <span>Change</span>
+                                      <input
+                                        type="file"
+                                        accept="image/*"
+                                        className="hidden"
+                                        onChange={(e) => {
+                                          const file = e.target.files?.[0];
+                                          if (file) {
+                                            handleUpdateOfferingRow(idx, {
+                                              imageFile: file,
+                                              thumbnailUrl: URL.createObjectURL(file),
+                                              imageRemoved: false,
+                                            });
+                                          }
+                                          e.target.value = "";
+                                        }}
+                                      />
+                                    </label>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        handleUpdateOfferingRow(idx, {
+                                          thumbnailUrl: "",
+                                          imageFile: undefined,
+                                          imageRemoved: true,
+                                        });
+                                      }}
+                                      className="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-transparent hover:border-rose-200 dark:hover:border-rose-900/60 transition-colors cursor-pointer"
+                                      title="Remove Image"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  </>
+                                ) : (
+                                  <label className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-extrabold text-xs flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors">
+                                    <Upload className="w-3.5 h-3.5 text-brand-600" />
+                                    <span>Upload Image</span>
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      className="hidden"
+                                      onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (file) {
+                                          handleUpdateOfferingRow(idx, {
+                                            imageFile: file,
+                                            thumbnailUrl: URL.createObjectURL(file),
+                                            imageRemoved: false,
+                                          });
+                                        }
+                                        e.target.value = "";
+                                      }}
+                                    />
+                                  </label>
+                                )}
                               </div>
                             </div>
+                          </div>
 
-                            {/* INLINE ADD-ON ADD FORM (OPENS DIRECTLY BELOW ADDON DROPDOWN) */}
-                            {inlineAddonPackageIndex === idx && (
-                              <div className="p-3 rounded-xl bg-purple-50/80 dark:bg-purple-950/50 border border-purple-200 dark:border-purple-800 space-y-2.5 animate-in fade-in-50 zoom-in-95 duration-150 shadow-xs">
-                                <div className="flex items-center justify-between border-b border-purple-200/60 dark:border-purple-800/60 pb-1.5">
-                                  <span className="font-extrabold text-purple-900 dark:text-purple-300 text-[11px] flex items-center gap-1.5">
-                                    <Plus className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
-                                    Create New Spare Part Add-on (Links to Package #{idx + 1})
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => setInlineAddonPackageIndex(null)}
-                                    className="text-slate-400 hover:text-slate-600 dark:hover:text-white"
-                                  >
-                                    <X className="w-4 h-4" />
-                                  </button>
+                          {/* DEDICATED SPARE PART ADD-ONS CARD */}
+                          <div className="p-3.5 rounded-2xl bg-purple-50/50 dark:bg-purple-950/25 border border-purple-200/90 dark:border-purple-800/70 space-y-3">
+                            <div className="flex items-center justify-between gap-3 flex-wrap">
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <div className="w-8 h-8 rounded-xl bg-purple-100 dark:bg-purple-900/60 text-purple-600 dark:text-purple-300 border border-purple-200 dark:border-purple-800 flex items-center justify-center shrink-0">
+                                  <Wrench className="w-4 h-4" />
                                 </div>
-
-                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                                  <div>
-                                    <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 block mb-1">
-                                      Part Name *
-                                    </label>
-                                    <input
-                                      type="text"
-                                      value={inlineAddonTitle}
-                                      onChange={(e) => setInlineAddonTitle(e.target.value)}
-                                      placeholder="e.g. Heavy Duty Copper Piping"
-                                      className="w-full p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-semibold outline-none text-xs"
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 block mb-1">
-                                      Unit Price (₹) *
-                                    </label>
-                                    <input
-                                      type="number"
-                                      value={inlineAddonPrice}
-                                      onChange={(e) => setInlineAddonPrice(e.target.value)}
-                                      placeholder="199"
-                                      className="w-full p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold outline-none text-xs"
-                                    />
-                                  </div>
-                                  <CustomSelect
-                                    size="sm"
-                                    label="Unit *"
-                                    value={inlineAddonUnit}
-                                    onChange={(val) => setInlineAddonUnit(val)}
-                                    options={[
-                                      { value: "Per Unit", label: "Per Unit" },
-                                      { value: "meter", label: "meter" },
-                                      { value: "piece", label: "piece" },
-                                      { value: "unit", label: "unit" },
-                                    ]}
-                                  />
-                                </div>
-
-                                {/* Addon Description */}
-                                <div>
-                                  <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 block mb-1">
-                                    Description
-                                  </label>
-                                  <input
-                                    type="text"
-                                    value={inlineAddonDescription}
-                                    onChange={(e) => setInlineAddonDescription(e.target.value)}
-                                    placeholder="e.g. Complete AC deep cleaning service"
-                                    className="w-full p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-semibold outline-none text-xs"
-                                  />
-                                </div>
-
-                                {/* Addon Image Upload */}
-                                <div>
-                                  <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 block mb-1">
-                                    Addon Image
-                                  </label>
+                                <div className="min-w-0">
                                   <div className="flex items-center gap-2">
-                                    {inlineAddonImageUrl ? (
-                                      <div className="flex items-center gap-2">
-                                        <TableImage
-                                          src={inlineAddonImageUrl}
-                                          alt="Addon Preview"
-                                          containerClassName="w-9 h-9 rounded-lg overflow-hidden border border-purple-200 dark:border-purple-800 shrink-0 bg-white dark:bg-slate-800 flex items-center justify-center relative shadow-xs"
-                                          className="w-full h-full object-cover"
-                                          fallbackIcon="image"
-                                          showInitialsFallback={false}
-                                        />
+                                    <span className="font-extrabold text-slate-900 dark:text-white text-xs">
+                                    Add-ons
+                                    </span>
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                                      {(off.addonIds || []).length} Linked
+                                    </span>
+                                  </div>
+                                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium truncate mt-0.5">
+                                    Extra accessories & parts for {selectedSubcategory || serviceCategory || "this package"}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => handleOpenAddonsModalForOffering(idx)}
+                                className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-purple-200 dark:border-purple-700 hover:bg-purple-50 dark:hover:bg-purple-900/40 text-purple-700 dark:text-purple-300 font-extrabold text-xs shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+                                title="Open popup to view all add-ons for this category & subcategory, link existing, or create new"
+                              >
+                                <Layers className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                                <span>Add Addon</span>
+                              </button>
+                            </div>
+
+                            {/* BODY: LINKED MINI-CARDS OR CLEAN EMPTY STATE */}
+                            {(off.addonIds || []).length > 0 ? (
+                              <div className="space-y-2">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                  {(off.addonIds || []).map((addonId) => {
+                                    const addonObj = addons.find((a) => a.id === addonId);
+                                    if (!addonObj) return null;
+                                    return (
+                                      <div
+                                        key={addonId}
+                                        className="p-2.5 rounded-xl bg-white dark:bg-slate-800 border border-purple-200/80 dark:border-purple-800/70 shadow-2xs flex items-center justify-between gap-2.5 hover:border-purple-300 dark:hover:border-purple-700 transition-all group"
+                                      >
+                                        <div className="flex items-center gap-2.5 min-w-0">
+                                          <TableImage
+                                            src={addonObj.imageUrl}
+                                            alt={addonObj.title}
+                                            fallbackIcon="image"
+                                            containerClassName="w-9 h-9 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-700/50 shrink-0 flex items-center justify-center relative shadow-2xs"
+                                            className="w-full h-full object-cover"
+                                            showInitialsFallback={false}
+                                          />
+                                          <div className="min-w-0">
+                                            <p className="font-extrabold text-slate-900 dark:text-white text-xs truncate">
+                                              {addonObj.title}
+                                            </p>
+                                            <p className="text-[10px] text-purple-600 dark:text-purple-400 font-bold font-mono">
+                                              ₹{addonObj.price} <span className="text-slate-400 font-sans font-normal">/ {addonObj.unit}</span>
+                                            </p>
+                                          </div>
+                                        </div>
+
                                         <button
                                           type="button"
-                                          onClick={() => setInlineAddonImageUrl("")}
-                                          className="px-2 py-1 rounded-lg border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950 font-bold text-[10px] flex items-center gap-1 cursor-pointer"
+                                          onClick={() => {
+                                            const updated = (off.addonIds || []).filter((id) => id !== addonId);
+                                            handleUpdateOfferingRow(idx, "addonIds", updated);
+                                          }}
+                                          className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer shrink-0"
+                                          title={`Unlink ${addonObj.title}`}
                                         >
-                                          <X className="w-3 h-3" />
-                                          <span>Remove</span>
+                                          <X className="w-3.5 h-3.5" />
                                         </button>
                                       </div>
-                                    ) : (
-                                      <label className="px-3 py-2 rounded-xl border border-dashed border-purple-300 dark:border-purple-700 bg-white dark:bg-slate-800 hover:bg-purple-50 dark:hover:bg-purple-950/50 font-bold text-xs text-purple-700 dark:text-purple-300 flex items-center gap-1.5 cursor-pointer">
-                                        <Upload className="w-3.5 h-3.5 text-purple-600" />
-                                        <span>Choose Image File...</span>
-                                        <input
-                                          type="file"
-                                          accept="image/*"
-                                          className="hidden"
-                                          onChange={(e) => {
-                                            const file = e.target.files?.[0];
-                                            if (file) {
-                                              const reader = new FileReader();
-                                              reader.onload = (re) => {
-                                                setInlineAddonImageUrl(re.target?.result as string);
-                                              };
-                                              reader.readAsDataURL(file);
-                                            }
-                                            e.target.value = "";
-                                          }}
-                                        />
-                                      </label>
-                                    )}
-                                  </div>
+                                    );
+                                  })}
                                 </div>
 
-                                <div className="flex justify-end gap-2 pt-1">
+                                <div className="flex justify-end pt-0.5">
                                   <button
                                     type="button"
-                                    onClick={() => setInlineAddonPackageIndex(null)}
-                                    className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-xs hover:bg-slate-100 dark:hover:bg-slate-800"
+                                    onClick={() => handleOpenAddonsModalForOffering(idx)}
+                                    className="text-[11px] font-extrabold text-purple-700 dark:text-purple-300 hover:text-purple-800 hover:underline flex items-center gap-1 cursor-pointer"
                                   >
-                                    Cancel
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleSaveInlineAddonForPackage(idx)}
-                                    className="px-3.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-xs"
-                                  >
-                                    Save & Attach
+                                    <Plus className="w-3 h-3 text-purple-600" />
+                                    <span>Add more add-ons &rarr;</span>
                                   </button>
                                 </div>
                               </div>
-                            )}
+                            ) : (
+                              <div
+                                onClick={() => handleOpenAddonsModalForOffering(idx)}
+                                className="w-full py-3.5 px-4 rounded-xl border border-dashed border-purple-200 dark:border-purple-800/80 bg-white/70 dark:bg-slate-800/40 hover:bg-purple-50/60 dark:hover:bg-purple-950/30 hover:border-purple-300 transition-all cursor-pointer flex items-center justify-between gap-3 group"
+                              >
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <div className="w-9 h-9 rounded-xl bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0 border border-purple-200/80 dark:border-purple-700/60 group-hover:scale-105 transition-transform">
+                                    <Wrench className="w-4 h-4" />
+                                  </div>
+                                  <div className="min-w-0 text-left">
+                                    <p className="font-extrabold text-xs text-slate-800 dark:text-slate-200 group-hover:text-purple-700 dark:group-hover:text-purple-300 transition-colors">
+                                      No spare parts linked yet
+                                    </p>
+                                    <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium truncate mt-0.5">
+                                      Click to link existing add-ons or create new ones for {selectedSubcategory || serviceCategory || "this package"}
+                                    </p>
+                                  </div>
+                                </div>
 
-                            {/* SELECTED ADD-ON TAG PILLS */}
-                            <div className="flex flex-wrap gap-1.5 pt-0.5">
-                              {(off.addonIds || []).length > 0 ? (
-                                (off.addonIds || []).map((addonId) => {
-                                  const addonObj = addons.find((a) => a.id === addonId);
-                                  if (!addonObj) return null;
-                                  return (
-                                    <span
-                                      key={addonId}
-                                      className="px-2.5 py-1 rounded-xl bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 text-purple-900 dark:text-purple-200 font-extrabold text-[11px] flex items-center gap-1.5 shadow-xs"
-                                    >
-                                      <Wrench className="w-3 h-3 text-purple-500 shrink-0" />
-                                      <span>{addonObj.title}</span>
-                                      <span className="font-mono text-purple-600 dark:text-purple-400 text-[10px]">
-                                        ₹{addonObj.price}/{addonObj.unit}
-                                      </span>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          const updated = (off.addonIds || []).filter((id) => id !== addonId);
-                                          handleUpdateOfferingRow(idx, "addonIds", updated);
-                                        }}
-                                        className="text-slate-400 hover:text-red-500 transition-colors ml-0.5"
-                                        title="Remove Add-on"
-                                      >
-                                        <X className="w-3.5 h-3.5" />
-                                      </button>
-                                    </span>
-                                  );
-                                })
-                              ) : (
-                                <span className="text-[11px] text-slate-400 italic">No add-ons linked to Package #{idx + 1} yet. Pick from dropdown above.</span>
-                              )}
-                            </div>
+                                <span className="px-3 py-1.5 rounded-xl bg-purple-50 dark:bg-purple-950/80 border border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-300 font-extrabold text-xs flex items-center gap-1 shrink-0 group-hover:bg-purple-100 transition-colors shadow-2xs">
+                                  <Plus className="w-3.5 h-3.5" />
+                                  <span>Browse & Link</span>
+                                </span>
+                              </div>
+                            )}
                           </div>
                         </div>
                       ))
@@ -2939,7 +3443,7 @@ export default function CmsPage() {
                           className="w-full py-2.5 px-4 rounded-xl bg-brand-50/80 dark:bg-brand-950/60 text-brand-700 dark:text-brand-300 border border-dashed border-brand-300 dark:border-brand-700 hover:bg-brand-100 dark:hover:bg-brand-900/40 text-xs font-extrabold flex items-center justify-center gap-2 transition-all shadow-xs cursor-pointer"
                         >
                           <Plus className="w-4 h-4 text-brand-600 dark:text-brand-400" />
-                          <span>+ Add Another Package</span>
+                          <span> Add Another Package</span>
                         </button>
                       </div>
                     )}
@@ -2982,7 +3486,7 @@ export default function CmsPage() {
       {/* ADD / EDIT ADDON DRAWER */}
       {isAddAddonOpen && (
         <Portal>
-          <div className="fixed inset-0 z-[99999] bg-slate-950/60 backdrop-blur-xs flex justify-end outline-none">
+          <div className="fixed inset-0 z-[100010] bg-slate-950/60 backdrop-blur-xs flex justify-end outline-none">
             <div className="absolute inset-0" onClick={() => setIsAddAddonOpen(false)} />
             <form
               onSubmit={handleSaveAddon}
@@ -2991,56 +3495,82 @@ export default function CmsPage() {
               <div className="space-y-4">
                 <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
                   <h3 className="font-extrabold text-slate-900 dark:text-white text-base">
-                    {editingAddonId ? "Edit Spare Part Add-on" : "Add Spare Part Add-on"}
+                    {editingAddonId ? "Edit Add-on" : "Add Add-on"}
                   </h3>
                   <button type="button" onClick={() => setIsAddAddonOpen(false)} className="text-slate-400 hover:text-slate-600">
                     <X className="w-5 h-5" />
                   </button>
                 </div>
 
-                {/* Category Dropdown */}
-                <CustomSelect
-                  label="Category *"
-                  size="sm"
-                  value={addonCategory}
-                  onChange={(catName) => {
-                    setAddonCategory(catName);
-                    const matchedCat = categoriesFromApi.find((c) => c.categoryName === catName);
-                    setAddonCategoryId(matchedCat?._id || "");
-                    setAddonSubCategory("");
-                    setAddonSubCategoryId("");
-                  }}
-                  options={(categoriesFromApi.length > 0
-                    ? categoriesFromApi.map((c) => c.categoryName)
-                    : Object.keys(categorySubcategoriesMap)
-                  ).map((catName) => ({
-                    value: catName,
-                    label: catName,
-                  }))}
-                />
+                {/* Category & Subcategory Display / Selection */}
+                {activeModalCategoryInfo.isScopedToService ? (
+                  <div className="p-3 rounded-2xl bg-purple-50/70 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-purple-700 dark:text-purple-300">
+                        Category & Subcategory
+                      </span>
+                      <span className="flex items-center gap-1 text-[10px] font-extrabold text-purple-600 dark:text-purple-400">
+                        <Lock className="w-3 h-3" />
+                        Locked to Active Service
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap text-xs">
+                      <span className="px-2.5 py-1 rounded-xl bg-white dark:bg-slate-800 font-bold text-slate-800 dark:text-slate-200 border border-purple-200/80 dark:border-purple-700/80 shadow-2xs">
+                        Category: <strong className="text-brand-600">{addonCategory || activeModalCategoryInfo.catName}</strong>
+                      </span>
+                      <span className="px-2.5 py-1 rounded-xl bg-white dark:bg-slate-800 font-bold text-purple-700 dark:text-purple-300 border border-purple-200/80 dark:border-purple-700/80 shadow-2xs">
+                        Subcategory: <strong>{addonSubCategory || activeModalCategoryInfo.subCatName || "General"}</strong>
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {/* Category Dropdown */}
+                    <CustomSelect
+                      label="Category *"
+                      size="sm"
+                      value={addonCategory}
+                      onChange={(catName) => {
+                        setAddonCategory(catName);
+                        const matchedCat = categoriesFromApi.find((c) => c.categoryName === catName);
+                        setAddonCategoryId(matchedCat?._id || "");
+                        const firstSub = matchedCat?.subCategories?.[0];
+                        setAddonSubCategory(firstSub?.name || "");
+                        setAddonSubCategoryId(firstSub?._id || "");
+                      }}
+                      options={(categoriesFromApi.length > 0
+                        ? categoriesFromApi.map((c) => c.categoryName)
+                        : Object.keys(categorySubcategoriesMap)
+                      ).map((catName) => ({
+                        value: catName,
+                        label: catName,
+                      }))}
+                    />
 
-                {/* Subcategory Dropdown */}
-                <CustomSelect
-                  label="Subcategory *"
-                  size="sm"
-                  value={addonSubCategory}
-                  disabled={!addonCategory}
-                  placeholder={addonCategory ? "Select Subcategory..." : "Select Category first"}
-                  onChange={(subName) => {
-                    setAddonSubCategory(subName);
-                    const matchedCat = categoriesFromApi.find((c) => c.categoryName === addonCategory);
-                    const matchedSub = matchedCat?.subCategories?.find((s: any) => s.name === subName);
-                    setAddonSubCategoryId(matchedSub?._id || "");
-                  }}
-                  options={(() => {
-                    if (!addonCategory) return [];
-                    const matchedCat = categoriesFromApi.find((c) => c.categoryName === addonCategory);
-                    const subs = matchedCat
-                      ? (matchedCat.subCategories || []).map((sub: any) => sub.name)
-                      : categorySubcategoriesMap[addonCategory] || [];
-                    return subs.map((s) => ({ value: s, label: s }));
-                  })()}
-                />
+                    {/* Subcategory Dropdown */}
+                    <CustomSelect
+                      label="Subcategory *"
+                      size="sm"
+                      value={addonSubCategory}
+                      disabled={!addonCategory}
+                      placeholder={addonCategory ? "Select Subcategory..." : "Select Category first"}
+                      onChange={(subName) => {
+                        setAddonSubCategory(subName);
+                        const matchedCat = categoriesFromApi.find((c) => c.categoryName === addonCategory);
+                        const matchedSub = matchedCat?.subCategories?.find((s: any) => s.name === subName);
+                        setAddonSubCategoryId(matchedSub?._id || "");
+                      }}
+                      options={(() => {
+                        if (!addonCategory) return [];
+                        const matchedCat = categoriesFromApi.find((c) => c.categoryName === addonCategory);
+                        const subs = matchedCat
+                          ? (matchedCat.subCategories || []).map((sub: any) => sub.name)
+                          : categorySubcategoriesMap[addonCategory] || [];
+                        return subs.map((s) => ({ value: s, label: s }));
+                      })()}
+                    />
+                  </>
+                )}
 
                 {/* Add-on Name / Title */}
                 <div>

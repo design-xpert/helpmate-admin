@@ -4426,3 +4426,71 @@ export async function syncMediaLibraryApi(): Promise<{
     return { success: false, message: "Failed to synchronize media library with MinIO." };
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ADMIN GLOBAL SEARCH API
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface ApiSearchItem {
+  type: "booking" | "customer" | "partner" | "invoice";
+  id: string;
+  identifier?: string;
+  title: string;
+  subtitle: string;
+  status?: string;
+  date?: string;
+  amount?: number | null;
+  target?: {
+    action: string;
+    id: string;
+    bookingId?: string;
+  };
+}
+
+export interface ApiSearchShortcut {
+  key: string;
+  title: string;
+  description: string;
+}
+
+export interface ApiSearchResults {
+  bookings: ApiSearchItem[];
+  customers: ApiSearchItem[];
+  partners: ApiSearchItem[];
+  invoices: ApiSearchItem[];
+}
+
+export interface ApiAdminSearchData {
+  query: string;
+  category: "all" | "bookings" | "customers" | "partners" | "invoices";
+  minQueryLength: number;
+  availableCategories: string[];
+  results: ApiSearchResults;
+  shortcuts: ApiSearchShortcut[];
+}
+
+export async function adminSearchApi(params: {
+  q: string;
+  category?: "all" | "bookings" | "customers" | "partners" | "invoices";
+  limit?: number;
+}): Promise<{
+  success: boolean;
+  message?: string;
+  data?: ApiAdminSearchData;
+}> {
+  try {
+    const query = new URLSearchParams();
+    query.set("q", params.q);
+    if (params.category) query.set("category", params.category);
+    if (params.limit) query.set("limit", String(params.limit));
+
+    const res = await authFetch(`${API_BASE_URL}/api/admin/search?${query.toString()}`, {
+      method: "GET",
+    });
+    return await safeJsonResponse(res);
+  } catch (error) {
+    console.error("adminSearchApi error:", error);
+    return { success: false, message: "Failed to perform admin search." };
+  }
+}
+

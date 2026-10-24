@@ -17,6 +17,9 @@ export interface ServiceAddon {
   description?: string;
   imageUrl?: string;
   status: "Active" | "Inactive";
+  categoryId?: string;
+  subCategoryId?: string;
+  subcategory?: string;
 }
 
 export interface ServiceItem {

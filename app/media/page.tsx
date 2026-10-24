@@ -12,7 +12,6 @@ import {
   X,
   Grid,
   List,
-  HardDrive,
   FolderOpen,
   Filter,
   ExternalLink,
@@ -319,7 +318,7 @@ export default function MediaPage() {
       </div>
 
       {/* ─── 2. EXECUTIVE METRICS RIBBON ─── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-1">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
@@ -338,7 +337,7 @@ export default function MediaPage() {
         <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-1">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
-              MinIO Storage Folders
+              Directory Folders
             </span>
             <FolderOpen className="w-4 h-4 text-blue-600" />
           </div>
@@ -347,34 +346,6 @@ export default function MediaPage() {
           </p>
           <p className="text-[11px] text-blue-600 dark:text-blue-400 font-bold">
             Addons, Packages, Banners, Zones
-          </p>
-        </div>
-
-        <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-1">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
-              Active Selection
-            </span>
-            <Layers className="w-4 h-4 text-purple-600" />
-          </div>
-          <p className="text-2xl font-black text-slate-900 dark:text-white truncate" title={selectedFolder === "all" ? "All Folders" : formatFolderLabel(selectedFolder)}>
-            {selectedFolder === "all" ? "All Folders" : formatFolderLabel(selectedFolder)}
-          </p>
-          <p className="text-[11px] text-purple-600 dark:text-purple-400 font-bold">
-            Showing Page {pagination.page} of {pagination.totalPages}
-          </p>
-        </div>
-
-        <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-1">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
-              Storage Engine
-            </span>
-            <HardDrive className="w-4 h-4 text-emerald-600" />
-          </div>
-          <p className="text-2xl font-black text-slate-900 dark:text-white">MinIO S3</p>
-          <p className="text-[11px] text-slate-500 dark:text-slate-400 font-bold">
-            Automated Upload Indexing
           </p>
         </div>
       </div>

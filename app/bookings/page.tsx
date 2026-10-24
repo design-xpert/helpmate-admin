@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, Suspense, useEffect } from "react";
+import { useState, useMemo, Suspense, useEffect, useRef } from "react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { DataTable, Column } from "@/components/DataTable";
@@ -27,6 +27,9 @@ import {
   Droplets,
   Grid,
   ChevronRight,
+  ChevronLeft,
+  Pin,
+  PinOff,
   Globe,
   Building2,
   RefreshCw,
@@ -235,26 +238,44 @@ function CategoryCardsShimmer() {
         <div className="h-10 bg-slate-200 dark:bg-slate-800 rounded-xl w-36"></div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {[1, 2, 3, 4, 5, 6].map((i) => (
-          <div key={i} className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-5 shadow-xs">
-            <div className="flex items-center justify-between">
-              <div className="w-12 h-12 rounded-2xl bg-slate-200 dark:bg-slate-800"></div>
-              <div className="h-6 w-20 bg-slate-200 dark:bg-slate-800 rounded-full"></div>
-            </div>
-            <div className="space-y-2">
-              <div className="h-5 bg-slate-200 dark:bg-slate-800 rounded-lg w-3/4"></div>
-              <div className="h-3.5 bg-slate-200 dark:bg-slate-800 rounded-md w-full"></div>
-              <div className="h-3.5 bg-slate-200 dark:bg-slate-800 rounded-md w-2/3"></div>
-            </div>
-            <div className="grid grid-cols-4 gap-2 pt-2">
-              <div className="h-10 bg-slate-200 dark:bg-slate-800 rounded-xl"></div>
-              <div className="h-10 bg-slate-200 dark:bg-slate-800 rounded-xl"></div>
-              <div className="h-10 bg-slate-200 dark:bg-slate-800 rounded-xl"></div>
-              <div className="h-10 bg-slate-200 dark:bg-slate-800 rounded-xl"></div>
-            </div>
+      {/* Top Strip Shimmer (All Service Categories) */}
+      <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="flex items-center gap-3 w-full md:w-auto">
+          <div className="w-11 h-11 rounded-2xl bg-slate-200 dark:bg-slate-800 shrink-0"></div>
+          <div className="space-y-2 flex-1">
+            <div className="h-5 w-48 bg-slate-200 dark:bg-slate-800 rounded"></div>
+            <div className="h-3.5 w-64 bg-slate-200 dark:bg-slate-800 rounded"></div>
           </div>
-        ))}
+        </div>
+        <div className="grid grid-cols-4 gap-2 w-full md:w-auto">
+          {[1, 2, 3, 4].map((j) => (
+            <div key={j} className="h-10 w-16 bg-slate-200 dark:bg-slate-800 rounded-xl"></div>
+          ))}
+        </div>
+      </div>
+
+      {/* Grid of Slim Cards Shimmer */}
+      <div className="space-y-3">
+        <div className="h-5 w-48 bg-slate-200 dark:bg-slate-800 rounded-lg"></div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+            <div key={i} className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-9 h-9 rounded-xl bg-slate-200 dark:bg-slate-800"></div>
+                  <div className="h-3.5 w-24 bg-slate-200 dark:bg-slate-800 rounded"></div>
+                </div>
+                <div className="h-4 w-16 bg-slate-200 dark:bg-slate-800 rounded"></div>
+              </div>
+              <div className="h-5 w-4/5 bg-slate-200 dark:bg-slate-800 rounded"></div>
+              <div className="grid grid-cols-4 gap-1.5">
+                {[1, 2, 3, 4].map((j) => (
+                  <div key={j} className="h-8 bg-slate-200 dark:bg-slate-800 rounded-lg"></div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -325,6 +346,55 @@ function BookingsPageContent() {
   const [apiCategories, setApiCategories] = useState<ApiBookingCategoryStat[]>(() => initialCachedCats || []);
   const [dashboardStats, setDashboardStats] = useState<any | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(() => !(isModuleCacheFresh(cacheKey, 30000) && initialCachedBookings && initialCachedBookings.length > 0));
+
+  // Pinned Categories State (strictly max 3)
+  const [pinnedCategories, setPinnedCategories] = useState<string[]>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("helpmate_pinned_categories");
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            return parsed.filter((c: string) => c !== "All Service Categories" && c !== "All").slice(0, 3);
+          }
+        }
+      } catch (e) {
+        console.error("Error reading pinned categories:", e);
+      }
+    }
+    return ["AC Service & Repair", "Electrician", "Plumbing"];
+  });
+
+  const [pinWarningToast, setPinWarningToast] = useState<string | null>(null);
+
+  const togglePinCategory = (catName: string, e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    setPinnedCategories((prev) => {
+      let next: string[];
+      const isAlreadyPinned = prev.some((name) => name.toLowerCase().trim() === catName.toLowerCase().trim());
+      if (isAlreadyPinned) {
+        next = prev.filter((name) => name.toLowerCase().trim() !== catName.toLowerCase().trim());
+      } else {
+        if (prev.length >= 3) {
+          setPinWarningToast("Only 3 categories can be pinned. Unpin one first to pin another.");
+          setTimeout(() => setPinWarningToast(null), 3500);
+          return prev;
+        }
+        next = [...prev, catName];
+      }
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem("helpmate_pinned_categories", JSON.stringify(next));
+        } catch (err) {
+          console.error("Failed to save pinned categories:", err);
+        }
+      }
+      return next;
+    });
+  };
 
   const updateBookingFilters = (newType?: string | null, newStatus?: string | null) => {
     const params = new URLSearchParams();
@@ -1119,123 +1189,278 @@ function BookingsPageContent() {
             </button>
           </div>
 
-          {/* Category Cards Dashboard Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {/* Master Card: All Categories */}
-            <div
-              onClick={() => handleSelectCategory("All")}
-              className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-brand-500 hover:shadow-lg transition-all duration-300 cursor-pointer group flex flex-col justify-between space-y-6"
-            >
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-black shadow-xs group-hover:scale-105 transition-transform">
-                    <Grid className="w-6 h-6" />
-                  </div>
-                  <span className="text-[11px] font-black uppercase px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-                    Master View
-                  </span>
-                </div>
+          {/* PIN LIMIT TOAST ALERT */}
+          {pinWarningToast && (
+            <div className="p-3 px-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs font-bold flex items-center justify-between animate-in fade-in slide-in-from-top-2">
+              <div className="flex items-center gap-2.5">
+                <Pin className="w-4 h-4 text-amber-500 fill-amber-500 shrink-0" />
+                <span>{pinWarningToast}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPinWarningToast(null)}
+                className="p-1 rounded-lg text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 cursor-pointer"
+                title="Dismiss warning"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
 
-                <div>
-                  <h3 className="text-lg font-black text-slate-900 dark:text-white group-hover:text-brand-600 transition-colors">
-                    All Service Categories
-                  </h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-1">
-                    Complete operational directory across all active service categories in Varanasi.
+          {/* ─── TOP STRIP: ALL SERVICE CATEGORIES ─── */}
+          <div
+            onClick={() => handleSelectCategory("All")}
+            className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-indigo-200/80 dark:border-indigo-900/60 hover:border-indigo-500 hover:shadow-md transition-all duration-200 cursor-pointer group"
+          >
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              {/* Left: Icon + Title + Description */}
+              <div className="flex items-center gap-3.5 min-w-0">
+                <div className="w-11 h-11 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 shadow-2xs group-hover:scale-105 transition-transform">
+                  <Grid className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 className="text-base font-black text-slate-900 dark:text-white group-hover:text-brand-600 transition-colors">
+                      All Service Categories
+                    </h2>
+                    <span className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                      Master Strip
+                    </span>
+                    <span className="text-[11px] font-mono font-extrabold text-slate-500 dark:text-slate-400">
+                      {totalCardCount} Total Orders
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+                    Master operational directory across all active service categories in Varanasi.
                   </p>
                 </div>
+              </div>
 
-                <div className="grid grid-cols-2 gap-2 pt-1 text-xs">
-                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
-                    <span className="text-slate-400 font-bold text-[10px] block uppercase">Total Orders</span>
-                    <span className="text-base font-black text-slate-900 dark:text-white">{totalCardCount}</span>
+              {/* Middle / Right: 4-Stat Pills + Direct Open Action */}
+              <div className="flex flex-wrap items-center gap-3 shrink-0">
+                <div className="grid grid-cols-4 gap-2 text-center">
+                  <div className="py-1 px-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200/60 dark:border-amber-800/60">
+                    <span className="text-[9px] font-black uppercase text-amber-700 dark:text-amber-300 block leading-tight">
+                      Open
+                    </span>
+                    <span className="text-xs font-black text-amber-700 dark:text-amber-300">
+                      {unassignedCardCount}
+                    </span>
                   </div>
-                  <div className="p-3 rounded-xl bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200/60 dark:border-amber-800/60">
-                    <span className="text-amber-600 dark:text-amber-400 font-bold text-[10px] block uppercase">Unassigned</span>
-                    <span className="text-base font-black text-amber-600 dark:text-amber-400">
-                      {unassignedCardCount} Open
+                  <div className="py-1 px-2.5 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200/60 dark:border-blue-800/60">
+                    <span className="text-[9px] font-black uppercase text-blue-700 dark:text-blue-300 block leading-tight">
+                      Active
+                    </span>
+                    <span className="text-xs font-black text-blue-700 dark:text-blue-300">
+                      {inProgressCardCount}
+                    </span>
+                  </div>
+                  <div className="py-1 px-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/60 dark:border-emerald-800/60">
+                    <span className="text-[9px] font-black uppercase text-emerald-700 dark:text-emerald-300 block leading-tight">
+                      Done
+                    </span>
+                    <span className="text-xs font-black text-emerald-700 dark:text-emerald-300">
+                      {completedCardCount}
+                    </span>
+                  </div>
+                  <div className="py-1 px-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200/60 dark:border-rose-800/60">
+                    <span className="text-[9px] font-black uppercase text-rose-700 dark:text-rose-300 block leading-tight">
+                      Cancel
+                    </span>
+                    <span className="text-xs font-black text-rose-700 dark:text-rose-300">
+                      {cancelledCardCount}
                     </span>
                   </div>
                 </div>
-              </div>
 
-              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs font-extrabold text-brand-600 dark:text-brand-400 group-hover:translate-x-1 transition-transform">
-                <span>Open All Bookings Directory</span>
-                <ChevronRight className="w-4 h-4" />
-              </div>
-            </div>
-
-            {/* Dynamic Category Cards */}
-            {categoryStatsList.map((cat) => (
-              <div
-                key={cat.name}
-                onClick={() => handleSelectCategory(cat.name)}
-                className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-brand-500 hover:shadow-lg transition-all duration-300 cursor-pointer group flex flex-col justify-between space-y-6"
-              >
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="w-12 h-12 rounded-2xl bg-brand-50 dark:bg-brand-950/60 text-brand-600 dark:text-brand-400 flex items-center justify-center font-black shadow-xs group-hover:scale-105 transition-transform">
-                      {cat.name.toLowerCase().includes("ac") ? (
-                        <Wrench className="w-6 h-6" />
-                      ) : cat.name.toLowerCase().includes("electr") ? (
-                        <Zap className="w-6 h-6" />
-                      ) : cat.name.toLowerCase().includes("plumb") ? (
-                        <Droplets className="w-6 h-6" />
-                      ) : cat.name.toLowerCase().includes("clean") ? (
-                        <SprayCan className="w-6 h-6" />
-                      ) : (
-                        <Calendar className="w-6 h-6" />
-                      )}
-                    </div>
-                    <span className="text-[11px] font-black uppercase px-3 py-1 rounded-full bg-brand-50 dark:bg-brand-950 text-brand-700 dark:text-brand-300 border border-brand-200 dark:border-brand-800">
-                      {cat.count} Orders
-                    </span>
-                  </div>
-
-                  <div>
-                    <h3 className="text-lg font-black text-slate-900 dark:text-white group-hover:text-brand-600 transition-colors">
-                      {cat.name}
-                    </h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-1">
-                      {cat.name.toLowerCase().includes("ac")
-                        ? "Split & window AC power jet wash, gas recharge, and PCB repair."
-                        : cat.name.toLowerCase().includes("electr")
-                          ? "Short circuit testing, MCB box upgrade, wiring, and fan install."
-                          : cat.name.toLowerCase().includes("plumb")
-                            ? "Tap leak repair, motor fitting, overhead tank descaling & drain unclog."
-                            : cat.name.toLowerCase().includes("clean")
-                              ? "Full home deep scrubbing, sofa shampoo, kitchen chimney degrease."
-                              : "On-demand home services & professional maintenance orders."}
-                    </p>
-                  </div>
-
-                  {/* Operational Metrics inside Card */}
-                  <div className="grid grid-cols-4 gap-1.5 pt-1 text-center">
-                    <div className="p-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800">
-                      <span className="text-[9px] font-bold text-amber-700 dark:text-amber-300 block">Open</span>
-                      <span className="text-sm font-black text-amber-700 dark:text-amber-300">{cat.unassigned}</span>
-                    </div>
-                    <div className="p-2 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800">
-                      <span className="text-[9px] font-bold text-blue-700 dark:text-blue-300 block">Active</span>
-                      <span className="text-sm font-black text-blue-700 dark:text-blue-300">{cat.inProgress}</span>
-                    </div>
-                    <div className="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800">
-                      <span className="text-[9px] font-bold text-emerald-700 dark:text-emerald-300 block">Closed</span>
-                      <span className="text-sm font-black text-emerald-700 dark:text-emerald-300">{cat.completed}</span>
-                    </div>
-                    <div className="p-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800">
-                      <span className="text-[9px] font-bold text-rose-700 dark:text-rose-300 block">Cancelled</span>
-                      <span className="text-sm font-black text-rose-700 dark:text-rose-300">{cat.cancelled}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs font-extrabold text-brand-600 dark:text-brand-400 group-hover:translate-x-1 transition-transform">
-                  <span>Open {cat.name} Table</span>
+                <div className="hidden sm:flex items-center gap-1 text-xs font-extrabold text-indigo-600 dark:text-indigo-400 group-hover:translate-x-1 transition-transform pl-2">
+                  <span>Open Master Table</span>
                   <ChevronRight className="w-4 h-4" />
                 </div>
               </div>
-            ))}
+            </div>
+          </div>
+
+          {/* ─── SECTION 2: SERVICE CATEGORIES (REARRANGED ACCORDING TO PIN - MAX 3 PINNED) ─── */}
+          <div className="space-y-3 pt-1">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Layers className="w-4 h-4 text-brand-600" />
+                <h2 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
+                  Service Categories
+                </h2>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                  {categoryStatsList.length} Categories
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-[11px] font-extrabold px-2.5 py-1 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 flex items-center gap-1.5">
+                  <Pin className="w-3.5 h-3.5 fill-current" />
+                  <span>{pinnedCategories.length}/3 Pinned (rearranged on top)</span>
+                </span>
+              </div>
+            </div>
+
+            {/* Grid of slim category cards rearranged according to pin */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {categoryStatsList
+                .slice()
+                .sort((a, b) => {
+                  const aPinnedIndex = pinnedCategories.indexOf(a.name);
+                  const bPinnedIndex = pinnedCategories.indexOf(b.name);
+                  const aIsPinned = aPinnedIndex !== -1;
+                  const bIsPinned = bPinnedIndex !== -1;
+
+                  if (aIsPinned && bIsPinned) {
+                    return aPinnedIndex - bPinnedIndex;
+                  }
+                  if (aIsPinned) return -1;
+                  if (bIsPinned) return 1;
+                  return 0;
+                })
+                .map((cat) => {
+                  const pinnedIdx = pinnedCategories.indexOf(cat.name);
+                  const isPinned = pinnedIdx !== -1;
+
+                  return (
+                    <div
+                      key={cat.name}
+                      onClick={() => handleSelectCategory(cat.name)}
+                      className={`p-4 rounded-2xl border transition-all duration-200 cursor-pointer group flex flex-col justify-between ${
+                        isPinned
+                          ? "bg-gradient-to-br from-amber-50/30 via-white to-white dark:from-amber-950/25 dark:via-slate-900 dark:to-slate-900 border-amber-300 dark:border-amber-700/70 hover:border-amber-500 hover:shadow-md shadow-2xs"
+                          : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-brand-500 hover:shadow-md"
+                      }`}
+                    >
+                      <div>
+                        {/* Header Row: Icon + Pinned/Category Tag (Left) & Orders Count + Pin Button (Right) */}
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div
+                              className={`w-9 h-9 rounded-xl ${
+                                cat.name.toLowerCase().includes("ac")
+                                  ? "bg-sky-50 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400"
+                                  : cat.name.toLowerCase().includes("electr")
+                                  ? "bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400"
+                                  : cat.name.toLowerCase().includes("plumb")
+                                  ? "bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400"
+                                  : cat.name.toLowerCase().includes("clean")
+                                  ? "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400"
+                                  : "bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400"
+                              } flex items-center justify-center shrink-0 shadow-2xs group-hover:scale-105 transition-transform`}
+                            >
+                              {cat.name.toLowerCase().includes("ac") ? (
+                                <Wrench className="w-4 h-4" />
+                              ) : cat.name.toLowerCase().includes("electr") ? (
+                                <Zap className="w-4 h-4" />
+                              ) : cat.name.toLowerCase().includes("plumb") ? (
+                                <Droplets className="w-4 h-4" />
+                              ) : cat.name.toLowerCase().includes("clean") ? (
+                                <SprayCan className="w-4 h-4" />
+                              ) : (
+                                <Calendar className="w-4 h-4" />
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              {isPinned ? (
+                                <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border border-amber-300/80 dark:border-amber-700 inline-flex items-center gap-1">
+                                  <Pin className="w-2.5 h-2.5 fill-current" /> Pinned #{pinnedIdx + 1}
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                  Service Category
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span
+                              className={`text-[10px] font-black px-2 py-0.5 rounded-lg border ${
+                                isPinned
+                                  ? "bg-amber-100/60 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800"
+                                  : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700"
+                              }`}
+                            >
+                              {cat.count} Orders
+                            </span>
+
+                            <button
+                              type="button"
+                              onClick={(e) => togglePinCategory(cat.name, e)}
+                              title={
+                                isPinned
+                                  ? "Unpin category"
+                                  : pinnedCategories.length >= 3
+                                  ? "Pin limit reached (max 3)"
+                                  : "Pin to top (max 3)"
+                              }
+                              className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                                isPinned
+                                  ? "bg-amber-100 dark:bg-amber-950 text-amber-600 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-900/80 border border-amber-300/80 dark:border-amber-700"
+                                  : "text-slate-400 hover:text-amber-600 hover:bg-slate-100 dark:hover:bg-slate-800 opacity-60 group-hover:opacity-100"
+                              }`}
+                            >
+                              <Pin className={`w-3.5 h-3.5 ${isPinned ? "fill-current" : ""}`} />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Category Title: Full Width, Bigger Font, Full Visibility */}
+                        <div className="mt-2.5 mb-3 min-w-0">
+                          <h3
+                            className="text-sm sm:text-base font-black text-slate-900 dark:text-white group-hover:text-brand-600 transition-colors leading-snug break-words"
+                          >
+                            {cat.name}
+                          </h3>
+                        </div>
+
+                        {/* Status indicators (slim 4-pill row) */}
+                        <div className="grid grid-cols-4 gap-1.5 text-center">
+                          <div className="py-1 px-1 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200/60 dark:border-amber-800/40">
+                            <span className="text-[8px] font-black text-amber-700 dark:text-amber-300 block uppercase leading-none">
+                              Open
+                            </span>
+                            <span className="text-xs font-black text-amber-700 dark:text-amber-300 mt-0.5 block">
+                              {cat.unassigned}
+                            </span>
+                          </div>
+                          <div className="py-1 px-1 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200/60 dark:border-blue-800/40">
+                            <span className="text-[8px] font-black text-blue-700 dark:text-blue-300 block uppercase leading-none">
+                              Active
+                            </span>
+                            <span className="text-xs font-black text-blue-700 dark:text-blue-300 mt-0.5 block">
+                              {cat.inProgress}
+                            </span>
+                          </div>
+                          <div className="py-1 px-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-800/40">
+                            <span className="text-[8px] font-black text-emerald-700 dark:text-emerald-300 block uppercase leading-none">
+                              Done
+                            </span>
+                            <span className="text-xs font-black text-emerald-700 dark:text-emerald-300 mt-0.5 block">
+                              {cat.completed}
+                            </span>
+                          </div>
+                          <div className="py-1 px-1 rounded-lg bg-rose-50 dark:bg-rose-950/30 border border-rose-200/60 dark:border-rose-800/40">
+                            <span className="text-[8px] font-black text-rose-700 dark:text-rose-300 block uppercase leading-none">
+                              Cancel
+                            </span>
+                            <span className="text-xs font-black text-rose-700 dark:text-rose-300 mt-0.5 block">
+                              {cat.cancelled}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="pt-2.5 mt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-[11px] font-extrabold text-brand-600 dark:text-brand-400 group-hover:translate-x-0.5 transition-transform">
+                        <span>Open {cat.name}</span>
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
           </div>
         </div>
       ) : (

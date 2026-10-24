@@ -25,12 +25,59 @@ import {
   Menu,
   Calendar,
   FileText,
+  Loader2,
 } from "lucide-react";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
-import { varanasiLocalities, initialBookings, initialCustomers, initialTechnicians } from "@/lib/mockData";
+import { varanasiLocalities } from "@/lib/mockData";
 import { useTheme } from "@/context/ThemeContext";
 import { useRbac, RoleType } from "@/context/RbacContext";
 import { Portal } from "@/components/Portal";
+import {
+  adminSearchApi,
+  ApiSearchItem,
+  ApiSearchResults,
+  ApiSearchShortcut,
+} from "@/lib/api";
+
+type SearchCategory = "all" | "bookings" | "customers" | "partners" | "invoices";
+
+const SEARCH_CATEGORIES: { id: SearchCategory; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "bookings", label: "Bookings" },
+  { id: "customers", label: "Customers" },
+  { id: "partners", label: "Partners" },
+  { id: "invoices", label: "Invoices" },
+];
+
+const getShortcutIcon = (key: string) => {
+  switch (key) {
+    case "bookings.list":
+      return <Calendar className="w-4 h-4" />;
+    case "partners.create":
+      return <UserCheck className="w-4 h-4" />;
+    case "customers.list":
+      return <User className="w-4 h-4" />;
+    case "partners.list":
+      return <Wrench className="w-4 h-4" />;
+    default:
+      return <Search className="w-4 h-4" />;
+  }
+};
+
+const getShortcutHref = (key: string): string => {
+  switch (key) {
+    case "bookings.list":
+      return "/bookings";
+    case "partners.create":
+      return "/technicians/new";
+    case "customers.list":
+      return "/customers";
+    case "partners.list":
+      return "/technicians";
+    default:
+      return `/${key.replace(/\..*$/, "")}`;
+  }
+};
 
 interface HeaderProps {
   onOpenMobileSidebar?: () => void;
@@ -50,7 +97,36 @@ export function Header({ onOpenMobileSidebar }: HeaderProps) {
   // Global Search State
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [activeSearchCategory, setActiveSearchCategory] = useState("All");
+  const [activeSearchCategory, setActiveSearchCategory] = useState<SearchCategory>("all");
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<ApiSearchResults>({
+    bookings: [],
+    customers: [],
+    partners: [],
+    invoices: [],
+  });
+  const [searchShortcuts, setSearchShortcuts] = useState<ApiSearchShortcut[]>([
+    {
+      key: "bookings.list",
+      title: "All Bookings & Jobs",
+      description: "View and manage active requests",
+    },
+    {
+      key: "partners.create",
+      title: "Add New Partner",
+      description: "Register technician or vendor",
+    },
+    {
+      key: "customers.list",
+      title: "Customer Directory",
+      description: "Customer contacts and addresses",
+    },
+    {
+      key: "partners.list",
+      title: "Partner Directory & Map",
+      description: "Live partner tracking and list",
+    },
+  ]);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const headerRef = useRef<HTMLElement>(null);
@@ -93,73 +169,68 @@ export function Header({ onOpenMobileSidebar }: HeaderProps) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  // Compute global search matches across Bookings, Customers, Partners, and Invoices
-  const searchResults = useMemo(() => {
-    const q = searchQuery.toLowerCase().trim();
-    if (!q) return { bookings: [], customers: [], technicians: [], invoices: [] };
+  // Live API Search with Debounce
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (q.length < 2) {
+      setSearchResults({
+        bookings: [],
+        customers: [],
+        partners: [],
+        invoices: [],
+      });
+      setIsSearching(false);
+      return;
+    }
 
-    // 1. Match Bookings
-    const matchedBookings = initialBookings
-      .filter((b) => {
-        const bId = (b.id || "").toLowerCase();
-        const cust = (b.customerName || "").toLowerCase();
-        const phone = (b.customerPhone || "").toLowerCase();
-        const service = (b.serviceTitle || b.serviceName || "").toLowerCase();
-        const tech = (b.technicianName || "").toLowerCase();
-        const category = (b.category || "").toLowerCase();
-        return bId.includes(q) || cust.includes(q) || phone.includes(q) || service.includes(q) || tech.includes(q) || category.includes(q);
-      })
-      .slice(0, 4);
+    setIsSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await adminSearchApi({
+          q,
+          category: activeSearchCategory,
+          limit: 6,
+        });
+        if (res.success && res.data) {
+          setSearchResults(
+            res.data.results || {
+              bookings: [],
+              customers: [],
+              partners: [],
+              invoices: [],
+            }
+          );
+          if (res.data.shortcuts && res.data.shortcuts.length > 0) {
+            setSearchShortcuts(res.data.shortcuts);
+          }
+        }
+      } catch (err) {
+        console.error("adminSearchApi error:", err);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 250);
 
-    // 2. Match Customers
-    const matchedCustomers = initialCustomers
-      .filter((c) => {
-        const name = (c.name || "").toLowerCase();
-        const phone = (c.phone || "").toLowerCase();
-        const email = (c.email || "").toLowerCase();
-        const locality = (c.locality || "").toLowerCase();
-        const cId = (c.id || "").toLowerCase();
-        return name.includes(q) || phone.includes(q) || email.includes(q) || locality.includes(q) || cId.includes(q);
-      })
-      .slice(0, 4);
+    return () => clearTimeout(timer);
+  }, [searchQuery, activeSearchCategory]);
 
-    // 3. Match Technicians / Partners
-    const matchedTechnicians = initialTechnicians
-      .filter((t) => {
-        const name = (t.name || "").toLowerCase();
-        const category = (t.category || "").toLowerCase();
-        const phone = (t.phone || "").toLowerCase();
-        const locality = (t.locality || "").toLowerCase();
-        const role = (t.role || "").toLowerCase();
-        const tId = (t.id || "").toLowerCase();
-        return name.includes(q) || category.includes(q) || phone.includes(q) || locality.includes(q) || role.includes(q) || tId.includes(q);
-      })
-      .slice(0, 4);
-
-    // 4. Match Invoices & Billing
-    const matchedInvoices = initialBookings
-      .filter((b) => {
-        const invId = `inv-${(b.id || "").replace(/^(bk-)?/gi, "")}`.toLowerCase();
-        const origId = (b.id || "").toLowerCase();
-        const service = (b.serviceTitle || "").toLowerCase();
-        const cust = (b.customerName || "").toLowerCase();
-        const total = `${b.totalAmount || ""}`;
-        return invId.includes(q) || (q.startsWith("inv") && origId.includes(q.replace(/^inv-?/i, ""))) || service.includes(q) || cust.includes(q) || total.includes(q);
-      })
-      .slice(0, 4);
-
-    return {
-      bookings: matchedBookings,
-      customers: matchedCustomers,
-      technicians: matchedTechnicians,
-      invoices: matchedInvoices,
-    };
-  }, [searchQuery]);
+  // Load shortcuts when search modal opens
+  useEffect(() => {
+    if (isSearchOpen) {
+      adminSearchApi({ q: "", category: "all" })
+        .then((res) => {
+          if (res.success && res.data?.shortcuts?.length) {
+            setSearchShortcuts(res.data.shortcuts);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [isSearchOpen]);
 
   const totalResultsCount =
     searchResults.bookings.length +
     searchResults.customers.length +
-    searchResults.technicians.length +
+    searchResults.partners.length +
     searchResults.invoices.length;
 
   const isPartner = role === "Service Partner";
@@ -638,9 +709,9 @@ export function Header({ onOpenMobileSidebar }: HeaderProps) {
 
                 {/* Category Filter Chips */}
                 <div className="flex items-center gap-1.5 px-4 py-2 bg-slate-100/50 dark:bg-slate-800/60 border-b border-slate-100 dark:border-slate-800 overflow-x-auto text-xs">
-                  {["All", "Bookings", "Customers", "Service Partners", "Invoices"].map((cat) => (
+                  {SEARCH_CATEGORIES.map((cat) => (
                     <button
-                      key={cat}
+                      key={cat.id}
                       type="button"
                       onMouseDown={(e) => {
                         e.preventDefault();
@@ -649,91 +720,61 @@ export function Header({ onOpenMobileSidebar }: HeaderProps) {
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        setActiveSearchCategory(cat);
+                        setActiveSearchCategory(cat.id);
                       }}
                       className={`px-3 py-1 rounded-xl text-xs font-extrabold transition-all cursor-pointer whitespace-nowrap ${
-                        activeSearchCategory === cat
+                        activeSearchCategory === cat.id
                           ? "bg-brand-600 text-white shadow-xs"
                           : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700/80 hover:bg-slate-100 dark:hover:bg-slate-800"
                       }`}
                     >
-                      {cat}
+                      {cat.label}
                     </button>
                   ))}
                 </div>
 
                 {/* Results & Quick Actions Body */}
                 <div className="p-4 overflow-y-auto max-h-[60vh] space-y-4">
-                  {!searchQuery.trim() ? (
+                  {isSearching ? (
+                    <div className="py-12 flex flex-col items-center justify-center gap-2 text-slate-400">
+                      <Loader2 className="w-6 h-6 animate-spin text-brand-600" />
+                      <span className="text-xs font-bold text-slate-500">
+                        Searching {activeSearchCategory === "all" ? "everything" : activeSearchCategory}...
+                      </span>
+                    </div>
+                  ) : !searchQuery.trim() ? (
                     <div className="space-y-3 py-2">
                       <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider block px-1">
                         ⚡ Quick Navigation & Shortcuts
                       </span>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                        <Link
-                          href="/bookings"
-                          onClick={() => handleLinkClick("/bookings")}
-                          className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 hover:bg-brand-50 dark:hover:bg-brand-950/60 border border-slate-200/80 dark:border-slate-700/80 flex items-center gap-3 text-left transition-colors cursor-pointer group"
-                        >
-                          <div className="p-2 rounded-xl bg-brand-100 dark:bg-brand-900/60 text-brand-600 dark:text-brand-300 group-hover:bg-brand-600 group-hover:text-white transition-colors">
-                            <Calendar className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <span className="text-xs font-extrabold text-slate-900 dark:text-white block">
-                              All Bookings & Jobs
-                            </span>
-                            <span className="text-[11px] text-slate-500">View and manage active requests</span>
-                          </div>
-                        </Link>
-
-                        <Link
-                          href="/technicians/new"
-                          onClick={() => handleLinkClick("/technicians/new")}
-                          className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 hover:bg-emerald-50 dark:hover:bg-emerald-950/60 border border-slate-200/80 dark:border-slate-700/80 flex items-center gap-3 text-left transition-colors cursor-pointer group"
-                        >
-                          <div className="p-2 rounded-xl bg-emerald-100 dark:bg-emerald-900/60 text-emerald-600 dark:text-emerald-300 group-hover:bg-emerald-600 group-hover:text-white transition-colors">
-                            <UserCheck className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <span className="text-xs font-extrabold text-slate-900 dark:text-white block">
-                              Add New Partner
-                            </span>
-                            <span className="text-[11px] text-slate-500">Register technician or vendor</span>
-                          </div>
-                        </Link>
-
-                        <Link
-                          href="/customers"
-                          onClick={() => handleLinkClick("/customers")}
-                          className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 hover:bg-purple-50 dark:hover:bg-purple-950/60 border border-slate-200/80 dark:border-slate-700/80 flex items-center gap-3 text-left transition-colors cursor-pointer group"
-                        >
-                          <div className="p-2 rounded-xl bg-purple-100 dark:bg-purple-900/60 text-purple-600 dark:text-purple-300 group-hover:bg-purple-600 group-hover:text-white transition-colors">
-                            <User className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <span className="text-xs font-extrabold text-slate-900 dark:text-white block">
-                              Customer Directory
-                            </span>
-                            <span className="text-[11px] text-slate-500">Customer contacts and addresses</span>
-                          </div>
-                        </Link>
-
-                         <Link
-                          href="/technicians"
-                          onClick={() => handleLinkClick("/technicians")}
-                          className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 hover:bg-blue-50 dark:hover:bg-blue-950/60 border border-slate-200/80 dark:border-slate-700/80 flex items-center gap-3 text-left transition-colors cursor-pointer group"
-                        >
-                          <div className="p-2 rounded-xl bg-blue-100 dark:bg-blue-900/60 text-blue-600 dark:text-blue-300 group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                            <Wrench className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <span className="text-xs font-extrabold text-slate-900 dark:text-white block">
-                              Partner Directory & Map
-                            </span>
-                            <span className="text-[11px] text-slate-500">Live partner tracking and list</span>
-                          </div>
-                        </Link>
+                        {searchShortcuts.map((sc) => {
+                          const href = getShortcutHref(sc.key);
+                          const icon = getShortcutIcon(sc.key);
+                          return (
+                            <Link
+                              key={sc.key}
+                              href={href}
+                              onClick={() => handleLinkClick(href)}
+                              className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 hover:bg-brand-50 dark:hover:bg-brand-950/60 border border-slate-200/80 dark:border-slate-700/80 flex items-center gap-3 text-left transition-colors cursor-pointer group"
+                            >
+                              <div className="p-2 rounded-xl bg-brand-100 dark:bg-brand-900/60 text-brand-600 dark:text-brand-300 group-hover:bg-brand-600 group-hover:text-white transition-colors">
+                                {icon}
+                              </div>
+                              <div>
+                                <span className="text-xs font-extrabold text-slate-900 dark:text-white block">
+                                  {sc.title}
+                                </span>
+                                <span className="text-[11px] text-slate-500">{sc.description}</span>
+                              </div>
+                            </Link>
+                          );
+                        })}
                       </div>
+                    </div>
+                  ) : searchQuery.trim().length === 1 ? (
+                    <div className="p-8 text-center text-xs text-slate-400 font-medium">
+                      Type at least 2 characters to search...
                     </div>
                   ) : totalResultsCount === 0 ? (
                     <div className="p-8 text-center space-y-2">
@@ -748,7 +789,7 @@ export function Header({ onOpenMobileSidebar }: HeaderProps) {
                   ) : (
                     <div className="space-y-4">
                       {/* 1. Bookings Results */}
-                      {(activeSearchCategory === "All" || activeSearchCategory === "Bookings") && searchResults.bookings.length > 0 && (
+                      {(activeSearchCategory === "all" || activeSearchCategory === "bookings") && searchResults.bookings.length > 0 && (
                         <div className="space-y-1.5">
                           <div className="px-2 text-[10px] font-black text-brand-600 dark:text-brand-400 uppercase tracking-wider flex items-center gap-1.5">
                             <Calendar className="w-3.5 h-3.5" /> Bookings & Jobs ({searchResults.bookings.length})
@@ -763,24 +804,33 @@ export function Header({ onOpenMobileSidebar }: HeaderProps) {
                               <div className="space-y-0.5 min-w-0">
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <span className="font-mono text-[11px] font-extrabold text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-950 px-2 py-0.5 rounded-lg border border-brand-200 dark:border-brand-800">
-                                    {b.id}
+                                    {b.identifier || b.title}
                                   </span>
                                   <span className="text-xs font-extrabold text-slate-900 dark:text-white truncate">
-                                    {b.customerName}
+                                    {b.title}
                                   </span>
                                 </div>
-                                <p className="text-[11px] text-slate-500 truncate">{b.serviceTitle || b.serviceName}</p>
+                                <p className="text-[11px] text-slate-500 truncate">{b.subtitle}</p>
                               </div>
-                              <span className="text-[10px] font-bold px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shrink-0">
-                                {b.status}
-                              </span>
+                              <div className="flex items-center gap-2 shrink-0">
+                                {b.amount != null && (
+                                  <span className="font-mono font-bold text-xs text-slate-900 dark:text-white">
+                                    ₹{Number(b.amount).toLocaleString("en-IN")}
+                                  </span>
+                                )}
+                                {b.status && (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 uppercase tracking-wider">
+                                    {b.status}
+                                  </span>
+                                )}
+                              </div>
                             </Link>
                           ))}
                         </div>
                       )}
 
                       {/* 2. Customers Results */}
-                      {(activeSearchCategory === "All" || activeSearchCategory === "Customers") && searchResults.customers.length > 0 && (
+                      {(activeSearchCategory === "all" || activeSearchCategory === "customers") && searchResults.customers.length > 0 && (
                         <div className="space-y-1.5">
                           <div className="px-2 text-[10px] font-black text-purple-600 dark:text-purple-400 uppercase tracking-wider flex items-center gap-1.5">
                             <User className="w-3.5 h-3.5" /> Customers ({searchResults.customers.length})
@@ -795,13 +845,15 @@ export function Header({ onOpenMobileSidebar }: HeaderProps) {
                               <div className="space-y-0.5 min-w-0">
                                 <div className="flex items-center gap-2">
                                   <span className="text-xs font-extrabold text-slate-900 dark:text-white truncate">
-                                    {c.name}
+                                    {c.title}
                                   </span>
-                                  <span className="font-mono text-[10px] font-bold text-slate-400">
-                                    ({c.id})
-                                  </span>
+                                  {c.identifier && (
+                                    <span className="font-mono text-[10px] font-bold text-slate-400">
+                                      ({c.identifier})
+                                    </span>
+                                  )}
                                 </div>
-                                <p className="text-[11px] text-slate-500 font-mono">{c.phone} • {c.locality}, Varanasi</p>
+                                <p className="text-[11px] text-slate-500 font-mono truncate">{c.subtitle}</p>
                               </div>
                               <span className="text-[10px] font-bold px-2.5 py-1 rounded-xl bg-purple-50 text-purple-700 dark:bg-purple-950 dark:text-purple-300 border border-purple-200 dark:border-purple-800 shrink-0">
                                 Profile
@@ -812,39 +864,43 @@ export function Header({ onOpenMobileSidebar }: HeaderProps) {
                       )}
 
                       {/* 3. Service Partners Results */}
-                      {(activeSearchCategory === "All" || activeSearchCategory === "Service Partners") && searchResults.technicians.length > 0 && (
+                      {(activeSearchCategory === "all" || activeSearchCategory === "partners") && searchResults.partners.length > 0 && (
                         <div className="space-y-1.5">
                           <div className="px-2 text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
-                            <Wrench className="w-3.5 h-3.5" /> Service Partners ({searchResults.technicians.length})
+                            <Wrench className="w-3.5 h-3.5" /> Service Partners ({searchResults.partners.length})
                           </div>
-                          {searchResults.technicians.map((t) => (
+                          {searchResults.partners.map((p) => (
                             <Link
-                              key={t.id}
-                              href={`/technicians/${t.id}`}
-                              onClick={() => handleLinkClick(`/technicians/${t.id}`)}
+                              key={p.id}
+                              href={`/technicians/${p.id}`}
+                              onClick={() => handleLinkClick(`/technicians/${p.id}`)}
                               className="p-3 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors flex items-center justify-between gap-3 border border-slate-100 dark:border-slate-800"
                             >
                               <div className="space-y-0.5 min-w-0">
                                 <div className="flex items-center gap-2">
                                   <span className="text-xs font-extrabold text-slate-900 dark:text-white truncate">
-                                    {t.name}
+                                    {p.title}
                                   </span>
-                                  <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
-                                    ★ {t.rating}
-                                  </span>
+                                  {p.identifier && (
+                                    <span className="font-mono text-[10px] font-bold text-slate-400">
+                                      ({p.identifier})
+                                    </span>
+                                  )}
                                 </div>
-                                <p className="text-[11px] text-slate-500">{t.category} • {t.locality}</p>
+                                <p className="text-[11px] text-slate-500 truncate">{p.subtitle}</p>
                               </div>
-                              <span className="text-[10px] font-bold px-2.5 py-1 rounded-xl bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shrink-0">
-                                {t.status}
-                              </span>
+                              {p.status && (
+                                <span className="text-[10px] font-bold px-2.5 py-1 rounded-xl bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shrink-0 uppercase tracking-wider">
+                                  {p.status}
+                                </span>
+                              )}
                             </Link>
                           ))}
                         </div>
                       )}
 
                       {/* 4. Invoices Results */}
-                      {(activeSearchCategory === "All" || activeSearchCategory === "Invoices") && searchResults.invoices.length > 0 && (
+                      {(activeSearchCategory === "all" || activeSearchCategory === "invoices") && searchResults.invoices.length > 0 && (
                         <div className="space-y-1.5">
                           <div className="px-2 text-[10px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
                             <FileText className="w-3.5 h-3.5" /> Invoices & Billing ({searchResults.invoices.length})
@@ -858,18 +914,27 @@ export function Header({ onOpenMobileSidebar }: HeaderProps) {
                             >
                               <div className="space-y-0.5 min-w-0">
                                 <div className="flex items-center gap-2">
-                                  <span className="font-mono text-[11px] font-extrabold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950 px-2 py-0.5 rounded-lg border border-emerald-200 dark:border-emerald-800">
-                                    INV-{inv.id.replace(/^(bk-)?/gi, "").toUpperCase()}
+                                  <span className="font-mono text-[11px] font-extrabold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950 px-2 py-0.5 rounded-lg border border-amber-200 dark:border-amber-800">
+                                    {inv.identifier || inv.title}
                                   </span>
                                   <span className="text-xs font-extrabold text-slate-900 dark:text-white truncate">
-                                    {inv.customerName}
+                                    {inv.title}
                                   </span>
                                 </div>
-                                <p className="text-[11px] text-slate-500 truncate">{inv.serviceTitle}</p>
+                                <p className="text-[11px] text-slate-500 truncate">{inv.subtitle}</p>
                               </div>
-                              <span className="font-mono font-extrabold text-xs text-slate-900 dark:text-white shrink-0">
-                                ₹{(inv.totalAmount || 873).toLocaleString("en-IN")}
-                              </span>
+                              <div className="flex items-center gap-2 shrink-0">
+                                {inv.amount != null && (
+                                  <span className="font-mono font-extrabold text-xs text-slate-900 dark:text-white">
+                                    ₹{Number(inv.amount).toLocaleString("en-IN")}
+                                  </span>
+                                )}
+                                {inv.status && (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300 border border-amber-200 dark:border-amber-800 uppercase tracking-wider">
+                                    {inv.status}
+                                  </span>
+                                )}
+                              </div>
                             </Link>
                           ))}
                         </div>

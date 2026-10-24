@@ -528,7 +528,7 @@ export default function CategoriesPage() {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
             <Sliders className="w-6 h-6 text-brand-600" />
-            <span>Master Category Table & Main Service Icons</span>
+            <span>Category </span>
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
             View the Master Category Table or manage custom dual-tone SVG/image icons for Air Conditioner, Appliances, Cleaning, Plumbing, Electrician, Carpenter, Painting & Pest Control.
@@ -575,14 +575,6 @@ export default function CategoriesPage() {
       {/* FIRST TAB: MASTER CATEGORY TABLE */}
       {activeCategoryTab === "masterTable" && (
         <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">
-              Master Category Directory & Service Records
-            </h3>
-            <span className="text-xs font-bold text-slate-400">
-              Showing {categories.length} Master Categories
-            </span>
-          </div>
           {isLoading ? (
             <ShimmerRow count={6} />
           ) : (
