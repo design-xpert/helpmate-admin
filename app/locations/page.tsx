@@ -161,18 +161,12 @@ export default function LocationsPage() {
     fetchLocalities(1, true, localitySearch, newSize);
   };
 
-  const isFirstMount = useRef(true);
-  useEffect(() => {
-    if (isFirstMount.current) {
-      isFirstMount.current = false;
-      return;
-    }
-    const timer = setTimeout(() => {
-      setLocalityPage(1);
-      fetchLocalities(1, true, localitySearch, localityLimit);
-    }, 350);
-    return () => clearTimeout(timer);
-  }, [localitySearch, localityLimit, fetchLocalities]);
+  // Called only when typing has stopped in DataTable (or on Enter / clear)
+  const handleLocalitySearchChange = (val: string) => {
+    setLocalitySearch(val);
+    setLocalityPage(1);
+    fetchLocalities(1, true, val, localityLimit);
+  };
 
   const fetchCities = async (force: boolean = false) => {
     if (!force && isModuleCacheFresh("locations_cities", 30000)) {
@@ -612,30 +606,6 @@ export default function LocationsPage() {
             </span>
           </button>
         </div>
-
-        {activeTab === "pincodes" ? (
-          <div className="relative">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Search locality or pincode..."
-              value={localitySearch}
-              onChange={(e) => setLocalitySearch(e.target.value)}
-              className="pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-none focus:border-brand-500 w-56"
-            />
-          </div>
-        ) : (
-          <div className="relative">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Search cities or states..."
-              value={citySearch}
-              onChange={(e) => setCitySearch(e.target.value)}
-              className="pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-none focus:border-brand-500 w-56"
-            />
-          </div>
-        )}
       </div>
 
       {/* 4 Executive Quick Metric Cards */}
@@ -692,34 +662,35 @@ export default function LocationsPage() {
       {/* MAIN TAB CONTENT */}
       {activeTab === "pincodes" ? (
         <div className="space-y-4">
-          {isLocalitiesLoading ? (
-            <ShimmerRow count={6} />
-          ) : (
-            <DataTable
-              columns={pincodeColumns}
-              data={localities}
-              idField="_id"
-              serverPagination={true}
-              currentPage={localityPage}
-              pageSize={localityLimit}
-              totalRecords={localityTotalRecords}
-              totalPages={localityTotalPages}
-              onPageChange={handleLocalityPageChange}
-              pageSizeOptions={[10, 20, 50, 100]}
-              onPageSizeChange={handleLocalityPageSizeChange}
-              searchPlaceholder="Search locality or pincode..."
-              searchValue={localitySearch}
-              onSearchChange={(val) => setLocalitySearch(val)}
-            />
-          )}
+          <DataTable
+            columns={pincodeColumns}
+            data={localities}
+            idField="_id"
+            serverPagination={true}
+            currentPage={localityPage}
+            pageSize={localityLimit}
+            totalRecords={localityTotalRecords}
+            totalPages={localityTotalPages}
+            onPageChange={handleLocalityPageChange}
+            pageSizeOptions={[10, 20, 50, 100]}
+            onPageSizeChange={handleLocalityPageSizeChange}
+            searchPlaceholder="Search locality or pincode..."
+            searchValue={localitySearch}
+            onSearchChange={handleLocalitySearchChange}
+            isLoading={isLocalitiesLoading}
+          />
         </div>
       ) : (
         <div className="space-y-4">
-          {isCitiesLoading ? (
-            <ShimmerRow count={6} />
-          ) : (
-            <DataTable columns={cityColumns} data={filteredCities} idField="_id" />
-          )}
+          <DataTable
+            columns={cityColumns}
+            data={filteredCities}
+            idField="_id"
+            searchPlaceholder="Search cities or states..."
+            searchValue={citySearch}
+            onSearchChange={(val) => setCitySearch(val)}
+            isLoading={isCitiesLoading}
+          />
         </div>
       )}
 

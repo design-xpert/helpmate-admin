@@ -8,7 +8,7 @@ import { RowActionMenu } from "@/components/RowActionMenu";
 import { TableImage } from "@/components/TableImage";
 import { Portal } from "@/components/Portal";
 import { toast } from "@/components/Toast";
-import { ServiceItem, ServiceAddon, VaranasiLocality } from "@/lib/mockData";
+import { ServiceItem, ServiceAddon } from "@/lib/mockData";
 import {
   getPackagesApi,
   getPackageByIdApi,
@@ -29,14 +29,12 @@ import {
   createServiceActionApi,
   updateServiceActionApi,
   deleteServiceActionApi,
-  getLocalitiesApi,
   calculateDurationInMinutes,
   formatDurationLabel,
   formatHoursOnly,
   ApiCategory,
   ApiAddon,
   ApiServiceAction,
-  ApiLocality,
   API_BASE_URL,
   formatImageUrl,
 } from "@/lib/api";
@@ -191,12 +189,10 @@ export default function CmsPage() {
   // Enhanced Services state — live API data only (no manual mock data)
   const initialCachedServices = getStoredModuleData<ServiceItem[]>("cms_services") || [];
   const initialCachedAddons = getStoredModuleData<ServiceAddon[]>("cms_addons") || [];
-  const initialCachedLocalities = getStoredModuleData<VaranasiLocality[]>("cms_localities") || [];
 
   const [services, setServices] = useState<ServiceItem[]>(() => initialCachedServices);
   const [addons, setAddons] = useState<ServiceAddon[]>(() => initialCachedAddons);
-  const [localities, setLocalities] = useState<VaranasiLocality[]>(() => initialCachedLocalities);
-  const [activeTab, setActiveTab] = useState<"services" | "addons" | "pincodes">("services");
+  const [activeTab, setActiveTab] = useState<"services" | "addons">("services");
   
   // If cache is fresh (< 30s), don't show any loader at all! Exact data shows with 0 delay
   const [isLoading, setIsLoading] = useState<boolean>(() => {
@@ -209,6 +205,7 @@ export default function CmsPage() {
   const [servicesTablePage, setServicesTablePage] = useState<number>(1);
   const [servicesTotalRecords, setServicesTotalRecords] = useState<number>(0);
   const [servicesTotalPages, setServicesTotalPages] = useState<number>(1);
+  const [servicesSearch, setServicesSearch] = useState<string>("");
 
   const activeFetchIdRef = useRef(0);
 
@@ -217,13 +214,15 @@ export default function CmsPage() {
     force: boolean = false,
     categoryId?: string,
     page: number = 1,
-    limit: number = 10
+    limit: number = 10,
+    searchQuery?: string
   ) => {
     const fetchId = ++activeFetchIdRef.current;
     const activeCatId = categoryId !== undefined ? categoryId : selectedCategoryIdFilter;
+    const activeSearch = searchQuery !== undefined ? searchQuery : servicesSearch;
     const cacheKey = activeCatId
-      ? `cms_services_${activeCatId}_p${page}_l${limit}`
-      : `cms_services_p${page}_l${limit}`;
+      ? `cms_services_${activeCatId}_p${page}_l${limit}_s${(activeSearch || "").trim()}`
+      : `cms_services_p${page}_l${limit}_s${(activeSearch || "").trim()}`;
 
     if (!force && isModuleCacheFresh(cacheKey, 30000)) {
       const cached = getStoredModuleData<{
@@ -248,6 +247,9 @@ export default function CmsPage() {
       const params: any = { page, limit: 10, forceRefresh: force };
       if (activeCatId && activeCatId !== "all" && activeCatId !== "") {
         params.categoryId = activeCatId;
+      }
+      if (activeSearch && activeSearch.trim()) {
+        params.search = activeSearch.trim();
       }
 
       const pkgRes = await getPackagesApi(params);
@@ -536,45 +538,15 @@ export default function CmsPage() {
     }
   };
 
-  const fetchLocalitiesFromBackend = async (force: boolean = false) => {
-    if (!force && isModuleCacheFresh("cms_localities", 30000)) {
-      const cached = getStoredModuleData<VaranasiLocality[]>("cms_localities");
-      if (cached && cached.length > 0) {
-        setLocalities(cached);
-        return;
-      }
-    }
-    try {
-      const res = await getLocalitiesApi({ forceRefresh: force });
-      const rawList = res?.data?.localities || (Array.isArray(res?.data) ? res.data : []);
-      if (res && res.success !== false) {
-        const mapped: VaranasiLocality[] = rawList.map((l: ApiLocality) => ({
-          id: l._id,
-          name: l.localityName,
-          pincode: l.pincode,
-          activeBookings: 0,
-          activeTechs: 0,
-          status: l.status ? "Normal" : "High Demand",
-          isServiceable: l.status !== false,
-        }));
-        setLocalities(mapped);
-        setCachedModuleData("cms_localities", mapped);
-      }
-    } catch (e) {
-      console.error("fetchLocalitiesFromBackend error:", e);
-    }
-  };
-
   useEffect(() => {
     const loadAllData = async () => {
       // Check if all module data is fresh (within 30 seconds)
       const hasFreshServices = isModuleCacheFresh("cms_services", 30000) && initialCachedServices.length > 0;
       const hasFreshCats = isModuleCacheFresh("cms_categories_api", 30000) && initialCachedCats.length > 0;
       const hasFreshAddons = isModuleCacheFresh("cms_addons", 30000) && initialCachedAddons.length > 0;
-      const hasFreshLocalities = isModuleCacheFresh("cms_localities", 30000) && initialCachedLocalities.length > 0;
 
       // If all data was loaded within 30 seconds, DO NOT CALL ANY APIS! Show exact data with zero load!
-      if (hasFreshServices && hasFreshCats && hasFreshAddons && hasFreshLocalities) {
+      if (hasFreshServices && hasFreshCats && hasFreshAddons) {
         setIsLoading(false);
         return;
       }
@@ -583,7 +555,6 @@ export default function CmsPage() {
         const [cats] = await Promise.all([
           fetchCategoriesFromBackend(),
           fetchAddonsFromBackend(),
-          fetchLocalitiesFromBackend(),
         ]);
         await fetchServicesFromBackend(cats, false, "", 1, 10);
       } catch (e) {
@@ -765,17 +736,24 @@ export default function CmsPage() {
   const [targetLinkUrl, setTargetLinkUrl] = useState("https://helpmate-theta.vercel.app/services/ac");
   const [isBannerPreviewOpen, setIsBannerPreviewOpen] = useState(false);
 
+  // Called only when typing has stopped in DataTable (or on Enter / clear)
+  const handleServicesSearchChange = (val: string) => {
+    setServicesSearch(val);
+    setServicesTablePage(1);
+    fetchServicesFromBackend(categoriesFromApi, true, selectedCategoryIdFilter, 1, 10, val);
+  };
+
   // Category Filter Flow Actions - fetches from /api/package?categoryId=${catId}&page=1&limit=10
   const handleSelectCategoryFilter = async (catId: string, catName: string) => {
     setSelectedCategoryIdFilter(catId);
     setSelectedCategoryFilter(catName);
     setServicesTablePage(1);
-    await fetchServicesFromBackend(categoriesFromApi, true, catId, 1, 10);
+    await fetchServicesFromBackend(categoriesFromApi, true, catId, 1, 10, servicesSearch);
   };
 
   const handleServicesPageChange = async (newPage: number) => {
     setServicesTablePage(newPage);
-    await fetchServicesFromBackend(categoriesFromApi, true, selectedCategoryIdFilter, newPage, 10);
+    await fetchServicesFromBackend(categoriesFromApi, true, selectedCategoryIdFilter, newPage, 10, servicesSearch);
   };
 
   const categoriesList = [
@@ -1119,58 +1097,8 @@ export default function CmsPage() {
     },
   ];
 
-  const pincodeColumns: Column<VaranasiLocality>[] = [
-    {
-      key: "name",
-      header: "Locality / Zone",
-      accessor: (row) => <span className="font-extrabold text-slate-900 dark:text-white">{row.name}</span>,
-    },
-    {
-      key: "pincode",
-      header: "Pincode",
-      accessor: (row) => <span className="font-mono font-bold text-brand-600">{row.pincode}</span>,
-    },
-    {
-      key: "activeBookings",
-      header: "Active Booking Load",
-      accessor: (row) => <span className="font-bold text-slate-700 dark:text-slate-300">{row.activeBookings} Bookings</span>,
-    },
-    {
-      key: "status",
-      header: "Serviceability Status",
-      accessor: () => (
-        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1 w-fit">
-          <CheckCircle2 className="w-3 h-3" /> Serviceable
-        </span>
-      ),
-    },
-    {
-      key: "actions",
-      header: "Actions",
-      sticky: "right",
-      accessor: (row) => (
-        <RowActionMenu
-          actions={[
-            {
-              label: "Edit Locality",
-              icon: Edit,
-              onClick: () => setIsAddPincodeOpen(true),
-            },
-            {
-              label: "Delete Locality",
-              icon: Trash2,
-              onClick: () => setLocalities(localities.filter((l) => l.id !== row.id)),
-              danger: true,
-            },
-          ]}
-        />
-      ),
-    },
-  ];
-
   const [isAddServiceOpen, setIsAddServiceOpen] = useState(false);
   const [isAddAddonOpen, setIsAddAddonOpen] = useState(false);
-  const [isAddPincodeOpen, setIsAddPincodeOpen] = useState(false);
   const [isSavingService, setIsSavingService] = useState(false);
   const [isSavingAddon, setIsSavingAddon] = useState(false);
   const [isSavingAction, setIsSavingAction] = useState(false);
@@ -1342,9 +1270,7 @@ export default function CmsPage() {
     setIsAddAddonOpen(true);
   };
 
-  // Add Pincode Form State
-  const [pincodeLocality, setPincodeLocality] = useState("");
-  const [pincodeCode, setPincodeCode] = useState("221005");
+
 
   const handleAddOfferingRow = () => {
     setServiceOfferings((prev) => [
@@ -2184,24 +2110,7 @@ export default function CmsPage() {
     }
   };
 
-  const handleCreatePincode = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!pincodeLocality) return;
 
-    const newLoc: VaranasiLocality = {
-      id: `loc-${Date.now()}`,
-      name: pincodeLocality,
-      pincode: pincodeCode,
-      activeBookings: 0,
-      activeTechs: 5,
-      status: "Normal",
-      isServiceable: true,
-    };
-
-    setLocalities([newLoc, ...localities]);
-    setPincodeLocality("");
-    setIsAddPincodeOpen(false);
-  };
 
   // Dynamic Filtering by Category
   const filteredServices = useMemo(() => {
@@ -2227,7 +2136,7 @@ export default function CmsPage() {
             <span>Services CMS</span>
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
-            Manage fixed service rates, diagnostic inspection charges, Add-ons, and Varanasi pincode serviceability rules.
+            Manage fixed service rates, diagnostic inspection charges, and Add-on spare parts.
           </p>
         </div>
 
@@ -2235,8 +2144,7 @@ export default function CmsPage() {
           type="button"
           onClick={() => {
             if (activeTab === "services") openAddServiceDrawer();
-            else if (activeTab === "addons") openAddAddonDrawer();
-            else setIsAddPincodeOpen(true);
+            else openAddAddonDrawer();
           }}
           className="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 w-full sm:w-auto"
         >
@@ -2244,9 +2152,7 @@ export default function CmsPage() {
           <span>
             {activeTab === "services"
               ? "Create Service Offer"
-              : activeTab === "addons"
-                ? "Add Spare Component"
-                : "Add Varanasi Pincode"}
+              : "Add Spare Component"}
           </span>
         </button>
       </div>
@@ -2266,26 +2172,13 @@ export default function CmsPage() {
           </button>
           <button
             type="button"
-            onClick={() => {
-              setActiveTab("addons");
-              handleOpenAddonsModal(null);
-            }}
+            onClick={() => setActiveTab("addons")}
             className={`px-3 sm:px-4 py-2 rounded-xl transition-all whitespace-nowrap cursor-pointer ${activeTab === "addons"
               ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm"
               : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
               }`}
           >
             Add-on Parts
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab("pincodes")}
-            className={`px-3 sm:px-4 py-2 rounded-xl transition-all whitespace-nowrap cursor-pointer ${activeTab === "pincodes"
-              ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm"
-              : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
-              }`}
-          >
-            Pincode Serviceability
           </button>
         </div>
       </div>
@@ -2328,61 +2221,31 @@ export default function CmsPage() {
       )}
 
       {activeTab === "services" ? (
-        isLoading ? (
-          <ShimmerRow count={6} />
-        ) : (
-          <DataTable
-            columns={serviceColumns}
-            data={filteredServices}
-            searchPlaceholder="Search service title or category..."
-            serverPagination={true}
-            currentPage={servicesTablePage}
-            totalPages={servicesTotalPages}
-            totalRecords={servicesTotalRecords}
-            pageSize={10}
-            pageSizeOptions={[10]}
-            onPageChange={handleServicesPageChange}
-          />
-        )
-      ) : activeTab === "addons" ? (
-        isLoading ? (
-          <ShimmerRow count={5} />
-        ) : (
-          <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-purple-50/60 dark:bg-purple-950/30 rounded-2xl border border-purple-200 dark:border-purple-800">
-              <div className="flex items-center gap-2.5">
-                <Wrench className="w-5 h-5 text-purple-600 dark:text-purple-400 shrink-0" />
-                <div>
-                  <h4 className="font-extrabold text-sm text-slate-900 dark:text-white">
-                    Add-on Parts Catalog ({addons.length})
-                  </h4>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                    Manage spare parts, accessories, and unit rates. Add new, edit, or delete items.
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => handleOpenAddonsModal(null)}
-                className="px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-xs shadow-xs transition-all flex items-center gap-1.5 cursor-pointer self-start sm:self-center"
-              >
-                <Layers className="w-3.5 h-3.5" />
-                <span>Open Add-ons Manager</span>
-              </button>
-            </div>
-            <DataTable
-              columns={addonColumns}
-              data={addons}
-              searchPlaceholder="Search add-on title..."
-            />
-          </div>
-        )
-      ) : (
         <DataTable
-          columns={pincodeColumns}
-          data={localities}
-          searchPlaceholder="Search locality or pincode..."
+          columns={serviceColumns}
+          data={filteredServices}
+          searchPlaceholder="Search service title or category..."
+          serverPagination={true}
+          currentPage={servicesTablePage}
+          totalPages={servicesTotalPages}
+          totalRecords={servicesTotalRecords}
+          pageSize={10}
+          pageSizeOptions={[10]}
+          onPageChange={handleServicesPageChange}
+          searchValue={servicesSearch}
+          onSearchChange={handleServicesSearchChange}
+          isLoading={isLoading}
         />
+      ) : (
+        <div className="space-y-4">
+         
+          <DataTable
+            columns={addonColumns}
+            data={addons}
+            searchPlaceholder="Search add-on title..."
+            isLoading={isLoading}
+          />
+        </div>
       )}
 
       {/* COMPREHENSIVE ADD-ONS MANAGEMENT POPUP */}
@@ -3725,67 +3588,7 @@ export default function CmsPage() {
         </Portal>
       )}
 
-      {/* ADD PINCODE DRAWER */}
-      {isAddPincodeOpen && (
-        <Portal>
-          <div className="fixed inset-0 z-[99999] bg-slate-950/60 backdrop-blur-xs flex justify-end outline-none">
-            <div className="absolute inset-0" onClick={() => setIsAddPincodeOpen(false)} />
-            <form
-              onSubmit={handleCreatePincode}
-              className="relative z-10 bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 p-6 max-w-md w-full h-full flex flex-col justify-between shadow-2xl animate-in slide-in-from-right duration-300 outline-none text-xs"
-            >
-              <div className="space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
-                  <h3 className="font-extrabold text-slate-900 dark:text-white text-base">Add Serviceable Pincode Zone</h3>
-                  <button type="button" onClick={() => setIsAddPincodeOpen(false)} className="text-slate-400 hover:text-slate-600">
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
 
-                <div>
-                  <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">Locality Name *</label>
-                  <input
-                    type="text"
-                    required
-                    value={pincodeLocality}
-                    onChange={(e) => setPincodeLocality(e.target.value)}
-                    placeholder="e.g. Lanka Bhabha Road"
-                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">Pincode *</label>
-                  <input
-                    type="text"
-                    required
-                    value={pincodeCode}
-                    onChange={(e) => setPincodeCode(e.target.value)}
-                    placeholder="221005"
-                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono font-bold outline-none"
-                  />
-                </div>
-              </div>
-
-              <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setIsAddPincodeOpen(false)}
-                  className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 font-bold text-xs text-slate-700 dark:text-slate-300"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white font-extrabold text-xs shadow-lux"
-                >
-                  Save Service Zone
-                </button>
-              </div>
-            </form>
-          </div>
-        </Portal>
-      )}
 
       {/* MANAGE SUBCATEGORIES MODAL */}
       {isManageSubcategoriesOpen && (
