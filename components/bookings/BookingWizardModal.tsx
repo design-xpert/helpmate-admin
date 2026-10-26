@@ -576,13 +576,20 @@ export function BookingWizardModal({
     }
   }, [customerName, customerPhone]);
 
+  const [isSearchingLocality, setIsSearchingLocality] = React.useState(false);
+  const localitySearchTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+
   // Fetch Localities from API: /api/locality
-  const fetchLocalities = React.useCallback(async () => {
+  const fetchLocalities = React.useCallback(async (searchQuery?: string) => {
     try {
-      const res = await getLocalitiesApi({ limit: 100 });
+      const res = await getLocalitiesApi({
+        limit: searchQuery ? 100 : 300,
+        search: searchQuery || undefined,
+        forceRefresh: Boolean(searchQuery),
+      });
       if (res && res.success && res.data) {
         const rawLocalities = res.data.localities || (Array.isArray(res.data) ? res.data : []);
-        if (Array.isArray(rawLocalities) && rawLocalities.length > 0) {
+        if (Array.isArray(rawLocalities)) {
           const mapped: VaranasiLocality[] = rawLocalities.map((l: any) => ({
             id: l._id,
             name: l.localityName || l.name || "Locality",
@@ -599,6 +606,17 @@ export function BookingWizardModal({
       console.error("fetchLocalities error:", err);
     }
   }, []);
+
+  const handleLocalitySearch = React.useCallback((term: string) => {
+    if (localitySearchTimeoutRef.current) {
+      clearTimeout(localitySearchTimeoutRef.current);
+    }
+    localitySearchTimeoutRef.current = setTimeout(async () => {
+      setIsSearchingLocality(true);
+      await fetchLocalities(term.trim());
+      setIsSearchingLocality(false);
+    }, 250);
+  }, [fetchLocalities]);
 
   // Fetch Customer Trust Status: /api/customer-trust/{customerId}
   const checkCustomerTrustStatus = React.useCallback(async (cId: string) => {
@@ -2068,6 +2086,10 @@ export function BookingWizardModal({
                                         label: `${loc.name} (${loc.pincode})`,
                                       }))}
                                       placeholder="Select Locality..."
+                                      searchable={true}
+                                      searchPlaceholder="Search locality or pincode..."
+                                      onSearch={handleLocalitySearch}
+                                      isSearching={isSearchingLocality}
                                     />
                                   </div>
 
@@ -2304,6 +2326,10 @@ export function BookingWizardModal({
                       <CustomSelect
                         label="Service Locality *"
                         value={locality}
+                        searchable={true}
+                        searchPlaceholder="Search locality or pincode..."
+                        onSearch={handleLocalitySearch}
+                        isSearching={isSearchingLocality}
                         onChange={(val) => {
                           setLocality(val);
                           const selectedLocObj = localityList.find((loc) => loc.name === val);

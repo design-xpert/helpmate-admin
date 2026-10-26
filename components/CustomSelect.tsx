@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, ReactNode } from "react";
-import { ChevronDown, CheckCircle2, Plus, Search } from "lucide-react";
+import { ChevronDown, CheckCircle2, Plus, Search, Loader2, X } from "lucide-react";
 
 export interface CustomSelectOption {
   value: string;
@@ -22,6 +22,9 @@ export interface CustomSelectProps {
   disabled?: boolean;
   size?: "sm" | "md";
   searchable?: boolean;
+  searchPlaceholder?: string;
+  onSearch?: (term: string) => void;
+  isSearching?: boolean;
   menuPlacement?: "auto" | "top" | "bottom";
 }
 
@@ -38,6 +41,9 @@ export function CustomSelect({
   disabled = false,
   size = "md",
   searchable = false,
+  searchPlaceholder = "Search...",
+  onSearch,
+  isSearching = false,
   menuPlacement = "auto",
 }: CustomSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -141,20 +147,47 @@ export function CustomSelect({
         >
           {searchable && (
             <div className="relative p-1 border-b border-slate-100 dark:border-slate-800">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search..."
-                className="w-full pl-8 pr-3 py-1.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white outline-none focus:border-brand-500"
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSearchTerm(val);
+                  if (onSearch) onSearch(val);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") e.preventDefault();
+                }}
+                placeholder={searchPlaceholder}
+                className="w-full pl-8 pr-7 py-1.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white outline-none focus:border-brand-500"
                 onClick={(e) => e.stopPropagation()}
                 autoFocus
               />
+              {isSearching ? (
+                <Loader2 className="w-3.5 h-3.5 text-brand-500 animate-spin absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              ) : searchTerm ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSearchTerm("");
+                    if (onSearch) onSearch("");
+                  }}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              ) : null}
             </div>
           )}
 
-          {filteredOptions.length > 0 ? (
+          {isSearching && filteredOptions.length === 0 ? (
+            <div className="py-6 flex flex-col items-center justify-center gap-1.5 text-xs text-slate-400">
+              <Loader2 className="w-4 h-4 text-brand-500 animate-spin" />
+              <span>Searching options...</span>
+            </div>
+          ) : filteredOptions.length > 0 ? (
             filteredOptions.map((opt, idx) => {
               const isSelected =
                 opt.value === value ||
@@ -168,6 +201,7 @@ export function CustomSelect({
                     onChange(opt.value);
                     setIsOpen(false);
                     setSearchTerm("");
+                    if (onSearch) onSearch("");
                   }}
                   className={`w-full ${
                     size === "sm"
@@ -190,7 +224,9 @@ export function CustomSelect({
               );
             })
           ) : (
-            <div className="p-3 text-center text-xs text-slate-400 italic">No options found</div>
+            <div className="p-3 text-center text-xs text-slate-400 italic">
+              {searchTerm ? `No options found matching "${searchTerm}"` : "No options available"}
+            </div>
           )}
         </div>
       )}
