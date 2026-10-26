@@ -63,19 +63,22 @@ export default function ImageSectionsPage() {
   const initialCachedQuick = getStoredModuleData<TrendingServiceCard[]>("website_quick") || [];
   const initialCachedSpotlight = getStoredModuleData<SpotlightBanner[]>("website_spotlight") || initialSpotlightBanners;
   const initialCachedCategories = getStoredModuleData<ApiCategory[]>("website_categories") || [];
+  const initialCachedCategorySections = (getStoredModuleData<CategorySectionData[]>("website_category_sections") || []).filter(
+    (s) => s.id !== "home-cleaning-pest" && s.id !== "ac-appliances" && s.id !== "quick-home-repairs" && !s.id.startsWith("catsec-")
+  );
 
   // Server-safe initial states (rehydrated in useEffect from localStorage / cache)
   const [zones, setZones] = useState<ZoneCard[]>(() => initialCachedZones);
   const [trendingServices, setTrendingServices] = useState<TrendingServiceCard[]>(() => initialCachedTrending);
   const [quickServices, setQuickServices] = useState<TrendingServiceCard[]>(() => initialCachedQuick);
   const [spotlightBanners, setSpotlightBanners] = useState<SpotlightBanner[]>(() => initialCachedSpotlight);
-  const [categorySections, setCategorySections] = useState<CategorySectionData[]>(initialCategorySections);
+  const [categorySections, setCategorySections] = useState<CategorySectionData[]>(() => initialCachedCategorySections);
 
   // Loading states
   const [isZonesLoading, setIsZonesLoading] = useState(() => !(isModuleCacheFresh("website_zones", 30000) && initialCachedZones.length > 0));
   const [isTrendingLoading, setIsTrendingLoading] = useState(() => !(isModuleCacheFresh("website_trending", 30000) && initialCachedTrending.length > 0));
   const [isQuickLoading, setIsQuickLoading] = useState(() => !(isModuleCacheFresh("website_quick", 30000) && initialCachedQuick.length > 0));
-  const [isCategorySectionsLoading, setIsCategorySectionsLoading] = useState(false);
+  const [isCategorySectionsLoading, setIsCategorySectionsLoading] = useState(() => !(isModuleCacheFresh("website_category_sections", 30000) && initialCachedCategorySections.length > 0));
   const [isCategoriesLoading, setIsCategoriesLoading] = useState(false);
   const [isCatalogLoading, setIsCatalogLoading] = useState(false);
 
@@ -523,8 +526,11 @@ export default function ImageSectionsPage() {
   const fetchCategorySections = async (force: boolean = false) => {
     if (!force && isModuleCacheFresh("website_category_sections", 30000)) {
       const cached = getStoredModuleData<CategorySectionData[]>("website_category_sections");
-      if (cached && cached.length > 0) {
-        setCategorySections(cached);
+      if (cached) {
+        const cleanCached = cached.filter(
+          (s) => s.id !== "home-cleaning-pest" && s.id !== "ac-appliances" && s.id !== "quick-home-repairs" && !s.id.startsWith("catsec-")
+        );
+        setCategorySections(cleanCached);
         setIsCategorySectionsLoading(false);
         return;
       }
@@ -534,42 +540,54 @@ export default function ImageSectionsPage() {
     }
     try {
       const res = await getQuickServiceSectionsApi(force);
-      if (res && res.success && Array.isArray(res.data) && res.data.length > 0) {
-        const mapped: CategorySectionData[] = res.data.map((item: any, idx: number) => {
-          const cat = item.category || {};
-          const pkgs = Array.isArray(item.packages) ? item.packages : [];
-          const services = pkgs.map((p: any) => ({
-            id: p._id || p.packageId,
-            packageId: p._id || p.packageId,
-            title: p.packageName,
-            image: formatImageUrl(p.imageUrl) || `/api/media/package/${p._id || p.packageId}/image`,
-            targetUrl: `/services/${cat.slug || "services"}?packageId=${p._id || p.packageId}`,
-            price: String(p.price || 0),
-            originalPrice: String(p.originalPrice || 0),
-            duration: p.duration || 30,
-          }));
+      if (res && res.success && Array.isArray(res.data)) {
+        if (res.data.length > 0) {
+          const mapped: CategorySectionData[] = res.data.map((item: any, idx: number) => {
+            const cat = item.category || {};
+            const pkgs = Array.isArray(item.packages) ? item.packages : [];
+            const services = pkgs.map((p: any) => ({
+              id: p._id || p.packageId,
+              packageId: p._id || p.packageId,
+              title: p.packageName,
+              image: formatImageUrl(p.imageUrl) || `/api/media/package/${p._id || p.packageId}/image`,
+              targetUrl: `/services/${cat.slug || "services"}?packageId=${p._id || p.packageId}`,
+              price: String(p.price || 0),
+              originalPrice: String(p.originalPrice || 0),
+              duration: p.duration || 30,
+            }));
 
-          return {
-            id: cat._id || `catsec-${idx + 1}`,
-            title: cat.categoryName || "Category Services",
-            subtitle: `Verified ${cat.categoryName || "category"} packages & doorstep repair solutions in Varanasi`,
-            badge: idx === 0 ? "Top Rated" : "Popular",
-            categoryIds: [cat._id].filter(Boolean),
-            categorySlug: cat.slug || "services",
-            seeAllUrl: `/search?view=packages&category=${encodeURIComponent(cat.categoryName || "")}&categoryId=${cat._id || ""}`,
-            isActive: true,
-            sortOrder: idx + 1,
-            services,
-          };
-        });
-        setCategorySections(mapped);
-        setCachedModuleData("website_category_sections", mapped);
-        try {
-          localStorage.setItem("helpmate_admin_website_category_sections", JSON.stringify(mapped));
-        } catch (e) {}
+            return {
+              id: cat._id || `catsec-${idx + 1}`,
+              title: cat.categoryName || "Category Services",
+              subtitle: `Verified ${cat.categoryName || "category"} packages & doorstep repair solutions in Varanasi`,
+              badge: idx === 0 ? "Top Rated" : "Popular",
+              categoryIds: [cat._id].filter(Boolean),
+              categorySlug: cat.slug || "services",
+              seeAllUrl: `/search?view=packages&category=${encodeURIComponent(cat.categoryName || "")}&categoryId=${cat._id || ""}`,
+              isActive: true,
+              sortOrder: idx + 1,
+              services,
+            };
+          });
+          setCategorySections(mapped);
+          setCachedModuleData("website_category_sections", mapped);
+          try {
+            localStorage.setItem("helpmate_admin_website_category_sections", JSON.stringify(mapped));
+          } catch (e) {}
+        } else {
+          setCategorySections([]);
+          setCachedModuleData("website_category_sections", []);
+          try {
+            localStorage.setItem("helpmate_admin_website_category_sections", JSON.stringify([]));
+          } catch (e) {}
+        }
+      } else {
+        setCategorySections([]);
+        setCachedModuleData("website_category_sections", []);
       }
     } catch (err) {
       console.error("Failed to fetch category service sections:", err);
+      setCategorySections([]);
     } finally {
       setIsCategorySectionsLoading(false);
     }

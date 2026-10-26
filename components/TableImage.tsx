@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import Image from "next/image";
 import { Wrench, Image as ImageIcon } from "lucide-react";
 import { formatImageUrl, getTitleInitials } from "@/lib/api";
 
@@ -51,15 +50,12 @@ export function TableImage({
     );
   }
 
-  // 2. Render image directly without opacity-0 blocking
+  // 2. Render image directly via native <img> to reliably support blob:, data:, /api/media/..., etc.
   return (
     <div className={`relative ${containerClassName}`}>
-      <Image
+      <img
         src={formattedUrl}
         alt={alt}
-        fill
-        unoptimized
-        sizes="(max-width: 768px) 100vw, 33vw"
         className={className}
         onError={() => {
           setHasError(true);

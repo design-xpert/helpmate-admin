@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import Image from "next/image";
 import { formatImageUrl, getTitleInitials } from "@/lib/api";
 
 export function SectionCardImage({
@@ -45,14 +44,12 @@ export function SectionCardImage({
     );
   }
 
-  // 2. Render image directly without opacity-0 blocking
+  // 2. Render image directly without Next.js Image loader restrictions
   return (
     <div className={`relative w-full h-full overflow-hidden ${containerClassName}`}>
-      <Image
+      <img
         src={formattedUrl}
         alt={title}
-        fill
-        unoptimized
         className={className}
         onError={() => {
           setHasError(true);

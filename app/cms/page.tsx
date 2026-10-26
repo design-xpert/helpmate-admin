@@ -1638,7 +1638,10 @@ export default function CmsPage() {
       ? item.addons.map((a: any) => (typeof a === "string" ? a : (a.id || a._id))).filter(Boolean)
       : [];
 
-    const packageImage = safeStr(item.thumbnailUrl) || safeStr((item as any).imageUrl);
+    const packageImage =
+      safeStr(item.thumbnailUrl) ||
+      safeStr((item as any).imageUrl) ||
+      (item.id && item.id.length === 24 ? `/api/media/package/${item.id}/image` : "");
     const includedItems = safeStringArray(item.includeInPackage);
     const excludedItems = safeStringArray(item.excludeFromPackage);
 
@@ -1819,7 +1822,7 @@ export default function CmsPage() {
 
           if (firstOff.imageFile instanceof File) {
             form.append("image", firstOff.imageFile);
-          } else if (firstOff.imageRemoved || !firstOff.thumbnailUrl) {
+          } else if (firstOff.imageRemoved) {
             form.append("removeImage", "true");
             form.append("imageUrl", "");
           }
@@ -3073,7 +3076,7 @@ export default function CmsPage() {
                               <div className="flex items-center gap-3 min-w-0">
                                 {(() => {
                                   const pkgIdToUse = !off.imageRemoved ? (off.id && off.id.length === 24 ? off.id : (editingServiceId && editingServiceId.length === 24 ? editingServiceId : undefined)) : undefined;
-                                  const activeImage = !off.imageRemoved ? (off.thumbnailUrl || (off as any).imageUrl || "") : "";
+                                  const activeImage = !off.imageRemoved ? (off.thumbnailUrl || (off as any).imageUrl || (pkgIdToUse ? `/api/media/package/${pkgIdToUse}/image` : "")) : "";
                                   const hasImage = Boolean(activeImage || off.imageFile);
                                   return (
                                     <>
@@ -3103,11 +3106,52 @@ export default function CmsPage() {
                               </div>
 
                               <div className="flex items-center gap-1.5 shrink-0">
-                                {(!off.imageRemoved && (off.thumbnailUrl || off.imageFile)) ? (
-                                  <>
+                                {(() => {
+                                  const pkgIdToUse = !off.imageRemoved ? (off.id && off.id.length === 24 ? off.id : (editingServiceId && editingServiceId.length === 24 ? editingServiceId : undefined)) : undefined;
+                                  const activeImage = !off.imageRemoved ? (off.thumbnailUrl || (off as any).imageUrl || (pkgIdToUse ? `/api/media/package/${pkgIdToUse}/image` : "")) : "";
+                                  const hasImage = Boolean(activeImage || off.imageFile);
+
+                                  return (!off.imageRemoved && hasImage) ? (
+                                    <>
+                                      <label className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-extrabold text-xs flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors">
+                                        <Upload className="w-3.5 h-3.5 text-brand-600" />
+                                        <span>Change</span>
+                                        <input
+                                          type="file"
+                                          accept="image/*"
+                                          className="hidden"
+                                          onChange={(e) => {
+                                            const file = e.target.files?.[0];
+                                            if (file) {
+                                              handleUpdateOfferingRow(idx, {
+                                                imageFile: file,
+                                                thumbnailUrl: URL.createObjectURL(file),
+                                                imageRemoved: false,
+                                              });
+                                            }
+                                            e.target.value = "";
+                                          }}
+                                        />
+                                      </label>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          handleUpdateOfferingRow(idx, {
+                                            thumbnailUrl: "",
+                                            imageFile: undefined,
+                                            imageRemoved: true,
+                                          });
+                                        }}
+                                        className="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-transparent hover:border-rose-200 dark:hover:border-rose-900/60 transition-colors cursor-pointer"
+                                        title="Remove Image"
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                      </button>
+                                    </>
+                                  ) : (
                                     <label className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-extrabold text-xs flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors">
                                       <Upload className="w-3.5 h-3.5 text-brand-600" />
-                                      <span>Change</span>
+                                      <span>Upload Image</span>
                                       <input
                                         type="file"
                                         accept="image/*"
@@ -3125,43 +3169,8 @@ export default function CmsPage() {
                                         }}
                                       />
                                     </label>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        handleUpdateOfferingRow(idx, {
-                                          thumbnailUrl: "",
-                                          imageFile: undefined,
-                                          imageRemoved: true,
-                                        });
-                                      }}
-                                      className="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-transparent hover:border-rose-200 dark:hover:border-rose-900/60 transition-colors cursor-pointer"
-                                      title="Remove Image"
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </button>
-                                  </>
-                                ) : (
-                                  <label className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-extrabold text-xs flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors">
-                                    <Upload className="w-3.5 h-3.5 text-brand-600" />
-                                    <span>Upload Image</span>
-                                    <input
-                                      type="file"
-                                      accept="image/*"
-                                      className="hidden"
-                                      onChange={(e) => {
-                                        const file = e.target.files?.[0];
-                                        if (file) {
-                                          handleUpdateOfferingRow(idx, {
-                                            imageFile: file,
-                                            thumbnailUrl: URL.createObjectURL(file),
-                                            imageRemoved: false,
-                                          });
-                                        }
-                                        e.target.value = "";
-                                      }}
-                                    />
-                                  </label>
-                                )}
+                                  );
+                                })()}
                               </div>
                             </div>
                           </div>

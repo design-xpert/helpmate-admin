@@ -57,6 +57,42 @@ interface CategoryServiceSectionsProps {
   isCategorySectionsLoading?: boolean;
 }
 
+function CategoryIconBadge({
+  iconUrl,
+  name,
+  className = "w-full h-full object-cover",
+  fallbackClassName = "w-full h-full bg-gradient-to-br from-brand-600 to-purple-600 text-white font-black text-sm flex items-center justify-center",
+}: {
+  iconUrl?: string;
+  name: string;
+  className?: string;
+  fallbackClassName?: string;
+}) {
+  const [hasError, setHasError] = useState(false);
+  const formatted = formatImageUrl(iconUrl);
+
+  useEffect(() => {
+    setHasError(false);
+  }, [formatted]);
+
+  if (!formatted || hasError) {
+    return (
+      <div className={fallbackClassName}>
+        {(name || "HM").slice(0, 2).toUpperCase()}
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={formatted}
+      alt={name}
+      className={className}
+      onError={() => setHasError(true)}
+    />
+  );
+}
+
 export function CategoryServiceSections({
   categorySections,
   searchQuery,
@@ -808,7 +844,17 @@ export function CategoryServiceSections({
 
             {/* Horizontal Scroll Track for this Section's Services */}
             <div className="p-4 sm:p-5">
-              <div className="flex gap-4 overflow-x-auto pb-2 no-scrollbar scroll-smooth">
+              <div className="flex gap-4 overflow-x-auto pb-2 no-scrollbar scroll-smooth items-center">
+                {section.services.length === 0 && (
+                  <div className="py-6 px-6 text-center border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl bg-slate-50/50 dark:bg-slate-800/20 shrink-0 flex flex-col items-center justify-center">
+                    <p className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                      No service cards in this slider
+                    </p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Click &ldquo;Add Service Card&rdquo; to attach packages
+                    </p>
+                  </div>
+                )}
                 {section.services.map((svc, svcIdx) => (
                   <div
                     key={svc.id || svcIdx}
@@ -989,17 +1035,11 @@ export function CategoryServiceSections({
                       <div className="p-3.5 rounded-2xl bg-gradient-to-r from-purple-50/70 via-brand-50/40 to-slate-50 dark:from-purple-950/30 dark:via-brand-950/20 dark:to-slate-800/40 border border-purple-200/80 dark:border-purple-800/60 flex items-center justify-between gap-3 shadow-xs">
                         <div className="flex items-center gap-3 min-w-0">
                           <div className="w-12 h-12 rounded-2xl overflow-hidden shrink-0 bg-white dark:bg-slate-800 border border-purple-200/60 dark:border-purple-700/60 flex items-center justify-center shadow-xs">
-                            {selectedCat.iconUrl ? (
-                              <img
-                                src={selectedCat.iconUrl}
-                                alt={selectedCat.categoryName}
-                                className="w-full h-full object-cover"
-                              />
-                            ) : (
-                              <div className="w-full h-full bg-gradient-to-br from-brand-600 to-purple-600 text-white font-black text-sm flex items-center justify-center">
-                                {selectedCat.categoryName.slice(0, 2).toUpperCase()}
-                              </div>
-                            )}
+                            <CategoryIconBadge
+                              iconUrl={selectedCat.iconUrl || (selectedCat as any).imageUrl || (selectedCat._id ? `/api/media/category/${selectedCat._id}/icon` : "")}
+                              name={selectedCat.categoryName}
+                              fallbackClassName="w-full h-full bg-gradient-to-br from-brand-600 to-purple-600 text-white font-black text-sm flex items-center justify-center"
+                            />
                           </div>
                           <div className="min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
@@ -1069,15 +1109,11 @@ export function CategoryServiceSections({
                                   >
                                     <div className="flex items-center gap-2.5">
                                       <div className="w-7 h-7 rounded-lg overflow-hidden bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0 border border-slate-200 dark:border-slate-700 text-[10px] font-black text-brand-600">
-                                        {cat.iconUrl ? (
-                                          <img
-                                            src={cat.iconUrl}
-                                            alt={cat.categoryName}
-                                            className="w-full h-full object-cover"
-                                          />
-                                        ) : (
-                                          cat.categoryName.slice(0, 2).toUpperCase()
-                                        )}
+                                        <CategoryIconBadge
+                                          iconUrl={cat.iconUrl || (cat as any).imageUrl || (cat._id ? `/api/media/category/${cat._id}/icon` : "")}
+                                          name={cat.categoryName}
+                                          fallbackClassName="w-full h-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[10px] font-black text-brand-600"
+                                        />
                                       </div>
                                       <div>
                                         <span>{cat.categoryName}</span>
