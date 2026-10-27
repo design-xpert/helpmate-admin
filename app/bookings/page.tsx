@@ -33,8 +33,13 @@ import {
   Globe,
   Building2,
   RefreshCw,
+  Archive,
+  ArchiveRestore,
+  Ban,
+  Loader2,
 } from "lucide-react";
 import { Portal } from "@/components/Portal";
+import { toast } from "@/components/Toast";
 import { BookingWizardModal } from "@/components/bookings/BookingWizardModal";
 import { AssignPartnerModal } from "@/components/bookings/AssignPartnerModal";
 import { InspectionFlowModal } from "@/components/bookings/InspectionFlowModal";
@@ -42,8 +47,10 @@ import { OtpVerificationModal } from "@/components/bookings/OtpVerificationModal
 import { EditBookingModal } from "@/components/bookings/EditBookingModal";
 import { BookingDetailsDrawer } from "@/components/bookings/BookingDetailsDrawer";
 import { RescheduleBookingModal } from "@/components/bookings/RescheduleBookingModal";
+import { ArchiveBookingModal } from "@/components/bookings/ArchiveBookingModal";
+import { CancelBookingModal } from "@/components/bookings/CancelBookingModal";
 import { useRbac } from "@/context/RbacContext";
-import { getBookingCategoriesApi, getBookingsApi, completeBookingApi, getBookingDashboardStatsApi, ApiBookingCategoryStat } from "@/lib/api";
+import { getBookingCategoriesApi, getBookingsApi, completeBookingApi, getBookingDashboardStatsApi, ApiBookingCategoryStat, archiveBookingApi, restoreBookingApi, cancelBookingApi, pinCategoryApi } from "@/lib/api";
 
 export function mapApiBooking(b: any): Booking {
   const item0 = b.items?.[0];
@@ -52,17 +59,24 @@ export function mapApiBooking(b: any): Booking {
   const serviceActionName = item0?.serviceAction?.name || "";
   const pkgTitle = item0?.package?.name || item0?.package?.packageName || serviceActionName || "Service Package";
 
-  const originStr = (b.bookingSource || b.origin || "").toLowerCase();
-  const isOnline = originStr === "website" || originStr === "app";
-  const createdByStr = b.createdBy?.name
-    ? b.createdBy.name
-    : b.handledBy?.name
-      ? b.handledBy.name
-      : isOnline
-        ? "Customer Online"
+  const rawOrigin = b.origin || b.bookingSource || "";
+  const originStr = String(rawOrigin).toLowerCase();
+  const isOnline =
+    originStr === "website" ||
+    originStr === "app" ||
+    originStr === "online" ||
+    b.bookingType === "online" ||
+    (typeof b.bookingNumber === "string" && b.bookingNumber.startsWith("WEB-"));
+
+  const createdByStr = isOnline
+    ? "Customer Online"
+    : b.createdBy?.name
+      ? b.createdBy.name
+      : b.handledBy?.name
+        ? b.handledBy.name
         : originStr === "admin"
           ? "Super Admin (HQ)"
-          : b.bookingSource || b.origin || "Customer Online";
+          : "Customer Online";
 
   const workingDateRaw = b.schedule?.bookingDate || b.workingDate || "";
   const rawWorkingDate = workingDateRaw ? workingDateRaw.split("T")[0] : "";
@@ -185,6 +199,9 @@ export function mapApiBooking(b: any): Booking {
     customerId: b.customer?.customerId || b.customer?._id,
     customerBookingCount: b.customerBookingCount ?? b.customer?.bookingCount ?? undefined,
     createdBy: createdByStr,
+    origin: isOnline ? "online" : "manual",
+    bookingSource: rawOrigin || (isOnline ? "website" : "admin"),
+    isOnline: isOnline,
     customerName: b.customer?.name || "Customer",
     customerPhone: b.customer?.mobile || b.customer?.phone || "",
     customerEmail: b.customer?.email || "",
@@ -224,6 +241,8 @@ export function mapApiBooking(b: any): Booking {
     handledBy: b.createdBy?.name || b.handledBy?.name || (isOnline ? "Website Direct" : "HQ Admin"),
     date: formattedWorkingDate,
     timeSlot: b.schedule?.timeSlot || b.time || "12:00 PM",
+    isArchived: Boolean(b.isArchived || b.archived),
+    archivedAt: b.archivedAt ? String(b.archivedAt) : undefined,
   };
 }
 
@@ -342,19 +361,33 @@ function BookingsPageContent() {
   const cacheKey = `bookings:${bookingTypeParam || ""}:${statusParam || ""}`;
   const initialCachedBookings = getStoredModuleData<Booking[]>(cacheKey) || getStoredModuleData<Booking[]>("bookings");
   const initialCachedCats = getStoredModuleData<ApiBookingCategoryStat[]>("booking_categories");
+  const initialCachedAllStats = getStoredModuleData<any>("booking_categories_all");
   const [bookings, setBookings] = useState<Booking[]>(() => initialCachedBookings || []);
   const [apiCategories, setApiCategories] = useState<ApiBookingCategoryStat[]>(() => initialCachedCats || []);
-  const [dashboardStats, setDashboardStats] = useState<any | null>(null);
+  const initialCachedStats = getStoredModuleData<any>("booking_dashboard_stats");
+  const [allCategoryStats, setAllCategoryStats] = useState<any>(() => initialCachedAllStats || null);
+  const [dashboardStats, setDashboardStats] = useState<any | null>(() => initialCachedStats || null);
   const [isLoadingData, setIsLoadingData] = useState(() => !(isModuleCacheFresh(cacheKey, 30000) && initialCachedBookings && initialCachedBookings.length > 0));
+  const [viewArchiveMode, setViewArchiveMode] = useState<boolean>(false);
+  const [archivedBookings, setArchivedBookings] = useState<Booking[]>([]);
+  const [isLoadingArchived, setIsLoadingArchived] = useState<boolean>(false);
+  const [archiveTargetBooking, setArchiveTargetBooking] = useState<Booking | null>(null);
+  const [cancelTargetBooking, setCancelTargetBooking] = useState<Booking | null>(null);
 
   // Pinned Categories State (strictly max 3)
   const [pinnedCategories, setPinnedCategories] = useState<string[]>(() => {
+    if (initialCachedCats && initialCachedCats.length > 0) {
+      const serverPinned = initialCachedCats
+        .filter((c: any) => c.isPinned)
+        .map((c: any) => c.categoryName || c.name);
+      if (serverPinned.length > 0) return serverPinned.slice(0, 3);
+    }
     if (typeof window !== "undefined") {
       try {
         const saved = localStorage.getItem("helpmate_pinned_categories");
         if (saved) {
           const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed)) {
+          if (Array.isArray(parsed) && parsed.length > 0) {
             return parsed.filter((c: string) => c !== "All Service Categories" && c !== "All").slice(0, 3);
           }
         }
@@ -365,35 +398,93 @@ function BookingsPageContent() {
     return ["AC Service & Repair", "Electrician", "Plumbing"];
   });
 
-  const [pinWarningToast, setPinWarningToast] = useState<string | null>(null);
+  const [pinLoadingCat, setPinLoadingCat] = useState<string | null>(null);
 
-  const togglePinCategory = (catName: string, e?: React.MouseEvent) => {
+  const togglePinCategory = async (catName: string, e?: React.MouseEvent, catIdParam?: string) => {
     if (e) {
       e.preventDefault();
       e.stopPropagation();
     }
+
+    const isAlreadyPinned = pinnedCategories.some(
+      (name) => name.toLowerCase().trim() === catName.toLowerCase().trim()
+    );
+
+    if (!isAlreadyPinned && pinnedCategories.length >= 3) {
+      toast.dismissAll();
+      toast.error("Pin Limit Reached", "Only 3 categories can be pinned. Unpin one first to pin another.");
+      return;
+    }
+
+    // Resolve category ID from parameter or apiCategories
+    const catObj = apiCategories.find(
+      (c: any) => (c.categoryName || c.name || "").toLowerCase().trim() === catName.toLowerCase().trim()
+    );
+    const categoryId = catIdParam || catObj?._id;
+
+    const nextPinState = !isAlreadyPinned;
+
+    // Optimistically update pinnedCategories
     setPinnedCategories((prev) => {
-      let next: string[];
-      const isAlreadyPinned = prev.some((name) => name.toLowerCase().trim() === catName.toLowerCase().trim());
-      if (isAlreadyPinned) {
-        next = prev.filter((name) => name.toLowerCase().trim() !== catName.toLowerCase().trim());
-      } else {
-        if (prev.length >= 3) {
-          setPinWarningToast("Only 3 categories can be pinned. Unpin one first to pin another.");
-          setTimeout(() => setPinWarningToast(null), 3500);
-          return prev;
-        }
-        next = [...prev, catName];
-      }
+      const next = nextPinState
+        ? [...prev.filter((n) => n.toLowerCase().trim() !== catName.toLowerCase().trim()), catName]
+        : prev.filter((n) => n.toLowerCase().trim() !== catName.toLowerCase().trim());
       if (typeof window !== "undefined") {
         try {
           localStorage.setItem("helpmate_pinned_categories", JSON.stringify(next));
-        } catch (err) {
-          console.error("Failed to save pinned categories:", err);
-        }
+        } catch {}
       }
       return next;
     });
+
+    if (categoryId) {
+      setPinLoadingCat(catName);
+      try {
+        const res = await pinCategoryApi(categoryId, nextPinState);
+        if (res && res.success) {
+          toast.dismissAll();
+          toast.success(
+            nextPinState ? "Category Pinned" : "Category Unpinned",
+            res.message || (nextPinState ? `"${catName}" pinned to top successfully.` : `"${catName}" unpinned successfully.`)
+          );
+
+          setApiCategories((prev) =>
+            prev.map((c: any) =>
+              c._id === categoryId || (c.categoryName || c.name) === catName
+                ? { ...c, isPinned: nextPinState }
+                : c
+            )
+          );
+
+          getBookingCategoriesApi(true).then((freshRes) => {
+            const freshList = freshRes?.data?.categories || freshRes?.categories || freshRes?.data || [];
+            if (Array.isArray(freshList) && freshList.length > 0) {
+              setApiCategories(freshList);
+              setCachedModuleData("booking_categories", freshList);
+            }
+          }).catch(() => {});
+        } else {
+          // Revert optimistic update
+          setPinnedCategories((prev) => {
+            const reverted = isAlreadyPinned
+              ? [...prev.filter((n) => n.toLowerCase().trim() !== catName.toLowerCase().trim()), catName]
+              : prev.filter((n) => n.toLowerCase().trim() !== catName.toLowerCase().trim());
+            return reverted;
+          });
+          toast.dismissAll();
+          toast.error("Pin Update Failed", res?.message || "Failed to update pin status.");
+        }
+      } catch (err) {
+        console.error("Error pinning category:", err);
+        toast.dismissAll();
+        toast.error("Network Error", "Network error while updating pin status.");
+      } finally {
+        setPinLoadingCat(null);
+      }
+    } else {
+      toast.dismissAll();
+      toast.error("Error", `Could not find category ID for "${catName}".`);
+    }
   };
 
   const updateBookingFilters = (newType?: string | null, newStatus?: string | null) => {
@@ -401,11 +492,19 @@ function BookingsPageContent() {
     if (categoryParam) {
       params.set("category", categoryParam);
     }
-    if (newType) {
-      params.set("bookingType", newType);
+    if (newType !== undefined) {
+      if (newType) {
+        params.set("bookingType", newType);
+      }
+    } else if (bookingTypeParam) {
+      params.set("bookingType", bookingTypeParam);
     }
-    if (newStatus) {
-      params.set("status", newStatus);
+    if (newStatus !== undefined) {
+      if (newStatus) {
+        params.set("status", newStatus);
+      }
+    } else if (statusParam) {
+      params.set("status", statusParam);
     }
     const queryStr = params.toString();
     router.push(`/bookings${queryStr ? `?${queryStr}` : ""}`);
@@ -424,10 +523,20 @@ function BookingsPageContent() {
       if (rawCatList.length > 0) {
         setApiCategories(rawCatList);
         setCachedModuleData("booking_categories", rawCatList);
+        const serverPinned = rawCatList
+          .filter((c: any) => c.isPinned)
+          .map((c: any) => c.categoryName || c.name);
+        if (serverPinned.length > 0) {
+          setPinnedCategories(serverPinned.slice(0, 3));
+        }
+      }
+      const allStatsObj = catRes?.data?.all || catRes?.data?.allServices || null;
+      if (allStatsObj) {
+        setAllCategoryStats(allStatsObj);
+        setCachedModuleData("booking_categories_all", allStatsObj);
       }
 
       const bookingsRes = await getBookingsApi({
-        bookingType: bookingTypeParam || undefined,
         status: statusParam || undefined,
         forceRefresh: true,
       });
@@ -437,9 +546,11 @@ function BookingsPageContent() {
         setCachedModuleData(cacheKey, mappedList);
         setCachedModuleData("bookings", mappedList);
       }
-      getBookingDashboardStatsApi().then((statsRes) => {
+      getBookingDashboardStatsApi({ bookingType: bookingTypeParam || undefined }).then((statsRes) => {
         if (statsRes && (statsRes.data || statsRes.success || statsRes.totalBookings || statsRes.total)) {
-          setDashboardStats(statsRes.data || statsRes);
+          const statsObj = statsRes.data || statsRes;
+          setDashboardStats(statsObj);
+          setCachedModuleData("booking_dashboard_stats", statsObj);
         }
       }).catch(() => {});
     } catch (err) {
@@ -450,12 +561,6 @@ function BookingsPageContent() {
   useEffect(() => {
     let isMounted = true;
     const loadData = async () => {
-      // If cache is fresh (< 30s), DO NOT CALL APIS! Exact data is already rendered
-      if (isModuleCacheFresh(cacheKey, 30000) && initialCachedBookings && initialCachedBookings.length > 0) {
-        setIsLoadingData(false);
-        return;
-      }
-
       try {
         const catRes = await getBookingCategoriesApi();
         const rawCatList = Array.isArray(catRes?.data?.categories)
@@ -468,14 +573,33 @@ function BookingsPageContent() {
         if (isMounted && rawCatList.length > 0) {
           setApiCategories(rawCatList);
           setCachedModuleData("booking_categories", rawCatList);
+          const serverPinned = rawCatList
+            .filter((c: any) => c.isPinned)
+            .map((c: any) => c.categoryName || c.name);
+          if (serverPinned.length > 0) {
+            setPinnedCategories(serverPinned.slice(0, 3));
+          }
+        }
+        const allStatsObj = catRes?.data?.all || catRes?.data?.allServices || null;
+        if (isMounted && allStatsObj) {
+          setAllCategoryStats(allStatsObj);
+          setCachedModuleData("booking_categories_all", allStatsObj);
         }
 
-        const statsRes = await getBookingDashboardStatsApi();
+        const statsRes = await getBookingDashboardStatsApi({ bookingType: bookingTypeParam || undefined });
         if (isMounted && statsRes && (statsRes.data || statsRes.success || statsRes.totalBookings || statsRes.total)) {
-          setDashboardStats(statsRes.data || statsRes);
+          const statsObj = statsRes.data || statsRes;
+          setDashboardStats(statsObj);
+          setCachedModuleData("booking_dashboard_stats", statsObj);
         }
       } catch (err) {
         console.error("Error loading categories:", err);
+      }
+
+      // If cache is fresh (< 30s), bookings are already rendered from cache
+      if (isModuleCacheFresh(cacheKey, 30000) && initialCachedBookings && initialCachedBookings.length > 0) {
+        setIsLoadingData(false);
+        return;
       }
 
       if (bookings.length === 0 && (!initialCachedBookings || initialCachedBookings.length === 0)) {
@@ -483,7 +607,6 @@ function BookingsPageContent() {
       }
       try {
         const bookingsRes = await getBookingsApi({
-          bookingType: bookingTypeParam || undefined,
           status: statusParam || undefined,
         });
         if (isMounted && bookingsRes && bookingsRes.success && Array.isArray(bookingsRes.data)) {
@@ -532,6 +655,17 @@ function BookingsPageContent() {
   }, [bookingTypeParam, statusParam]);
 
   const isOnlineBooking = (b: Booking) => {
+    if (typeof b.isOnline === "boolean") return b.isOnline;
+    if (b.origin) {
+      const o = String(b.origin).toLowerCase();
+      if (o === "online" || o === "website" || o === "app") return true;
+      if (o === "manual" || o === "admin") return false;
+    }
+    if (b.bookingSource) {
+      const bs = String(b.bookingSource).toLowerCase();
+      if (bs === "website" || bs === "app" || bs === "online") return true;
+      if (bs === "admin" || bs === "manual") return false;
+    }
     if (b.createdBy) {
       const lower = b.createdBy.toLowerCase();
       if (lower.includes("online") || lower.includes("website") || lower.includes("app") || lower.includes("direct")) {
@@ -541,7 +675,7 @@ function BookingsPageContent() {
         return false;
       }
     }
-    return b.paymentMethod === "Online" || b.paymentMethod === "UPI" || b.paymentMethod === "Card";
+    return b.paymentMethod === "Online" || b.paymentMethod === "Card";
   };
 
   const handleSelectCategory = (catName: string | null) => {
@@ -622,6 +756,96 @@ function BookingsPageContent() {
     }, 100);
   };
 
+  const fetchArchivedBookings = async () => {
+    setIsLoadingArchived(true);
+    try {
+      const res = await getBookingsApi({ archived: true, forceRefresh: true });
+      if (res && res.success && Array.isArray(res.data)) {
+        const mappedList: Booking[] = res.data.map(mapApiBooking);
+        setArchivedBookings(mappedList);
+      }
+    } catch (err) {
+      console.error("Error fetching archived bookings:", err);
+    } finally {
+      setIsLoadingArchived(false);
+    }
+  };
+
+  const handleArchiveBooking = (row: Booking) => {
+    setArchiveTargetBooking(row);
+  };
+
+  const handleConfirmArchive = async (row: Booking) => {
+    try {
+      const res = await archiveBookingApi(row.id);
+      if (res && res.success) {
+        setBookings((prev) => prev.filter((b) => b.id !== row.id));
+        const archivedItem: Booking = { ...row, isArchived: true, archivedAt: new Date().toISOString() };
+        setArchivedBookings((prev) => [archivedItem, ...prev.filter((b) => b.id !== row.id)]);
+        toast.dismissAll();
+        toast.success("Booking Archived", `Booking #${row.bookingNumber || row.id} archived successfully.`);
+        setArchiveTargetBooking(null);
+        refreshBookingsFromBackend();
+      } else {
+        toast.dismissAll();
+        toast.error("Archive Failed", res?.message || "Failed to archive booking");
+      }
+    } catch (err) {
+      console.error("Error archiving booking:", err);
+      toast.dismissAll();
+      toast.error("Archive Failed", "Failed to archive booking");
+    }
+  };
+
+  const handleCancelBooking = (row: Booking) => {
+    setCancelTargetBooking(row);
+  };
+
+  const handleConfirmCancel = async (row: Booking, reason: string) => {
+    try {
+      const targetId = row.rawId || row.id;
+      const res = await cancelBookingApi(targetId, reason);
+      if (res && res.success) {
+        setBookings((prev) =>
+          prev.map((b) => (b.id === row.id ? { ...b, status: "Cancelled", notes: reason } : b))
+        );
+        setDrawerBooking((prev) => (prev && prev.id === row.id ? { ...prev, status: "Cancelled" } : prev));
+        toast.dismissAll();
+        toast.success("Booking Cancelled", `Booking #${row.bookingNumber || row.id} cancelled successfully.`);
+        setCancelTargetBooking(null);
+        refreshBookingsFromBackend();
+      } else {
+        toast.dismissAll();
+        toast.error("Cancellation Failed", res?.message || "Failed to cancel booking");
+      }
+    } catch (err) {
+      console.error("Error cancelling booking:", err);
+      toast.dismissAll();
+      toast.error("Cancellation Failed", "Failed to cancel booking");
+    }
+  };
+
+  const handleRestoreBooking = async (row: Booking) => {
+    try {
+      const res = await restoreBookingApi(row.id);
+      if (res && res.success) {
+        setArchivedBookings((prev) => prev.filter((b) => b.id !== row.id));
+        const restoredItem: Booking = { ...row, isArchived: false, archivedAt: undefined };
+        setBookings((prev) => [restoredItem, ...prev.filter((b) => b.id !== row.id)]);
+        toast.dismissAll();
+        toast.success("Booking Restored", `Booking #${row.bookingNumber || row.id} restored successfully.`);
+        refreshBookingsFromBackend();
+      } else {
+        toast.dismissAll();
+        toast.error("Restore Failed", res?.message || "Failed to restore booking");
+      }
+    } catch (err) {
+      console.error("Error restoring booking:", err);
+      toast.dismissAll();
+      toast.error("Restore Failed", "Failed to restore booking");
+    }
+  };
+
   const formatInvoiceNumber = (id: string) => {
     if (!id) return "INV-0000";
     const cleanId = id.replace(/^(INV-)?(bk-)?/gi, "");
@@ -639,46 +863,64 @@ function BookingsPageContent() {
 
   // Base role-filtered bookings list
   const roleFilteredBookings = useMemo(() => {
+    const source = viewArchiveMode ? archivedBookings : bookings;
     if (isOfficeAdmin) {
-      return bookings.filter((b) => b.createdBy && b.createdBy.toLowerCase().includes("office"));
+      return source.filter((b) => b.createdBy && b.createdBy.toLowerCase().includes("office"));
     }
-    return bookings;
-  }, [bookings, isOfficeAdmin]);
+    return source;
+  }, [bookings, archivedBookings, viewArchiveMode, isOfficeAdmin]);
 
-  // Compute Category Level Statistics dynamically by merging API Categories + Live Bookings
+  // Compute Category Level Statistics dynamically from API Categories or live fallback
   const categoryStatsList = useMemo(() => {
     const catMap: Record<
       string,
-      { name: string; count: number; unassigned: number; inProgress: number; completed: number; cancelled: number }
+      { id?: string; name: string; count: number; unassigned: number; inProgress: number; completed: number; cancelled: number; isPinned?: boolean }
     > = {};
 
-    // 1. Initialize from API Categories
-    apiCategories.forEach((apiCat: any) => {
-      const name = apiCat.categoryName || apiCat.name || "Category";
-      if (name && name !== "All Service Categories") {
-        catMap[name] = {
-          name,
-          count: apiCat.totalBookings || 0,
-          unassigned: apiCat.openBookings || 0,
-          inProgress: apiCat.activeBookings || 0,
-          completed: apiCat.completedBookings || 0,
-          cancelled: apiCat.cancelledBookings || 0,
-        };
-      }
-    });
+    // 1. Initialize from API Categories if available
+    if (apiCategories.length > 0) {
+      apiCategories.forEach((apiCat: any) => {
+        const name = apiCat.categoryName || apiCat.name || "Category";
+        if (name && name !== "All Service Categories") {
+          catMap[name] = {
+            id: apiCat._id,
+            name,
+            count: Number(apiCat.totalBookings) || 0,
+            unassigned: Number(apiCat.openBookings) || 0,
+            inProgress: Number(apiCat.activeBookings) || 0,
+            completed: Number(apiCat.completedBookings) || 0,
+            cancelled: Number(apiCat.cancelledBookings) || 0,
+            isPinned: Boolean(apiCat.isPinned),
+          };
+        }
+      });
 
-    // 2. Merge live calculated stats from current bookings
-    roleFilteredBookings.forEach((b) => {
-      const cat = b.category || "General";
-      if (!catMap[cat]) {
-        catMap[cat] = { name: cat, count: 0, unassigned: 0, inProgress: 0, completed: 0, cancelled: 0 };
-      }
-      catMap[cat].count++;
-      if (!b.technicianName) catMap[cat].unassigned++;
-      if (b.status === "In Progress" || b.status === "Assigned") catMap[cat].inProgress++;
-      if (b.status === "Completed") catMap[cat].completed++;
-      if (b.status === "Cancelled" || b.status === "Rejected") catMap[cat].cancelled++;
-    });
+      // 2. Only add any extra category from current bookings that was not present in apiCategories
+      roleFilteredBookings.forEach((b) => {
+        const cat = b.category || "General";
+        if (!catMap[cat]) {
+          catMap[cat] = { name: cat, count: 0, unassigned: 0, inProgress: 0, completed: 0, cancelled: 0 };
+          catMap[cat].count++;
+          if (!b.technicianName) catMap[cat].unassigned++;
+          if (b.status === "In Progress" || b.status === "Assigned") catMap[cat].inProgress++;
+          if (b.status === "Completed") catMap[cat].completed++;
+          if (b.status === "Cancelled" || b.status === "Rejected") catMap[cat].cancelled++;
+        }
+      });
+    } else {
+      // Fallback if apiCategories is empty: calculate entirely from roleFilteredBookings
+      roleFilteredBookings.forEach((b) => {
+        const cat = b.category || "General";
+        if (!catMap[cat]) {
+          catMap[cat] = { name: cat, count: 0, unassigned: 0, inProgress: 0, completed: 0, cancelled: 0 };
+        }
+        catMap[cat].count++;
+        if (!b.technicianName) catMap[cat].unassigned++;
+        if (b.status === "In Progress" || b.status === "Assigned") catMap[cat].inProgress++;
+        if (b.status === "Completed") catMap[cat].completed++;
+        if (b.status === "Cancelled" || b.status === "Rejected") catMap[cat].cancelled++;
+      });
+    }
 
     return Object.values(catMap);
   }, [apiCategories, roleFilteredBookings]);
@@ -1069,7 +1311,7 @@ function BookingsPageContent() {
         key: "status",
         header: "Booking Status",
         accessor: (row) => (
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 flex-wrap">
             <span
               className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider inline-flex items-center gap-1 ${row.status === "Completed"
                 ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300"
@@ -1083,6 +1325,12 @@ function BookingsPageContent() {
               <span className="w-1.5 h-1.5 rounded-full bg-current" />
               <span>{row.status}</span>
             </span>
+            {row.isArchived && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider inline-flex items-center gap-1 bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
+                <Archive className="w-2.5 h-2.5" />
+                <span>Archived</span>
+              </span>
+            )}
           </div>
         ),
         sortable: true,
@@ -1107,39 +1355,76 @@ function BookingsPageContent() {
                     icon: Eye,
                     href: `/bookings/${row.id}${selectedCategory ? `?category=${encodeURIComponent(selectedCategory)}` : ""}`,
                   },
+                  ...(row.isArchived
+                    ? [
+                      {
+                        label: "Restore Booking",
+                        icon: ArchiveRestore,
+                        onClick: () => handleRestoreBooking(row),
+                      },
+                    ]
+                    : []),
                 ]
                 : [
-                  {
-                    label: row.technicianName ? "Reassign Partner" : "Assign Partner",
-                    icon: UserPlus,
-                    onClick: () => setAssignBooking(row),
-                  },
-                  {
-                    label: "Reschedule",
-                    icon: CalendarCheck,
-                    onClick: () => setReschedulingBooking(row),
-                  },
-                  {
-                    label: "Invoice",
-                    icon: FileText,
-                    href: `/billing/${row.id}`,
-                  },
+                  ...(row.isArchived
+                    ? [
+                      {
+                        label: "Restore Booking",
+                        icon: ArchiveRestore,
+                        onClick: () => handleRestoreBooking(row),
+                      },
+                    ]
+                    : [
+                      {
+                        label: row.technicianName ? "Reassign Partner" : "Assign Partner",
+                        icon: UserPlus,
+                        onClick: () => setAssignBooking(row),
+                      },
+                      {
+                        label: "Reschedule",
+                        icon: CalendarCheck,
+                        onClick: () => setReschedulingBooking(row),
+                      },
+                      {
+                        label: "Invoice",
+                        icon: FileText,
+                        href: `/billing/${row.id}`,
+                      },
+                    ]),
                   {
                     label: "View",
                     icon: Eye,
                     href: `/bookings/${row.id}${selectedCategory ? `?category=${encodeURIComponent(selectedCategory)}` : ""}`,
                   },
-                  {
-                    label: "Edit",
-                    icon: Edit2,
-                    onClick: () => setEditingBooking(row),
-                  },
-                  ...(row.status === "Assigned" || row.status === "In Progress"
+                  ...(!row.isArchived
                     ? [
                       {
-                        label: "Mark Completed",
-                        icon: CheckCircle2,
-                        onClick: () => handleMarkBookingCompleted(row),
+                        label: "Edit",
+                        icon: Edit2,
+                        onClick: () => setEditingBooking(row),
+                      },
+                      ...(row.status === "Assigned" || row.status === "In Progress"
+                        ? [
+                          {
+                            label: "Mark Completed",
+                            icon: CheckCircle2,
+                            onClick: () => handleMarkBookingCompleted(row),
+                          },
+                        ]
+                        : []),
+                      ...(row.status !== "Completed" && row.status !== "Cancelled"
+                        ? [
+                          {
+                            label: "Cancel Booking",
+                            icon: Ban,
+                            onClick: () => handleCancelBooking(row),
+                          },
+                        ]
+                        : []),
+                      {
+                        label: "Archive Booking",
+                        icon: Archive,
+                        onClick: () => handleArchiveBooking(row),
                       },
                     ]
                     : []),
@@ -1155,11 +1440,96 @@ function BookingsPageContent() {
 
   const showTableView = Boolean(selectedCategory || bookingTypeParam || statusParam);
 
-  const totalCardCount = dashboardStats?.totalBookings ?? dashboardStats?.total ?? categoryBookings.length;
-  const unassignedCardCount = dashboardStats?.unassigned ?? dashboardStats?.waitingPartner ?? dashboardStats?.pending ?? categoryBookings.filter((b) => !b.technicianName).length;
-  const inProgressCardCount = dashboardStats?.inProgress ?? dashboardStats?.active ?? categoryBookings.filter((b) => b.status === "In Progress" || b.status === "Assigned").length;
-  const completedCardCount = dashboardStats?.completed ?? dashboardStats?.closed ?? categoryBookings.filter((b) => b.status === "Completed").length;
-  const cancelledCardCount = dashboardStats?.cancelled ?? dashboardStats?.rejected ?? categoryBookings.filter((b) => b.status === "Cancelled" || b.status === "Rejected").length;
+  const selectedCatStat = useMemo(() => {
+    if (!selectedCategory || selectedCategory === "All") return null;
+    return categoryStatsList.find(
+      (c) => c.name.toLowerCase().trim() === selectedCategory.toLowerCase().trim()
+    );
+  }, [selectedCategory, categoryStatsList]);
+
+  const isChannelFiltered = channelFilter !== "ALL";
+
+  const totalCardCount = useMemo(() => {
+    if (isChannelFiltered) {
+      return filteredBookings.length;
+    }
+    if (selectedCatStat) {
+      return selectedCatStat.count;
+    }
+    return (
+      allCategoryStats?.totalBookings ??
+      dashboardStats?.totalBookings ??
+      dashboardStats?.total ??
+      categoryBookings.length
+    );
+  }, [isChannelFiltered, filteredBookings.length, selectedCatStat, allCategoryStats, dashboardStats, categoryBookings.length]);
+
+  const unassignedCardCount = useMemo(() => {
+    if (isChannelFiltered) {
+      return filteredBookings.filter((b) => !b.technicianName).length;
+    }
+    if (selectedCatStat) {
+      return selectedCatStat.unassigned;
+    }
+    return (
+      allCategoryStats?.openBookings ??
+      dashboardStats?.pendingBookings ??
+      dashboardStats?.openBookings ??
+      dashboardStats?.unassigned ??
+      dashboardStats?.waitingPartner ??
+      dashboardStats?.pending ??
+      categoryBookings.filter((b) => !b.technicianName).length
+    );
+  }, [isChannelFiltered, filteredBookings, selectedCatStat, allCategoryStats, dashboardStats, categoryBookings]);
+
+  const inProgressCardCount = useMemo(() => {
+    if (isChannelFiltered) {
+      return filteredBookings.filter((b) => b.status === "In Progress" || b.status === "Assigned" || b.status === "Partner Accepted").length;
+    }
+    if (selectedCatStat) {
+      return selectedCatStat.inProgress;
+    }
+    return (
+      allCategoryStats?.activeBookings ??
+      dashboardStats?.partnerAssignedBookings ??
+      dashboardStats?.activeBookings ??
+      dashboardStats?.inProgress ??
+      dashboardStats?.active ??
+      categoryBookings.filter((b) => b.status === "In Progress" || b.status === "Assigned" || b.status === "Partner Accepted").length
+    );
+  }, [isChannelFiltered, filteredBookings, selectedCatStat, allCategoryStats, dashboardStats, categoryBookings]);
+
+  const completedCardCount = useMemo(() => {
+    if (isChannelFiltered) {
+      return filteredBookings.filter((b) => b.status === "Completed").length;
+    }
+    if (selectedCatStat) {
+      return selectedCatStat.completed;
+    }
+    return (
+      allCategoryStats?.completedBookings ??
+      dashboardStats?.completedBookings ??
+      dashboardStats?.completed ??
+      dashboardStats?.closed ??
+      categoryBookings.filter((b) => b.status === "Completed").length
+    );
+  }, [isChannelFiltered, filteredBookings, selectedCatStat, allCategoryStats, dashboardStats, categoryBookings]);
+
+  const cancelledCardCount = useMemo(() => {
+    if (isChannelFiltered) {
+      return filteredBookings.filter((b) => b.status === "Cancelled" || b.status === "Rejected").length;
+    }
+    if (selectedCatStat) {
+      return selectedCatStat.cancelled;
+    }
+    return (
+      allCategoryStats?.cancelledBookings ??
+      dashboardStats?.cancelledBookings ??
+      dashboardStats?.cancelled ??
+      dashboardStats?.rejected ??
+      categoryBookings.filter((b) => b.status === "Cancelled" || b.status === "Rejected").length
+    );
+  }, [isChannelFiltered, filteredBookings, selectedCatStat, allCategoryStats, dashboardStats, categoryBookings]);
 
   return (
     <div className="space-y-6">
@@ -1179,33 +1549,19 @@ function BookingsPageContent() {
               </p>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setIsWizardOpen(true)}
-              className="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 w-full sm:w-auto"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Create Booking</span>
-            </button>
-          </div>
+            <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+             
 
-          {/* PIN LIMIT TOAST ALERT */}
-          {pinWarningToast && (
-            <div className="p-3 px-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs font-bold flex items-center justify-between animate-in fade-in slide-in-from-top-2">
-              <div className="flex items-center gap-2.5">
-                <Pin className="w-4 h-4 text-amber-500 fill-amber-500 shrink-0" />
-                <span>{pinWarningToast}</span>
-              </div>
               <button
                 type="button"
-                onClick={() => setPinWarningToast(null)}
-                className="p-1 rounded-lg text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 cursor-pointer"
-                title="Dismiss warning"
+                onClick={() => setIsWizardOpen(true)}
+                className="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 w-full sm:w-auto"
               >
-                <X className="w-4 h-4" />
+                <Plus className="w-4 h-4" />
+                <span>Create Booking</span>
               </button>
             </div>
-          )}
+          </div>
 
           {/* ─── TOP STRIP: ALL SERVICE CATEGORIES ─── */}
           <div
@@ -1388,9 +1744,12 @@ function BookingsPageContent() {
 
                             <button
                               type="button"
-                              onClick={(e) => togglePinCategory(cat.name, e)}
+                              disabled={pinLoadingCat === cat.name}
+                              onClick={(e) => togglePinCategory(cat.name, e, cat.id)}
                               title={
-                                isPinned
+                                pinLoadingCat === cat.name
+                                  ? "Updating pin..."
+                                  : isPinned
                                   ? "Unpin category"
                                   : pinnedCategories.length >= 3
                                   ? "Pin limit reached (max 3)"
@@ -1400,9 +1759,13 @@ function BookingsPageContent() {
                                 isPinned
                                   ? "bg-amber-100 dark:bg-amber-950 text-amber-600 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-900/80 border border-amber-300/80 dark:border-amber-700"
                                   : "text-slate-400 hover:text-amber-600 hover:bg-slate-100 dark:hover:bg-slate-800 opacity-60 group-hover:opacity-100"
-                              }`}
+                              } disabled:opacity-50`}
                             >
-                              <Pin className={`w-3.5 h-3.5 ${isPinned ? "fill-current" : ""}`} />
+                              {pinLoadingCat === cat.name ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-600" />
+                              ) : (
+                                <Pin className={`w-3.5 h-3.5 ${isPinned ? "fill-current" : ""}`} />
+                              )}
                             </button>
                           </div>
                         </div>
@@ -1494,6 +1857,32 @@ function BookingsPageContent() {
             <div className="flex flex-wrap items-center gap-3 shrink-0">
               <button
                 type="button"
+                onClick={() => {
+                  const nextMode = !viewArchiveMode;
+                  setViewArchiveMode(nextMode);
+                  if (nextMode) fetchArchivedBookings();
+                }}
+                className={`px-3.5 py-2.5 rounded-xl font-bold text-xs border transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 w-full sm:w-auto ${
+                  viewArchiveMode
+                    ? "bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-950 dark:text-amber-200 dark:border-amber-800"
+                    : "bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700"
+                }`}
+              >
+                {viewArchiveMode ? (
+                  <>
+                    <ArchiveRestore className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                    <span>View Active Bookings</span>
+                  </>
+                ) : (
+                  <>
+                    <Archive className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                    <span>View Archived ({archivedBookings.length})</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setIsWizardOpen(true)}
                 className="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 w-full sm:w-auto"
               >
@@ -1502,6 +1891,25 @@ function BookingsPageContent() {
               </button>
             </div>
           </div>
+
+          {/* ARCHIVE NOTICE BANNER */}
+          {viewArchiveMode && (
+            <div className="p-3.5 px-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-900 dark:text-amber-200">
+              <div className="flex items-center gap-2.5 font-bold">
+                <Archive className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                <span>
+                  Viewing Archived Bookings ({categoryBookings.length}). Archived bookings are hidden from active dispatches and metrics.
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewArchiveMode(false)}
+                className="px-3 py-1.5 rounded-xl bg-amber-200/80 hover:bg-amber-300 dark:bg-amber-900/60 dark:hover:bg-amber-800 text-amber-950 dark:text-amber-100 font-extrabold cursor-pointer transition-colors shrink-0"
+              >
+                Return to Active Bookings
+              </button>
+            </div>
+          )}
 
           {/* 5 KPI Status Summary Cards for the active category */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
@@ -1622,41 +2030,75 @@ function BookingsPageContent() {
             columns={columns}
             data={filteredBookings}
             extraFilters={
-              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
-                <button
-                  type="button"
-                  onClick={() => updateBookingFilters("", undefined)}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${channelFilter === "ALL"
-                    ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs font-extrabold"
-                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+              <div className="flex items-center gap-2.5 flex-wrap">
+                {/* Active vs Archived Selector */}
+                <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <button
+                    type="button"
+                    onClick={() => setViewArchiveMode(false)}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      !viewArchiveMode
+                        ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs font-extrabold"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
                     }`}
-                >
-                  All Origins
-                </button>
+                  >
+                    Active ({bookings.length})
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => updateBookingFilters(bookingTypeParam === "online" ? "" : "online", undefined)}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${channelFilter === "ONLINE"
-                    ? "bg-purple-600 text-white shadow-xs font-extrabold"
-                    : "text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/60"
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setViewArchiveMode(true);
+                      fetchArchivedBookings();
+                    }}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                      viewArchiveMode
+                        ? "bg-amber-500 text-white shadow-xs font-extrabold"
+                        : "text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/60"
                     }`}
-                >
-                  <Globe className="w-3.5 h-3.5" />
-                  <span>Online Booking ({categoryBookings.filter(isOnlineBooking).length})</span>
-                </button>
+                  >
+                    <Archive className="w-3.5 h-3.5" />
+                    <span>Archived {archivedBookings.length > 0 ? `(${archivedBookings.length})` : ""}</span>
+                  </button>
+                </div>
 
-                <button
-                  type="button"
-                  onClick={() => updateBookingFilters(bookingTypeParam === "manual" ? "" : "manual", undefined)}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${channelFilter === "MANUAL"
-                    ? "bg-slate-800 text-white shadow-xs font-extrabold"
-                    : "text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
-                    }`}
-                >
-                  <Building2 className="w-3.5 h-3.5" />
-                  <span>Manual Booking ({categoryBookings.filter((b) => !isOnlineBooking(b)).length})</span>
-                </button>
+                {/* Origin Channels */}
+                <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <button
+                    type="button"
+                    onClick={() => updateBookingFilters("", undefined)}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${channelFilter === "ALL"
+                      ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs font-extrabold"
+                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                      }`}
+                  >
+                    All Origins ({categoryBookings.length})
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => updateBookingFilters(bookingTypeParam === "online" ? "" : "online", undefined)}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${channelFilter === "ONLINE"
+                      ? "bg-purple-600 text-white shadow-xs font-extrabold"
+                      : "text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/60"
+                      }`}
+                  >
+                    <Globe className="w-3.5 h-3.5" />
+                    <span>Online Booking ({categoryBookings.filter(isOnlineBooking).length})</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => updateBookingFilters(bookingTypeParam === "manual" ? "" : "manual", undefined)}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${channelFilter === "MANUAL"
+                      ? "bg-slate-800 text-white shadow-xs font-extrabold"
+                      : "text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
+                      }`}
+                  >
+                    <Building2 className="w-3.5 h-3.5" />
+                    <span>Manual Booking ({categoryBookings.filter((b) => !isOnlineBooking(b)).length})</span>
+                  </button>
+                </div>
               </div>
             }
           />
@@ -1711,6 +2153,20 @@ function BookingsPageContent() {
         isOpen={!!drawerBooking}
         onClose={() => setDrawerBooking(null)}
         onAssignPartner={(b) => setAssignBooking(b)}
+      />
+
+      <ArchiveBookingModal
+        isOpen={Boolean(archiveTargetBooking)}
+        booking={archiveTargetBooking}
+        onClose={() => setArchiveTargetBooking(null)}
+        onConfirm={handleConfirmArchive}
+      />
+
+      <CancelBookingModal
+        isOpen={Boolean(cancelTargetBooking)}
+        booking={cancelTargetBooking}
+        onClose={() => setCancelTargetBooking(null)}
+        onConfirm={handleConfirmCancel}
       />
 
       {/* RIGHT BOTTOM POPUP: CREATED BOOKING INVOICE TOAST */}
@@ -1982,6 +2438,8 @@ function BookingsPageContent() {
           </div>
         </Portal>
       )}
+
+      {/* ARCHIVE / RESTORE TOAST NOTIFICATION: Handled by unified top ToastContainer */}
     </div>
   );
 }

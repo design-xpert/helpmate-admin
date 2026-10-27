@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { X, Calendar, Clock, User, Wrench, CheckCircle2, ShieldCheck, MapPin, Star } from "lucide-react";
 import { Booking, initialTechnicians, Technician } from "@/lib/mockData";
 import { Portal } from "@/components/Portal";
+import { CustomSelect } from "@/components/CustomSelect";
 
 interface RescheduleBookingModalProps {
   booking: Booking | null;
@@ -155,23 +156,22 @@ export function RescheduleBookingModal({
             </div>
 
             {/* 3. Assign / Reassign Service Partner */}
-            <div className="space-y-1.5">
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                <Wrench className="w-3.5 h-3.5 text-brand-600 dark:text-brand-400" />
-                <span>Assign / Reassign Service Partner</span>
-              </label>
-              <select
+            <div>
+              <CustomSelect
+                label="Assign / Reassign Service Partner"
                 value={selectedTechId}
-                onChange={(e) => setSelectedTechId(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 cursor-pointer"
-              >
-                <option value="">-- Leave Unassigned / Pending Assignment --</option>
-                {initialTechnicians.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name} ({t.category} • {t.locality} • ★ {t.rating})
-                  </option>
-                ))}
-              </select>
+                onChange={(val) => setSelectedTechId(val)}
+                searchable
+                size="sm"
+                placeholder="-- Leave Unassigned / Pending Assignment --"
+                options={[
+                  { value: "", label: "-- Leave Unassigned / Pending Assignment --" },
+                  ...initialTechnicians.map((t) => ({
+                    value: t.id,
+                    label: `${t.name} (${t.category} • ${t.locality} • ★ ${t.rating})`,
+                  })),
+                ]}
+              />
             </div>
 
             {/* 4. Reschedule Reason */}

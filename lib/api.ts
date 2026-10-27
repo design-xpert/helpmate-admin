@@ -734,6 +734,23 @@ export async function toggleCategoryStatusApi(id: string, status?: boolean) {
   }
 }
 
+export async function pinCategoryApi(id: string, isPinned: boolean) {
+  clearApiCache("getCategoriesApi");
+  clearApiCache("getCategoryDropdownApi");
+  clearApiCache("getBookingCategoriesApi");
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/category/${id}/pin`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isPinned }),
+    });
+    return await safeJsonResponse(res);
+  } catch (error) {
+    console.error("pinCategoryApi error:", error);
+    return { success: false, message: "Failed to update category pin status." };
+  }
+}
+
 // ─── SERVICE APIS ───
 
 export async function getServicesApi(params?: {
@@ -1889,6 +1906,12 @@ export async function updatePackageApi(
   clearApiCache("getPackagesApi");
   try {
     const isFormData = typeof FormData !== "undefined" && payload instanceof FormData;
+    if (!isFormData) {
+      const objPayload = payload as Record<string, any>;
+      if (Object.keys(objPayload).length === 1 && typeof objPayload.status === "boolean") {
+        return await togglePackageStatusApi(id, objPayload.status);
+      }
+    }
     let bodyData: BodyInit;
     if (isFormData) {
       const formPayload = payload as FormData;
@@ -2008,6 +2031,21 @@ export async function deletePackageApi(id: string, token?: string) {
   }
 }
 
+export async function togglePackageStatusApi(id: string, status?: boolean) {
+  clearApiCache("getPackagesApi");
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/package/${id}/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(status !== undefined ? { status } : {}),
+    });
+    return await safeJsonResponse(res);
+  } catch (error) {
+    console.error("togglePackageStatusApi error:", error);
+    return { success: false, message: "Failed to toggle package status." };
+  }
+}
+
 // ─── BOOKING APIS ───
 
 export interface ApiSelectedAddonPayload {
@@ -2069,6 +2107,7 @@ export async function calculateBookingPriceApi(payload: ApiCalculatePricePayload
 export interface ApiBookingCategoryStat {
   _id: string;
   categoryName: string;
+  isPinned?: boolean;
   totalBookings: number;
   openBookings: number;
   activeBookings: number;
@@ -2080,7 +2119,15 @@ export interface ApiBookingCategoriesResponse {
   success: boolean;
   message?: string;
   data?: {
-    allServices: {
+    all?: {
+      categoryName?: string;
+      totalBookings: number;
+      openBookings: number;
+      activeBookings: number;
+      completedBookings: number;
+      cancelledBookings: number;
+    };
+    allServices?: {
       totalBookings: number;
       openBookings: number;
       activeBookings: number;
@@ -2111,13 +2158,14 @@ export async function getBookingCategoriesApi(forceRefresh?: boolean) {
 
 export async function getBookingsApi(
   params?:
-    | { categoryId?: string; search?: string; status?: string; bookingType?: string; page?: number; limit?: number; forceRefresh?: boolean }
+    | { categoryId?: string; search?: string; status?: string; bookingType?: string; archived?: boolean | string; page?: number; limit?: number; forceRefresh?: boolean }
     | boolean
 ) {
   let categoryId = "";
   let search = "";
   let status = "";
   let bookingType = "";
+  let archived: boolean | string | undefined = undefined;
   let page: number | undefined;
   let limit = 100;
   let forceRefresh = false;
@@ -2129,12 +2177,13 @@ export async function getBookingsApi(
     search = params.search || "";
     status = params.status || "";
     bookingType = params.bookingType || "";
+    archived = params.archived;
     page = params.page;
     limit = params.limit || 100;
     forceRefresh = !!params.forceRefresh;
   }
 
-  const cacheKey = `getBookingsApi:${JSON.stringify({ categoryId, search, status, bookingType, page, limit })}`;
+  const cacheKey = `getBookingsApi:${JSON.stringify({ categoryId, search, status, bookingType, archived, page, limit })}`;
   const cached = getFromCache(cacheKey, forceRefresh);
   if (cached) return cached;
 
@@ -2144,6 +2193,7 @@ export async function getBookingsApi(
     if (search) query.append("search", search);
     if (status) query.append("status", status);
     if (bookingType) query.append("bookingType", bookingType);
+    if (archived !== undefined && archived !== "") query.append("archived", String(archived));
     if (page) query.append("page", String(page));
     query.append("limit", String(limit));
 
@@ -2159,10 +2209,14 @@ export async function getBookingsApi(
   }
 }
 
-export async function getBookingDashboardStatsApi() {
+export async function getBookingDashboardStatsApi(params?: { categoryId?: string; bookingType?: string }) {
   clearApiCache("getBookingDashboardStatsApi");
   try {
-    const res = await authFetch(`${API_BASE_URL}/api/booking/dashboard-stats`, {
+    const query = new URLSearchParams();
+    if (params?.categoryId) query.append("categoryId", params.categoryId);
+    if (params?.bookingType) query.append("bookingType", params.bookingType);
+    const qs = query.toString();
+    const res = await authFetch(`${API_BASE_URL}/api/booking/dashboard-stats${qs ? `?${qs}` : ""}`, {
       method: "GET",
       headers: { "Content-Type": "application/json" },
     });
@@ -2219,6 +2273,52 @@ export async function completeBookingApi(id: string) {
   } catch (error) {
     console.error("completeBookingApi error:", error);
     return { success: false, message: "Failed to complete booking." };
+  }
+}
+
+export async function archiveBookingApi(id: string) {
+  clearApiCache("getBookingsApi");
+  clearApiCache("getBookingDashboardStatsApi");
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/booking/${id}/archive`, {
+      method: "PATCH",
+    });
+    return await safeJsonResponse(res);
+  } catch (error) {
+    console.error("archiveBookingApi error:", error);
+    return { success: false, message: "Failed to archive booking." };
+  }
+}
+
+export async function restoreBookingApi(id: string) {
+  clearApiCache("getBookingsApi");
+  clearApiCache("getBookingDashboardStatsApi");
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/booking/${id}/restore`, {
+      method: "PATCH",
+    });
+    return await safeJsonResponse(res);
+  } catch (error) {
+    console.error("restoreBookingApi error:", error);
+    return { success: false, message: "Failed to restore booking." };
+  }
+}
+
+export async function cancelBookingApi(id: string, reason: string) {
+  clearApiCache("getBookingsApi");
+  clearApiCache("getBookingDashboardStatsApi");
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/booking/${id}/cancel`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ reason }),
+    });
+    return await safeJsonResponse(res);
+  } catch (error) {
+    console.error("cancelBookingApi error:", error);
+    return { success: false, message: "Failed to cancel booking." };
   }
 }
 

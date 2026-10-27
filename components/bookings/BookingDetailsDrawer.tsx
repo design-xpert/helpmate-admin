@@ -108,16 +108,23 @@ export function BookingDetailsDrawer({
             </div>
 
             <div className="mt-3">
-              <span
-                className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${booking.status === "Completed"
-                  ? "bg-emerald-300 text-slate-950"
-                  : booking.status === "In Progress" || booking.status === "Assigned"
-                    ? "bg-blue-200 text-slate-950"
-                    : "bg-amber-200 text-slate-950"
-                  }`}
-              >
-                ● {booking.status}
-              </span>
+              <div className="flex items-center gap-2">
+                <span
+                  className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${booking.status === "Completed"
+                    ? "bg-emerald-300 text-slate-950"
+                    : booking.status === "In Progress" || booking.status === "Assigned"
+                      ? "bg-blue-200 text-slate-950"
+                      : "bg-amber-200 text-slate-950"
+                    }`}
+                >
+                  ● {booking.status}
+                </span>
+                {booking.isArchived && (
+                  <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-400 text-slate-950">
+                    Archived
+                  </span>
+                )}
+              </div>
               <h2 className="text-lg font-black text-white mt-1 leading-snug">{booking.serviceTitle}</h2>
               <p className="text-xs text-white/80 font-medium">{booking.locality}, {booking.city || "Varanasi"}</p>
             </div>

@@ -6,7 +6,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Booking, Technician, SelectedAddOnItem } from "@/lib/mockData";
 import { mapApiBooking } from "../page";
-import { getBookingDetailsApi, getBookingsApi } from "@/lib/api";
+import { getBookingDetailsApi, getBookingsApi, archiveBookingApi, restoreBookingApi, cancelBookingApi } from "@/lib/api";
 import {
   ArrowLeft,
   CalendarCheck,
@@ -28,12 +28,17 @@ import {
   ExternalLink,
   UserCheck,
   Package,
+  Archive,
+  ArchiveRestore,
+  Ban,
 } from "lucide-react";
 import { AssignPartnerModal } from "@/components/bookings/AssignPartnerModal";
 import { InspectionFlowModal } from "@/components/bookings/InspectionFlowModal";
 import { OtpVerificationModal } from "@/components/bookings/OtpVerificationModal";
 import { EditBookingModal } from "@/components/bookings/EditBookingModal";
 import { RescheduleBookingModal } from "@/components/bookings/RescheduleBookingModal";
+import { ArchiveBookingModal } from "@/components/bookings/ArchiveBookingModal";
+import { CancelBookingModal } from "@/components/bookings/CancelBookingModal";
 import { Portal } from "@/components/Portal";
 import { useRbac } from "@/context/RbacContext";
 
@@ -186,6 +191,107 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
   const [isOtpOpen, setIsOtpOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isRescheduleOpen, setIsRescheduleOpen] = useState(false);
+  const [isArchiveModalOpen, setIsArchiveModalOpen] = useState(false);
+  const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
+  const [isArchiving, setIsArchiving] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [toastMessage, setToastMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
+
+  const handleArchive = async () => {
+    if (!currentBooking) return;
+    setIsArchiving(true);
+    try {
+      const res = await archiveBookingApi(currentBooking.id);
+      if (res && res.success) {
+        const updated: Booking = {
+          ...currentBooking,
+          isArchived: true,
+          archivedAt: new Date().toISOString(),
+        };
+        setBookings([updated]);
+        setStoredBookingDetail(bookingId, {
+          raw: { ...rawBooking, isArchived: true, archivedAt: updated.archivedAt },
+          mapped: updated,
+        });
+        setIsArchiveModalOpen(false);
+        setToastMessage({ text: "Booking archived successfully", type: "success" });
+        setTimeout(() => setToastMessage(null), 4000);
+      } else {
+        setToastMessage({ text: res?.message || "Failed to archive booking", type: "error" });
+        setTimeout(() => setToastMessage(null), 4000);
+      }
+    } catch (err) {
+      console.error("Error archiving booking:", err);
+      setToastMessage({ text: "Error archiving booking", type: "error" });
+      setTimeout(() => setToastMessage(null), 4000);
+    } finally {
+      setIsArchiving(false);
+    }
+  };
+
+  const handleRestore = async () => {
+    if (!currentBooking) return;
+    setIsArchiving(true);
+    try {
+      const res = await restoreBookingApi(currentBooking.id);
+      if (res && res.success) {
+        const updated: Booking = {
+          ...currentBooking,
+          isArchived: false,
+          archivedAt: undefined,
+        };
+        setBookings([updated]);
+        setStoredBookingDetail(bookingId, {
+          raw: { ...rawBooking, isArchived: false, archivedAt: null },
+          mapped: updated,
+        });
+        setToastMessage({ text: "Booking restored successfully", type: "success" });
+        setTimeout(() => setToastMessage(null), 4000);
+      } else {
+        setToastMessage({ text: res?.message || "Failed to restore booking", type: "error" });
+        setTimeout(() => setToastMessage(null), 4000);
+      }
+    } catch (err) {
+      console.error("Error restoring booking:", err);
+      setToastMessage({ text: "Error restoring booking", type: "error" });
+      setTimeout(() => setToastMessage(null), 4000);
+    } finally {
+      setIsArchiving(false);
+    }
+  };
+
+  const handleConfirmCancel = async (booking: Booking, reason: string) => {
+    if (!booking) return;
+    setIsCancelling(true);
+    try {
+      const targetId = booking.rawId || booking.id;
+      const res = await cancelBookingApi(targetId, reason);
+      if (res && res.success) {
+        const updated: Booking = {
+          ...booking,
+          status: "Cancelled",
+          notes: reason,
+        };
+        setBookings([updated]);
+        setStoredBookingDetail(bookingId, {
+          raw: { ...rawBooking, status: "cancelled", cancellation: { reason, cancelledAt: new Date() } },
+          mapped: updated,
+        });
+        setIsCancelModalOpen(false);
+        setToastMessage({ text: "Booking cancelled successfully", type: "success" });
+        setTimeout(() => setToastMessage(null), 4000);
+      } else {
+        setToastMessage({ text: res?.message || "Failed to cancel booking", type: "error" });
+        setTimeout(() => setToastMessage(null), 4000);
+      }
+    } catch (err) {
+      console.error("Error cancelling booking:", err);
+      setToastMessage({ text: "Error cancelling booking", type: "error" });
+      setTimeout(() => setToastMessage(null), 4000);
+    } finally {
+      setIsCancelling(false);
+    }
+  };
 
   const handleReschedule = (
     id: string,
@@ -626,6 +732,13 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                   <span>{currentBooking.status}</span>
                 </span>
 
+                {currentBooking.isArchived && (
+                  <span className="px-3 py-1 rounded-xl text-xs font-black bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-800 flex items-center gap-1.5 shadow-xs shrink-0">
+                    <Archive className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                    <span>Archived</span>
+                  </span>
+                )}
+
                 {/* Real Order Count Badge only if present from API */}
                 {isNewCustomer ? (
                   <span className="px-3 py-1 rounded-xl text-xs font-black bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-xs flex items-center gap-1.5 shrink-0">
@@ -714,11 +827,72 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                       <Edit2 className="w-4 h-4 text-slate-500 shrink-0" />
                       <span>Edit Booking</span>
                     </button>
+
+                    {currentBooking.isArchived ? (
+                      <button
+                        type="button"
+                        onClick={handleRestore}
+                        disabled={isArchiving}
+                        className="w-full xl:w-auto px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/60 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-300 text-xs font-bold border border-amber-200 dark:border-amber-800 flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap"
+                      >
+                        <ArchiveRestore className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                        <span>{isArchiving ? "Restoring..." : "Restore Booking"}</span>
+                      </button>
+                    ) : (
+                      <>
+                        {currentBooking.status !== "Completed" && currentBooking.status !== "Cancelled" && (
+                          <button
+                            type="button"
+                            onClick={() => setIsCancelModalOpen(true)}
+                            disabled={isCancelling}
+                            className="w-full xl:w-auto px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-rose-50 dark:bg-slate-800 dark:hover:bg-rose-950/50 text-slate-700 hover:text-rose-700 dark:text-slate-300 dark:hover:text-rose-300 text-xs font-bold border border-slate-200 dark:border-slate-700 hover:border-rose-300 dark:hover:border-rose-800 flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap"
+                          >
+                            <Ban className="w-4 h-4 text-slate-500 hover:text-rose-600 shrink-0" />
+                            <span>Cancel Booking</span>
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setIsArchiveModalOpen(true)}
+                          disabled={isArchiving}
+                          className="w-full xl:w-auto px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-rose-50 dark:bg-slate-800 dark:hover:bg-rose-950/50 text-slate-700 hover:text-rose-700 dark:text-slate-300 dark:hover:text-rose-300 text-xs font-bold border border-slate-200 dark:border-slate-700 hover:border-rose-300 dark:hover:border-rose-800 flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap"
+                        >
+                          <Archive className="w-4 h-4 text-slate-500 hover:text-rose-600 shrink-0" />
+                          <span>Archive Booking</span>
+                        </button>
+                      </>
+                    )}
                   </>
                 )}
               </div>
             </div>
           </div>
+
+          {/* ─── ARCHIVE BANNER ─── */}
+          {currentBooking.isArchived && (
+            <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-900 dark:text-amber-200 print:hidden">
+              <div className="flex items-center gap-2.5 font-bold">
+                <Archive className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0" />
+                <div>
+                  <span className="font-black uppercase tracking-wider block text-[10px] text-amber-700 dark:text-amber-400">
+                    Archived Booking
+                  </span>
+                  <span>
+                    This booking is currently archived{currentBooking.archivedAt ? ` (${new Date(currentBooking.archivedAt).toLocaleDateString("en-GB")})` : ""}. It is hidden from active operations.
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleRestore}
+                disabled={isArchiving}
+                className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-extrabold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs shrink-0"
+              >
+                <ArchiveRestore className="w-4 h-4" />
+                <span>{isArchiving ? "Restoring..." : "Restore Booking"}</span>
+              </button>
+            </div>
+          )}
 
           {/* ─── VISUAL BOOKING LIFECYCLE PROGRESS TRACKER BANNER ─── */}
           {/* <div className="p-4 sm:p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
@@ -1325,6 +1499,22 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
         onReschedule={handleReschedule}
       />
 
+      <ArchiveBookingModal
+        isOpen={isArchiveModalOpen}
+        booking={currentBooking}
+        onClose={() => setIsArchiveModalOpen(false)}
+        onConfirm={handleArchive}
+        isLoading={isArchiving}
+      />
+
+      <CancelBookingModal
+        isOpen={isCancelModalOpen}
+        booking={currentBooking}
+        onClose={() => setIsCancelModalOpen(false)}
+        onConfirm={handleConfirmCancel}
+        isLoading={isCancelling}
+      />
+
       {/* ─── HIDDEN PRINT CANVAS: OFFICIAL GST TAX INVOICE ─── */}
       <Portal>
         <div
@@ -1486,6 +1676,18 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
           </div>
         </div>
       </Portal>
+
+      {/* TOAST FEEDBACK */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 p-4 rounded-2xl shadow-xl bg-slate-900 text-white dark:bg-white dark:text-slate-900 animate-in slide-in-from-bottom-5 border border-slate-800 dark:border-slate-200">
+          {toastMessage.type === "success" ? (
+            <CheckCircle2 className="w-5 h-5 text-emerald-400 dark:text-emerald-600 shrink-0" />
+          ) : (
+            <AlertCircle className="w-5 h-5 text-rose-400 dark:text-rose-600 shrink-0" />
+          )}
+          <span className="text-xs font-bold">{toastMessage.text}</span>
+        </div>
+      )}
     </div>
   );
 }

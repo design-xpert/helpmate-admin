@@ -351,6 +351,9 @@ export interface BroadcastPartnerOffer {
 
 export interface Booking {
   createdBy?: string;
+  origin?: "online" | "manual" | "website" | "admin" | string;
+  bookingSource?: string;
+  isOnline?: boolean;
   id: string; // Booking / Invoice ID
   jobId?: string; // Unique Job Tracking Code e.g. HM-JOB-8821
   bookingNumber?: string;
@@ -442,6 +445,8 @@ export interface Booking {
   callingDate?: string;
   callingPerson?: string;
   handledBy?: string;
+  isArchived?: boolean;
+  archivedAt?: string;
 }
 
 export interface Customer {

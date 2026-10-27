@@ -21,6 +21,7 @@ import {
   formatImageUrl,
 } from "@/lib/api";
 import { CustomSelect } from "@/components/CustomSelect";
+import { StatusDropdown } from "@/components/StatusDropdown";
 import { ShimmerRow, ShimmerCardGrid } from "@/components/ShimmerLoader";
 import {
   Sliders,
@@ -37,6 +38,7 @@ import {
   RefreshCw,
   Check,
   Loader2,
+  ChevronDown,
 } from "lucide-react";
 
 function CategoryIconDisplay({ iconUrl, name, sizeClassName = "w-full h-full" }: { iconUrl?: string; name: string; sizeClassName?: string }) {
@@ -138,16 +140,26 @@ export default function CategoriesPage() {
     setDeleteModal(null);
   };
 
-  const handleToggleCategoryStatus = async (cat: CategoryItem) => {
-    const newStatusBool = cat.status !== "Active";
+  const [updatingCatStatusId, setUpdatingCatStatusId] = useState<string | null>(null);
+
+  const handleToggleCategoryStatus = async (cat: CategoryItem, targetStatusBool?: boolean) => {
+    const newStatusBool =
+      typeof targetStatusBool === "boolean" ? targetStatusBool : cat.status !== "Active";
     const newStatusStr: "Active" | "Inactive" = newStatusBool ? "Active" : "Inactive";
 
-    if (cat.id.length === 24) {
-      await toggleCategoryStatusApi(cat.id, newStatusBool);
+    setUpdatingCatStatusId(cat.id);
+    try {
+      if (cat.id.length === 24) {
+        await toggleCategoryStatusApi(cat.id, newStatusBool);
+      }
+      setCategories((prev) =>
+        prev.map((c) => (c.id === cat.id ? { ...c, status: newStatusStr } : c))
+      );
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setUpdatingCatStatusId(null);
     }
-    setCategories((prev) =>
-      prev.map((c) => (c.id === cat.id ? { ...c, status: newStatusStr } : c))
-    );
   };
 
   // Form States
@@ -482,14 +494,14 @@ export default function CategoriesPage() {
       key: "status",
       header: "Status",
       accessor: (row) => (
-        <span
-          className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${row.status === "Active"
-            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
-            : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
-            }`}
-        >
-          {row.status}
-        </span>
+        <StatusDropdown
+          status={row.status || "Active"}
+          isUpdating={updatingCatStatusId === row.id}
+          onChange={(newStatus) =>
+            handleToggleCategoryStatus(row, newStatus === "Active")
+          }
+          title="Click to change category status"
+        />
       ),
     },
     {

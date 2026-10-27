@@ -15,6 +15,7 @@ import {
   createPackageApi,
   updatePackageApi,
   deletePackageApi,
+  togglePackageStatusApi,
   getCategoriesApi,
   createCategoryApi,
   updateCategoryApi,
@@ -104,6 +105,7 @@ interface ServiceOfferingRow {
   imageFile?: File;
   imageRemoved?: boolean;
   addonIds?: string[];
+  status?: "Active" | "Inactive";
 }
 
 const DURATION_PRESETS = [
@@ -125,6 +127,7 @@ const DURATION_PRESETS = [
 ];
 
 import { CustomSelect } from "@/components/CustomSelect";
+import { StatusDropdown } from "@/components/StatusDropdown";
 
 export default function CmsPage() {
   const [categorySubcategoriesMap, setCategorySubcategoriesMap] = useState<Record<string, string[]>>({
@@ -610,18 +613,40 @@ export default function CmsPage() {
     });
   };
 
-  const handleToggleServiceStatus = async (serviceId: string, currentStatus?: string) => {
-    const newStatusBool = currentStatus !== "Active";
+  const [updatingServiceStatusId, setUpdatingServiceStatusId] = useState<string | null>(null);
+
+  const handleToggleServiceStatus = async (
+    serviceId: string,
+    currentStatus?: string,
+    targetStatusBool?: boolean
+  ) => {
+    const newStatusBool =
+      typeof targetStatusBool === "boolean"
+        ? targetStatusBool
+        : currentStatus !== "Active";
     const newStatusStr: "Active" | "Inactive" = newStatusBool ? "Active" : "Inactive";
 
-    if (serviceId.length === 24) {
-      await updatePackageApi(serviceId, { status: newStatusBool });
+    setUpdatingServiceStatusId(serviceId);
+    try {
+      if (serviceId.length === 24) {
+        const res = await togglePackageStatusApi(serviceId, newStatusBool);
+        if (res && res.success === false) {
+          toast.error(res.message || "Failed to toggle package status");
+          return;
+        }
+      }
+      setServices((prev) => {
+        const updated = prev.map((s) => (s.id === serviceId ? { ...s, status: newStatusStr } : s));
+        setCachedModuleData("cms_services", updated);
+        return updated;
+      });
+      toast.success(`Package marked as ${newStatusStr}`);
+    } catch (err) {
+      console.error("handleToggleServiceStatus error:", err);
+      toast.error("Failed to update package status");
+    } finally {
+      setUpdatingServiceStatusId(null);
     }
-    setServices((prev) => {
-      const updated = prev.map((s) => (s.id === serviceId ? { ...s, status: newStatusStr } : s));
-      setCachedModuleData("cms_services", updated);
-      return updated;
-    });
   };
 
   // Add-ons Management Modal State
@@ -701,32 +726,50 @@ export default function CmsPage() {
     }
   };
 
-  const handleToggleAddonStatus = async (addonId: string, currentStatus?: string) => {
-    const newStatusBool = currentStatus !== "Active";
+  const [updatingAddonStatusId, setUpdatingAddonStatusId] = useState<string | null>(null);
+
+  const handleToggleAddonStatus = async (
+    addonId: string,
+    currentStatus?: string,
+    targetStatusBool?: boolean
+  ) => {
+    const newStatusBool =
+      typeof targetStatusBool === "boolean"
+        ? targetStatusBool
+        : currentStatus !== "Active";
     const newStatusStr: "Active" | "Inactive" = newStatusBool ? "Active" : "Inactive";
 
-    if (addonId.length === 24) {
-      await toggleAddonStatusApi(addonId, newStatusBool);
+    setUpdatingAddonStatusId(addonId);
+    try {
+      if (addonId.length === 24) {
+        await toggleAddonStatusApi(addonId, newStatusBool);
+      }
+      setAddons((prev) => {
+        const updated = prev.map((a) => (a.id === addonId ? { ...a, status: newStatusStr } : a));
+        setCachedModuleData("cms_addons", updated);
+        return updated;
+      });
+      setServices((prev) =>
+        prev.map((s) => ({
+          ...s,
+          addons: s.addons ? s.addons.map((a) => (a.id === addonId ? { ...a, status: newStatusStr } : a)) : [],
+        }))
+      );
+      setSelectedService((prev) =>
+        prev
+          ? {
+              ...prev,
+              addons: prev.addons ? prev.addons.map((a) => (a.id === addonId ? { ...a, status: newStatusStr } : a)) : [],
+            }
+          : null
+      );
+      toast.success(`Add-on marked as ${newStatusStr}`);
+    } catch (err) {
+      console.error("handleToggleAddonStatus error:", err);
+      toast.error("Failed to update add-on status");
+    } finally {
+      setUpdatingAddonStatusId(null);
     }
-    setAddons((prev) => {
-      const updated = prev.map((a) => (a.id === addonId ? { ...a, status: newStatusStr } : a));
-      setCachedModuleData("cms_addons", updated);
-      return updated;
-    });
-    setServices((prev) =>
-      prev.map((s) => ({
-        ...s,
-        addons: s.addons ? s.addons.map((a) => (a.id === addonId ? { ...a, status: newStatusStr } : a)) : [],
-      }))
-    );
-    setSelectedService((prev) =>
-      prev
-        ? {
-            ...prev,
-            addons: prev.addons ? prev.addons.map((a) => (a.id === addonId ? { ...a, status: newStatusStr } : a)) : [],
-          }
-        : null
-    );
   };
 
   // Website Visitor Promo Popup Banner State
@@ -956,9 +999,14 @@ export default function CmsPage() {
       key: "status",
       header: "Status",
       accessor: (row) => (
-        <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1 w-fit">
-          <CheckCircle2 className="w-3 h-3" /> {row.status}
-        </span>
+        <StatusDropdown
+          status={row.status || "Active"}
+          isUpdating={updatingServiceStatusId === row.id}
+          onChange={(newStatus) =>
+            handleToggleServiceStatus(row.id, row.status, newStatus === "Active")
+          }
+          title="Click to change package status"
+        />
       ),
     },
     {
@@ -1063,9 +1111,14 @@ export default function CmsPage() {
       key: "status",
       header: "Status",
       accessor: (row) => (
-        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-          {row.status}
-        </span>
+        <StatusDropdown
+          status={row.status || "Active"}
+          isUpdating={updatingAddonStatusId === row.id}
+          onChange={(newStatus) =>
+            handleToggleAddonStatus(row.id, row.status, newStatus === "Active")
+          }
+          title="Click to change add-on status"
+        />
       ),
     },
     {
@@ -1667,6 +1720,7 @@ export default function CmsPage() {
         imageFile: undefined,
         imageRemoved: false,
         addonIds: extractedAddonIds,
+        status: item.status || "Active",
       },
     ]);
 
@@ -1833,6 +1887,13 @@ export default function CmsPage() {
             return;
           }
 
+          if (firstOff.status) {
+            const currentItem = services.find((s) => s.id === editingServiceId);
+            if (currentItem && currentItem.status !== firstOff.status) {
+              await togglePackageStatusApi(editingServiceId, firstOff.status === "Active");
+            }
+          }
+
           toast.success("Package Updated", `"${firstOff.title}" package updated successfully.`);
 
           // 1. Instantly close the sliding form drawer on successful update
@@ -1859,6 +1920,7 @@ export default function CmsPage() {
                   includeInPackage: cleanPackagePoints(firstOff.includeInPackage),
                   excludeFromPackage: cleanPackagePoints(firstOff.excludeFromPackage),
                   addons: addons.filter((a) => (firstOff.addonIds || []).includes(a.id)),
+                  status: firstOff.status || s.status || "Active",
                   thumbnailUrl: firstOff.imageFile instanceof File
                     ? (updatedImageUrl || firstOff.thumbnailUrl || s.thumbnailUrl || "")
                     : (firstOff.imageRemoved ? "" : (updatedImageUrl || firstOff.thumbnailUrl || "")),
@@ -2514,19 +2576,15 @@ export default function CmsPage() {
                               </span>
                               <span className="text-slate-400 text-[11px] font-medium">/ {addon.unit}</span>
                               <span className="text-slate-300 dark:text-slate-600">•</span>
-                              <button
-                                type="button"
-                                onClick={() => handleToggleAddonStatus(addon.id, addon.status)}
-                                className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold transition-all cursor-pointer flex items-center gap-1 border ${
-                                  addon.status === "Active"
-                                    ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100"
-                                    : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-200"
-                                }`}
-                                title="Click to toggle Active/Inactive"
-                              >
-                                <span className={`w-1.5 h-1.5 rounded-full ${addon.status === "Active" ? "bg-emerald-500" : "bg-slate-400"}`} />
-                                {addon.status || "Active"}
-                              </button>
+                              <StatusDropdown
+                                status={addon.status || "Active"}
+                                size="xs"
+                                isUpdating={updatingAddonStatusId === addon.id}
+                                onChange={(newStatus) =>
+                                  handleToggleAddonStatus(addon.id, addon.status, newStatus === "Active")
+                                }
+                                title="Click to change add-on status"
+                              />
                             </div>
 
                             {addon.description && (
@@ -2842,10 +2900,20 @@ export default function CmsPage() {
                           className="p-3.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-3 relative shadow-xs"
                         >
                           <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700/60 pb-1.5">
-                            <span className="font-extrabold text-xs text-brand-600 dark:text-brand-400 flex items-center gap-1.5">
-                              <Tag className="w-3.5 h-3.5" />
-                              Package #{idx + 1}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className="font-extrabold text-xs text-brand-600 dark:text-brand-400 flex items-center gap-1.5">
+                                <Tag className="w-3.5 h-3.5" />
+                                Package #{idx + 1}
+                              </span>
+                              <StatusDropdown
+                                status={off.status || "Active"}
+                                size="xs"
+                                onChange={(newStatus) =>
+                                  handleUpdateOfferingRow(idx, "status", newStatus)
+                                }
+                                title="Change package status"
+                              />
+                            </div>
                             <div className="flex items-center gap-1.5">
                               <button
                                 type="button"
