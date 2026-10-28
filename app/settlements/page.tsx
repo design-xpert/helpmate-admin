@@ -379,16 +379,13 @@ export default function SettlementsPage() {
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
               <DollarSign className="w-6 h-6 text-brand-600" />
-              <span>Partner Manual Settlement Ledger</span>
+              <span>Commission & Settlements</span>
             </h1>
             <span className="px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-200 dark:border-amber-800 text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1">
               <BadgeAlert className="w-3.5 h-3.5 text-amber-600" />
               <span>Manual Settlement Active</span>
             </span>
           </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
-            Process manual partner weekly settlements, enter bank UTR numbers, and upload manual payment receipts.
-          </p>
         </div>
 
         <button

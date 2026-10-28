@@ -110,7 +110,7 @@ export function StatusDropdown({
         disabled={disabled || isUpdating}
         onClick={toggleDropdown}
         title={title}
-        className={`rounded-full font-extrabold border transition-all flex items-center gap-1.5 outline-none shadow-2xs hover:shadow-xs cursor-pointer select-none disabled:opacity-60 disabled:cursor-not-allowed ${sizeClasses} ${
+        className={`rounded-full font-medium border transition-all flex items-center gap-1.5 outline-none shadow-2xs hover:shadow-xs cursor-pointer select-none disabled:opacity-60 disabled:cursor-not-allowed ${sizeClasses} ${
           isActive
             ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800 dark:hover:bg-emerald-950"
             : "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200 hover:border-slate-300 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700 dark:hover:bg-slate-700"
@@ -152,8 +152,8 @@ export function StatusDropdown({
               onClick={(e) => handleSelect("Active", e)}
               className={`w-full flex items-center justify-between gap-2.5 px-3 py-1.5 rounded-xl text-xs transition-all cursor-pointer ${
                 isActive
-                  ? "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-extrabold"
-                  : "text-slate-700 dark:text-slate-300 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40 hover:text-emerald-700 dark:hover:text-emerald-300 font-bold"
+                  ? "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-semibold"
+                  : "text-slate-700 dark:text-slate-300 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40 hover:text-emerald-700 dark:hover:text-emerald-300 font-medium"
               }`}
             >
               <div className="flex items-center gap-2">
@@ -168,8 +168,8 @@ export function StatusDropdown({
               onClick={(e) => handleSelect("Inactive", e)}
               className={`w-full flex items-center justify-between gap-2.5 px-3 py-1.5 rounded-xl text-xs transition-all cursor-pointer ${
                 !isActive
-                  ? "bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-extrabold"
-                  : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white font-bold"
+                  ? "bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-semibold"
+                  : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white font-medium"
               }`}
             >
               <div className="flex items-center gap-2">

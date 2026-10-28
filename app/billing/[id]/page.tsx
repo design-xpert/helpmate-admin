@@ -160,55 +160,55 @@ export default function InvoiceDetailPage() {
   const bookingNumber = invoiceData?.bookingNumber || mockRef.bookingNumber || mockRef.id;
   const customerName = invoiceData?.customer?.name || mockRef.customerName || "Customer";
   const customerPhone = invoiceData?.customer?.mobile || mockRef.customerPhone || "";
-  
+
   const fullAddress = invoiceData?.address
     ? [invoiceData.address.serviceAddress, invoiceData.address.landmark ? `Near ${invoiceData.address.landmark}` : "", invoiceData.address.localityName, invoiceData.address.pincode].filter(Boolean).join(", ")
     : (mockRef.address || "Sigra Colony, Varanasi");
 
   const items = invoiceData?.items && invoiceData.items.length > 0
     ? invoiceData.items.map((item: any, idx: number) => {
-        const itemTitle = item.packageName || item.serviceActionName || item.categoryName || "Service Package";
-        const unitPrice = item.unitPrice || 0;
-        const qty = item.quantity || 1;
-        const total = item.totalPrice || (unitPrice * qty);
-        const cgst = Math.round(total * 0.09 * 100) / 100;
-        const sgst = Math.round(total * 0.09 * 100) / 100;
+      const itemTitle = item.packageName || item.serviceActionName || item.categoryName || "Service Package";
+      const unitPrice = item.unitPrice || 0;
+      const qty = item.quantity || 1;
+      const total = item.totalPrice || (unitPrice * qty);
+      const cgst = Math.round(total * 0.09 * 100) / 100;
+      const sgst = Math.round(total * 0.09 * 100) / 100;
+      return {
+        id: item._id || String(idx),
+        title: itemTitle,
+        code: `${bookingNumber}-${String(idx + 1).padStart(2, "0")}`,
+        quantity: qty,
+        unitPrice,
+        total,
+        cgst,
+        sgst,
+      };
+    })
+    : (mockRef.servicesList && mockRef.servicesList.length > 0
+      ? mockRef.servicesList.map((item, idx) => {
+        const itemBase = item.price * item.quantity;
         return {
-          id: item._id || String(idx),
-          title: itemTitle,
-          code: `${bookingNumber}-${String(idx + 1).padStart(2, "0")}`,
-          quantity: qty,
-          unitPrice,
-          total,
-          cgst,
-          sgst,
+          id: item.id || String(idx),
+          title: item.title,
+          code: item.serviceCode || `HM-SVC-${mockRef.id.replace(/[^0-9]/g, "")}-${String(idx + 1).padStart(2, "0")}`,
+          quantity: item.quantity,
+          unitPrice: item.price,
+          total: itemBase,
+          cgst: Math.round(itemBase * 0.09 * 100) / 100,
+          sgst: Math.round(itemBase * 0.09 * 100) / 100,
         };
       })
-    : (mockRef.servicesList && mockRef.servicesList.length > 0
-        ? mockRef.servicesList.map((item, idx) => {
-            const itemBase = item.price * item.quantity;
-            return {
-              id: item.id || String(idx),
-              title: item.title,
-              code: item.serviceCode || `HM-SVC-${mockRef.id.replace(/[^0-9]/g, "")}-${String(idx + 1).padStart(2, "0")}`,
-              quantity: item.quantity,
-              unitPrice: item.price,
-              total: itemBase,
-              cgst: Math.round(itemBase * 0.09 * 100) / 100,
-              sgst: Math.round(itemBase * 0.09 * 100) / 100,
-            };
-          })
-        : [{
-            id: "1",
-            title: mockRef.serviceName || mockRef.serviceTitle || "Service Package",
-            code: `HM-SVC-${mockRef.id.replace(/[^0-9]/g, "")}-01`,
-            quantity: 1,
-            unitPrice: mockRef.basePrice,
-            total: mockRef.basePrice,
-            cgst: mockRef.cgst,
-            sgst: mockRef.sgst,
-          }]
-      );
+      : [{
+        id: "1",
+        title: mockRef.serviceName || mockRef.serviceTitle || "Service Package",
+        code: `HM-SVC-${mockRef.id.replace(/[^0-9]/g, "")}-01`,
+        quantity: 1,
+        unitPrice: mockRef.basePrice,
+        total: mockRef.basePrice,
+        cgst: mockRef.cgst,
+        sgst: mockRef.sgst,
+      }]
+    );
 
   const basePrice = invoiceData?.billing?.sellingPrice ?? invoiceData?.billing?.mrp ?? mockRef.basePrice;
   const convenienceFee = invoiceData?.billing?.platformFee ?? mockRef.convenienceFee ?? 49;
@@ -216,7 +216,7 @@ export default function InvoiceDetailPage() {
   const cgstVal = Math.round((totalGst / 2) * 100) / 100;
   const sgstVal = Math.round((totalGst / 2) * 100) / 100;
   const totalAmount = invoiceData?.billing?.totalAmount ?? (mockRef.totalAmount || (basePrice + convenienceFee + totalGst));
-  
+
   const paymentMethod = invoiceData?.billing?.paymentMethod || mockRef.paymentMethod || "UPI / Digital Prepaid";
   const paymentStatusRaw = invoiceData?.billing?.paymentStatus || mockRef.paymentStatus || mockRef.status || "paid";
   const paymentStatus = (typeof paymentStatusRaw === "string" ? paymentStatusRaw.toLowerCase() : "paid");
@@ -411,22 +411,21 @@ export default function InvoiceDetailPage() {
               <div className="text-slate-600 dark:text-slate-300 font-medium">
                 Payment Method: {paymentMethod}
               </div>
-              <div className={`font-bold flex items-center gap-1 ${
-                paymentStatus === "refunded"
+              <div className={`font-bold flex items-center gap-1 ${paymentStatus === "refunded"
                   ? "text-purple-600 dark:text-purple-400"
                   : paymentStatus === "cancelled" || paymentStatus === "failed"
-                  ? "text-rose-600 dark:text-rose-400"
-                  : paymentStatus === "pending"
-                  ? "text-amber-600 dark:text-amber-400"
-                  : "text-emerald-600 dark:text-emerald-400"
-              }`}>
+                    ? "text-rose-600 dark:text-rose-400"
+                    : paymentStatus === "pending"
+                      ? "text-amber-600 dark:text-amber-400"
+                      : "text-emerald-600 dark:text-emerald-400"
+                }`}>
                 {paymentStatus === "refunded"
                   ? "↩ Payment Status: Refunded"
                   : paymentStatus === "cancelled" || paymentStatus === "failed"
-                  ? "✕ Payment Status: Not Paid / Cancelled"
-                  : paymentStatus === "pending"
-                  ? "⏱ Payment Status: Unpaid / Pending Collection"
-                  : "✓ Payment Status: Paid"}
+                    ? "✕ Payment Status: Not Paid / Cancelled"
+                    : paymentStatus === "pending"
+                      ? "⏱ Payment Status: Unpaid / Pending Collection"
+                      : "✓ Payment Status: Paid"}
               </div>
             </div>
           </div>
@@ -591,22 +590,21 @@ export default function InvoiceDetailPage() {
               <div className="text-slate-800 font-medium text-[10px]">
                 Payment Method: {paymentMethod}
               </div>
-              <div className={`font-bold flex items-center gap-1 text-[10px] ${
-                paymentStatus === "refunded"
+              <div className={`font-bold flex items-center gap-1 text-[10px] ${paymentStatus === "refunded"
                   ? "text-purple-700"
                   : paymentStatus === "cancelled" || paymentStatus === "failed"
-                  ? "text-rose-700"
-                  : paymentStatus === "pending"
-                  ? "text-amber-700"
-                  : "text-emerald-700"
-              }`}>
+                    ? "text-rose-700"
+                    : paymentStatus === "pending"
+                      ? "text-amber-700"
+                      : "text-emerald-700"
+                }`}>
                 {paymentStatus === "refunded"
                   ? "↩ Payment Status: Refunded"
                   : paymentStatus === "cancelled" || paymentStatus === "failed"
-                  ? "✕ Payment Status: Not Paid / Cancelled"
-                  : paymentStatus === "pending"
-                  ? "⏱ Payment Status: Unpaid / Pending Collection"
-                  : "✓ Payment Status: Paid"}
+                    ? "✕ Payment Status: Not Paid / Cancelled"
+                    : paymentStatus === "pending"
+                      ? "⏱ Payment Status: Unpaid / Pending Collection"
+                      : "✓ Payment Status: Paid"}
               </div>
             </div>
           </div>

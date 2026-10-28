@@ -5,43 +5,60 @@ interface CacheEntry<T> {
   timestamp: number;
 }
 
-const moduleStore = new Map<string, CacheEntry<any>>();
+// Attach store to window to ensure single source of truth across client navigation until browser refresh
+function getStore(): Map<string, CacheEntry<any>> {
+  if (typeof window !== "undefined") {
+    if (!(window as any).__helpmate_module_cache__) {
+      (window as any).__helpmate_module_cache__ = new Map<string, CacheEntry<any>>();
+    }
+    return (window as any).__helpmate_module_cache__;
+  }
+  return ssrStore;
+}
+const ssrStore = new Map<string, CacheEntry<any>>();
 
 /**
- * Retrieve cached data for a module if it's within the TTL window (default 30 seconds).
+ * Retrieve cached data for a module. Persists until browser refresh.
  */
-export function getCachedModuleData<T>(moduleKey: string, ttlMs: number = 30000): T | null {
-  const entry = moduleStore.get(moduleKey);
-  if (entry && Date.now() - entry.timestamp < ttlMs) {
+export function getCachedModuleData<T>(moduleKey: string, _ttlMs?: number): T | null {
+  const entry = getStore().get(moduleKey);
+  if (entry && entry.data !== undefined && entry.data !== null) {
     return entry.data as T;
   }
   return null;
 }
 
 /**
- * Get cached module data regardless of TTL (for initial state fallback).
+ * Get cached module data (persists until browser refresh).
  */
 export function getStoredModuleData<T>(moduleKey: string): T | null {
-  const entry = moduleStore.get(moduleKey);
-  return entry ? (entry.data as T) : null;
+  const entry = getStore().get(moduleKey);
+  return entry && entry.data !== undefined && entry.data !== null ? (entry.data as T) : null;
 }
 
 /**
  * Store latest API data for a module with current timestamp.
  */
 export function setCachedModuleData<T>(moduleKey: string, data: T): void {
-  moduleStore.set(moduleKey, {
+  if (data === undefined || data === null) return;
+  getStore().set(moduleKey, {
     data,
     timestamp: Date.now(),
   });
 }
 
 /**
- * Check if the cache for a module is still fresh (under 30 seconds).
+ * Check if the cache for a module has stored data (valid until page refresh).
  */
-export function isModuleCacheFresh(moduleKey: string, ttlMs: number = 30000): boolean {
-  const entry = moduleStore.get(moduleKey);
-  return !!(entry && Date.now() - entry.timestamp < ttlMs);
+export function isModuleCacheFresh(moduleKey: string, _ttlMs?: number): boolean {
+  const entry = getStore().get(moduleKey);
+  if (!entry || entry.data === undefined || entry.data === null) {
+    return false;
+  }
+  if (Array.isArray(entry.data) && entry.data.length === 0) {
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -49,8 +66,9 @@ export function isModuleCacheFresh(moduleKey: string, ttlMs: number = 30000): bo
  */
 export function clearModuleCache(moduleKey?: string): void {
   if (moduleKey) {
-    moduleStore.delete(moduleKey);
+    getStore().delete(moduleKey);
   } else {
-    moduleStore.clear();
+    getStore().clear();
   }
 }
+

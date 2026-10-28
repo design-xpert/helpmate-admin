@@ -67,11 +67,8 @@ export default function RBACPage() {
             <span className="text-xs text-slate-500">Varanasi Administrative Controls</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-            Role-Based Access Control (RBAC) & Audit Logs
+            User Management & RBAC
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Configure permission matrices for Varanasi central operations, partner managers, and view immutable audit streams.
-          </p>
         </div>
       </div>
 

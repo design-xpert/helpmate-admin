@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import Image from "next/image";
 import { getStoredModuleData, setCachedModuleData, isModuleCacheFresh, clearModuleCache } from "@/lib/moduleCache";
+import { preloadImages } from "@/lib/imageCache";
 import { DataTable, Column } from "@/components/DataTable";
 import { RowActionMenu } from "@/components/RowActionMenu";
 import { TableImage } from "@/components/TableImage";
@@ -190,24 +191,30 @@ export default function CmsPage() {
   };
 
   // Enhanced Services state — live API data only (no manual mock data)
-  const initialCachedServices = getStoredModuleData<ServiceItem[]>("cms_services") || [];
+  const defaultServicesCache = getStoredModuleData<{
+    items: ServiceItem[];
+    totalRecords: number;
+    totalPages: number;
+  }>("cms_services_p1_l10_s");
+  const initialCachedServices = defaultServicesCache?.items || getStoredModuleData<ServiceItem[]>("cms_services") || [];
   const initialCachedAddons = getStoredModuleData<ServiceAddon[]>("cms_addons") || [];
 
   const [services, setServices] = useState<ServiceItem[]>(() => initialCachedServices);
   const [addons, setAddons] = useState<ServiceAddon[]>(() => initialCachedAddons);
   const [activeTab, setActiveTab] = useState<"services" | "addons">("services");
-  
-  // If cache is fresh (< 30s), don't show any loader at all! Exact data shows with 0 delay
+
+  // If cache is fresh and has items, don't show any loader at all! Exact data shows with 0 delay
   const [isLoading, setIsLoading] = useState<boolean>(() => {
-    return !(isModuleCacheFresh("cms_services", 30000) && initialCachedServices.length > 0);
+    const hasCached = (isModuleCacheFresh("cms_services_p1_l10_s") || isModuleCacheFresh("cms_services")) && initialCachedServices.length > 0;
+    return !hasCached;
   });
 
   // Category Filter Flow State
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>("All Categories");
   const [selectedCategoryIdFilter, setSelectedCategoryIdFilter] = useState<string>("");
   const [servicesTablePage, setServicesTablePage] = useState<number>(1);
-  const [servicesTotalRecords, setServicesTotalRecords] = useState<number>(0);
-  const [servicesTotalPages, setServicesTotalPages] = useState<number>(1);
+  const [servicesTotalRecords, setServicesTotalRecords] = useState<number>(() => defaultServicesCache?.totalRecords || 0);
+  const [servicesTotalPages, setServicesTotalPages] = useState<number>(() => defaultServicesCache?.totalPages || 1);
   const [servicesSearch, setServicesSearch] = useState<string>("");
 
   const activeFetchIdRef = useRef(0);
@@ -227,7 +234,7 @@ export default function CmsPage() {
       ? `cms_services_${activeCatId}_p${page}_l${limit}_s${(activeSearch || "").trim()}`
       : `cms_services_p${page}_l${limit}_s${(activeSearch || "").trim()}`;
 
-    if (!force && isModuleCacheFresh(cacheKey, 30000)) {
+    if (!force && isModuleCacheFresh(cacheKey)) {
       const cached = getStoredModuleData<{
         items: ServiceItem[];
         totalRecords: number;
@@ -246,7 +253,7 @@ export default function CmsPage() {
     setIsLoading(true);
 
     try {
-      const catsToUse = (catsList && catsList.length > 0) ? catsList : categoriesFromApi;
+      const catsToUse = (catsList && catsList.length > 0) ? catsList : (categoriesFromApi.length > 0 ? categoriesFromApi : (initialCachedCats.length > 0 ? initialCachedCats : []));
       const params: any = { page, limit: 10, forceRefresh: force };
       if (activeCatId && activeCatId !== "all" && activeCatId !== "") {
         params.categoryId = activeCatId;
@@ -371,8 +378,8 @@ export default function CmsPage() {
             const rawImg = s.imageUrl || s.thumbnailUrl || "";
             const thumbVal = rawImg
               ? (rawImg.startsWith("data:") || rawImg.startsWith("blob:")
-                  ? rawImg
-                  : `${rawImg}${rawImg.includes("?") ? "&" : "?"}v=${s.updatedAt ? new Date(s.updatedAt).getTime() : Date.now()}`)
+                ? rawImg
+                : (s.updatedAt ? `${rawImg}${rawImg.includes("?") ? "&" : "?"}v=${new Date(s.updatedAt).getTime()}` : rawImg))
               : "";
 
             const rawAddons = s.addons || [];
@@ -416,6 +423,26 @@ export default function CmsPage() {
             totalRecords: totalRecs,
             totalPages: Math.max(totalPgs, 1),
           });
+          if (!activeCatId && page === 1 && !(activeSearch || "").trim()) {
+            setCachedModuleData("cms_services", mapped);
+            setCachedModuleData("cms_services_p1_l10_s", {
+              items: mapped,
+              totalRecords: totalRecs,
+              totalPages: Math.max(totalPgs, 1),
+            });
+          }
+
+          // Preload package thumbnails and addon images into memory
+          const urlsToPreload: string[] = [];
+          mapped.forEach((svc) => {
+            if (svc.thumbnailUrl) urlsToPreload.push(svc.thumbnailUrl);
+            const extraImg = (svc as any).imageUrl;
+            if (extraImg && extraImg !== svc.thumbnailUrl) urlsToPreload.push(extraImg);
+            svc.addons?.forEach((ad: any) => {
+              if (ad.imageUrl) urlsToPreload.push(ad.imageUrl);
+            });
+          });
+          preloadImages(urlsToPreload);
         }
       }
     } catch (err) {
@@ -428,7 +455,7 @@ export default function CmsPage() {
   };
 
   const fetchAddonsFromBackend = async (catId?: string, subCatId?: string, force: boolean = false) => {
-    if (!force && !catId && !subCatId && isModuleCacheFresh("cms_addons", 30000)) {
+    if (!force && !catId && !subCatId && isModuleCacheFresh("cms_addons")) {
       const cached = getStoredModuleData<ServiceAddon[]>("cms_addons");
       if (cached && cached.length > 0) {
         setAddons(cached);
@@ -485,6 +512,8 @@ export default function CmsPage() {
       if (!catId && !subCatId) {
         setCachedModuleData("cms_addons", mapped);
       }
+      const addonUrls = mapped.map((a) => a.imageUrl).filter(Boolean);
+      preloadImages(addonUrls);
     } catch (e) {
       console.error("fetchAddonsFromBackend error:", e);
       setAddons([]);
@@ -492,7 +521,7 @@ export default function CmsPage() {
   };
 
   const fetchCategoriesFromBackend = async (force: boolean = false): Promise<ApiCategory[]> => {
-    if (!force && isModuleCacheFresh("cms_categories_api", 30000)) {
+    if (!force && isModuleCacheFresh("cms_categories_api")) {
       const cached = getStoredModuleData<ApiCategory[]>("cms_categories_api");
       if (cached && cached.length > 0) {
         setCategoriesFromApi(cached);
@@ -542,29 +571,84 @@ export default function CmsPage() {
   };
 
   useEffect(() => {
+    let isMounted = true;
     const loadAllData = async () => {
-      // Check if all module data is fresh (within 30 seconds)
-      const hasFreshServices = isModuleCacheFresh("cms_services", 30000) && initialCachedServices.length > 0;
-      const hasFreshCats = isModuleCacheFresh("cms_categories_api", 30000) && initialCachedCats.length > 0;
-      const hasFreshAddons = isModuleCacheFresh("cms_addons", 30000) && initialCachedAddons.length > 0;
+      // Check if all module data is fresh
+      const defaultCacheKey = "cms_services_p1_l10_s";
+      const hasFreshServices = (isModuleCacheFresh(defaultCacheKey) || isModuleCacheFresh("cms_services")) && initialCachedServices.length > 0;
+      const hasFreshCats = isModuleCacheFresh("cms_categories_api") && initialCachedCats.length > 0;
+      const hasFreshAddons = isModuleCacheFresh("cms_addons") && initialCachedAddons.length > 0;
 
-      // If all data was loaded within 30 seconds, DO NOT CALL ANY APIS! Show exact data with zero load!
+      // Preload images from cache immediately so they render with 0 delay
+      if (initialCachedServices && initialCachedServices.length > 0) {
+        const cachedUrls: string[] = [];
+        initialCachedServices.forEach((s) => {
+          if (s.thumbnailUrl) cachedUrls.push(s.thumbnailUrl);
+          const extraImg = (s as any).imageUrl;
+          if (extraImg && extraImg !== s.thumbnailUrl) cachedUrls.push(extraImg);
+          s.addons?.forEach((a: any) => {
+            if (a.imageUrl) cachedUrls.push(a.imageUrl);
+          });
+        });
+        initialCachedAddons.forEach((a) => {
+          if (a.imageUrl) cachedUrls.push(a.imageUrl);
+        });
+        preloadImages(cachedUrls);
+      }
+
+      // If all data was loaded, DO NOT CALL ANY APIS! Show exact data with zero load!
       if (hasFreshServices && hasFreshCats && hasFreshAddons) {
         setIsLoading(false);
         return;
       }
 
+      setIsLoading(true);
       try {
-        const [cats] = await Promise.all([
-          fetchCategoriesFromBackend(),
-          fetchAddonsFromBackend(),
-        ]);
-        await fetchServicesFromBackend(cats, false, "", 1, 10);
+        // 1. Initially call package API (http://localhost:5005/api/package?page=1&limit=10) to load fast
+        if (!hasFreshServices) {
+          await fetchServicesFromBackend(initialCachedCats, false, "", 1, 10);
+        } else {
+          setIsLoading(false);
+        }
+
+        // 2. Then call addon and category APIs
+        if (isMounted) {
+          const [cats] = await Promise.all([
+            fetchCategoriesFromBackend(),
+            fetchAddonsFromBackend(),
+          ]);
+
+          if (cats && cats.length > 0 && initialCachedCats.length === 0) {
+            setServices((prev) =>
+              prev.map((s) => {
+                if (s.category && s.category !== "Unassigned" && s.category !== "General Services") {
+                  return s;
+                }
+                const found = cats.find(
+                  (c) =>
+                    (s.categoryId && String(c._id) === String(s.categoryId)) ||
+                    (c.categoryName && s.category && c.categoryName.toLowerCase().trim() === s.category.toLowerCase().trim())
+                );
+                if (found) {
+                  return { ...s, category: found.categoryName, categoryId: String(found._id) };
+                }
+                return s;
+              })
+            );
+          }
+        }
       } catch (e) {
         console.error("loadAllData error:", e);
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     };
     loadAllData();
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -758,9 +842,9 @@ export default function CmsPage() {
       setSelectedService((prev) =>
         prev
           ? {
-              ...prev,
-              addons: prev.addons ? prev.addons.map((a) => (a.id === addonId ? { ...a, status: newStatusStr } : a)) : [],
-            }
+            ...prev,
+            addons: prev.addons ? prev.addons.map((a) => (a.id === addonId ? { ...a, status: newStatusStr } : a)) : [],
+          }
           : null
       );
       toast.success(`Add-on marked as ${newStatusStr}`);
@@ -783,6 +867,7 @@ export default function CmsPage() {
   const handleServicesSearchChange = (val: string) => {
     setServicesSearch(val);
     setServicesTablePage(1);
+    setIsLoading(true);
     fetchServicesFromBackend(categoriesFromApi, true, selectedCategoryIdFilter, 1, 10, val);
   };
 
@@ -791,11 +876,13 @@ export default function CmsPage() {
     setSelectedCategoryIdFilter(catId);
     setSelectedCategoryFilter(catName);
     setServicesTablePage(1);
+    setIsLoading(true);
     await fetchServicesFromBackend(categoriesFromApi, true, catId, 1, 10, servicesSearch);
   };
 
   const handleServicesPageChange = async (newPage: number) => {
     setServicesTablePage(newPage);
+    setIsLoading(true);
     await fetchServicesFromBackend(categoriesFromApi, true, selectedCategoryIdFilter, newPage, 10, servicesSearch);
   };
 
@@ -915,7 +1002,7 @@ export default function CmsPage() {
             <button
               type="button"
               onClick={() => setSelectedService(row)}
-              className="font-extrabold text-slate-900 dark:text-white hover:text-brand-600 text-left transition-colors"
+              className="font-semibold text-slate-900 dark:text-white hover:text-brand-600 text-left transition-colors"
             >
               {row.title}
             </button>
@@ -928,7 +1015,7 @@ export default function CmsPage() {
               <Edit className="w-3.5 h-3.5" />
             </button>
             {row.isTrending && (
-              <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-amber-500 text-white shadow-xs">
+              <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold bg-amber-500 text-white shadow-xs">
                 🔥 BEST SELLER
               </span>
             )}
@@ -942,11 +1029,11 @@ export default function CmsPage() {
       header: "Category & Subcategory",
       accessor: (row) => (
         <div className="flex flex-col gap-1 items-start">
-          <span className="font-extrabold text-brand-600 bg-brand-50 dark:bg-brand-950 px-2 py-0.5 rounded text-[10px] border border-brand-200 dark:border-brand-800">
+          <span className="font-medium text-brand-600 bg-brand-50 dark:bg-brand-950 px-2 py-0.5 rounded text-[10px] border border-brand-200 dark:border-brand-800">
             {row.category}
           </span>
           {row.subcategory && (
-            <span className="font-bold text-purple-700 bg-purple-50 dark:bg-purple-950 dark:text-purple-300 px-2 py-0.5 rounded text-[10px] border border-purple-200 dark:border-purple-800 flex items-center gap-1">
+            <span className="font-medium text-purple-700 bg-purple-50 dark:bg-purple-950 dark:text-purple-300 px-2 py-0.5 rounded text-[10px] border border-purple-200 dark:border-purple-800 flex items-center gap-1">
               <Layers className="w-2.5 h-2.5 text-purple-500" />
               {row.subcategory}
             </span>
@@ -959,11 +1046,11 @@ export default function CmsPage() {
       header: "Price (₹)",
       accessor: (row) => (
         <div className="flex flex-col">
-          <span className="font-extrabold text-sm text-slate-900 dark:text-white">
+          <span className="font-semibold text-sm text-slate-900 dark:text-white">
             ₹{row.price}
           </span>
           {row.duration && (
-            <span className="text-[10px] text-slate-400 font-bold flex items-center gap-1 mt-0.5">
+            <span className="text-[10px] text-slate-400 font-medium flex items-center gap-1 mt-0.5">
               <Clock className="w-2.5 h-2.5 text-slate-400" />
               {typeof row.duration === "number" || /^\d+$/.test(String(row.duration).trim())
                 ? formatDurationLabel(calculateDurationInMinutes(row.duration))
@@ -982,11 +1069,10 @@ export default function CmsPage() {
           <button
             type="button"
             onClick={() => handleOpenAddonsModal(row)}
-            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold border transition-all cursor-pointer group shadow-2xs ${
-              count > 0
+            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border transition-all cursor-pointer group shadow-2xs ${count > 0
                 ? "bg-purple-50 hover:bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:hover:bg-purple-900/60 dark:text-purple-300 border-purple-200 dark:border-purple-800"
                 : "bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-400 dark:hover:text-slate-200 border-slate-200 dark:border-slate-700"
-            }`}
+              }`}
             title={`Click to view & manage add-ons (${count} linked)`}
           >
             <Wrench className={`w-3.5 h-3.5 transition-transform group-hover:rotate-12 ${count > 0 ? "text-purple-600 dark:text-purple-400" : "text-slate-400"}`} />
@@ -1064,13 +1150,13 @@ export default function CmsPage() {
     {
       key: "title",
       header: "Add-on Title",
-      accessor: (row) => <span className="font-extrabold text-slate-900 dark:text-white">{row.title}</span>,
+      accessor: (row) => <span className="font-semibold text-slate-900 dark:text-white">{row.title}</span>,
     },
     {
       key: "price",
       header: "Unit Price (₹)",
       accessor: (row) => (
-        <span className="font-bold text-slate-900 dark:text-white">
+        <span className="font-semibold text-slate-900 dark:text-white">
           ₹{row.price} / {row.unit}
         </span>
       ),
@@ -1079,7 +1165,7 @@ export default function CmsPage() {
       key: "category",
       header: "Associated Category",
       accessor: (row) => (
-        <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-bold text-[10px] text-slate-700 dark:text-slate-300">
+        <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-medium text-[10px] text-slate-700 dark:text-slate-300">
           {row.category}
         </span>
       ),
@@ -1095,7 +1181,7 @@ export default function CmsPage() {
               connected.map((s) => (
                 <span
                   key={s.id}
-                  className="px-2 py-0.5 rounded bg-brand-50 text-brand-700 dark:bg-brand-950 dark:text-brand-300 font-bold text-[10px] border border-brand-200 dark:border-brand-800"
+                  className="px-2 py-0.5 rounded bg-brand-50 text-brand-700 dark:bg-brand-950 dark:text-brand-300 font-medium text-[10px] border border-brand-200 dark:border-brand-800"
                 >
                   {s.title}
                 </span>
@@ -1410,16 +1496,16 @@ export default function CmsPage() {
 
       const matchedCat = categoriesFromApi.find(
         (c) => (selectedService.categoryId && c._id === selectedService.categoryId) ||
-               (rawCat && c._id === rawCat) ||
-               (rawCat && c.categoryName.toLowerCase().trim() === rawCat.toLowerCase().trim())
+          (rawCat && c._id === rawCat) ||
+          (rawCat && c.categoryName.toLowerCase().trim() === rawCat.toLowerCase().trim())
       );
       catId = matchedCat?._id || selectedService.categoryId || rawCat;
       catName = matchedCat?.categoryName || selectedService.category || rawCat;
 
       const matchedSub = matchedCat?.subCategories?.find(
         (s: any) => (selectedService.subCategoryId && s._id === selectedService.subCategoryId) ||
-                   (rawSub && s._id === rawSub) ||
-                   (rawSub && s.name.toLowerCase().trim() === rawSub.toLowerCase().trim())
+          (rawSub && s._id === rawSub) ||
+          (rawSub && s.name.toLowerCase().trim() === rawSub.toLowerCase().trim())
       );
       subCatId = matchedSub?._id || selectedService.subCategoryId || rawSub;
       subCatName = matchedSub?.name || selectedService.subcategory || rawSub;
@@ -2177,19 +2263,8 @@ export default function CmsPage() {
 
 
 
-  // Dynamic Filtering by Category
-  const filteredServices = useMemo(() => {
-    if (!selectedCategoryIdFilter && (!selectedCategoryFilter || selectedCategoryFilter === "All Categories")) {
-      return services;
-    }
-    const matched = services.filter((s) => {
-      if (selectedCategoryIdFilter) {
-        return s.categoryId === selectedCategoryIdFilter || s.category === selectedCategoryFilter;
-      }
-      return s.category === selectedCategoryFilter;
-    });
-    return matched.length > 0 ? matched : services;
-  }, [services, selectedCategoryIdFilter, selectedCategoryFilter]);
+  // Services data passed directly to server-paginated DataTable
+  const filteredServices = services;
 
   return (
     <div className="space-y-6">
@@ -2200,9 +2275,6 @@ export default function CmsPage() {
             <Wrench className="w-6 h-6 text-brand-600" />
             <span>Services CMS</span>
           </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
-            Manage fixed service rates, diagnostic inspection charges, and Add-on spare parts.
-          </p>
         </div>
 
         <button
@@ -2257,11 +2329,10 @@ export default function CmsPage() {
           <button
             type="button"
             onClick={() => handleSelectCategoryFilter("", "All Categories")}
-            className={`px-3 py-1.5 rounded-xl font-bold transition-all shrink-0 cursor-pointer ${
-              !selectedCategoryIdFilter || selectedCategoryFilter === "All Categories"
+            className={`px-3 py-1.5 rounded-xl font-bold transition-all shrink-0 cursor-pointer ${!selectedCategoryIdFilter || selectedCategoryFilter === "All Categories"
                 ? "bg-brand-500 text-white shadow-lux"
                 : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
-            }`}
+              }`}
           >
             All Categories
           </button>
@@ -2272,11 +2343,10 @@ export default function CmsPage() {
                 key={cat._id}
                 type="button"
                 onClick={() => handleSelectCategoryFilter(isSelected ? "" : cat._id, isSelected ? "All Categories" : cat.categoryName)}
-                className={`px-3 py-1.5 rounded-xl font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 ${
-                  isSelected
+                className={`px-3 py-1.5 rounded-xl font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 ${isSelected
                     ? "bg-brand-500 text-white shadow-lux"
                     : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
-                }`}
+                  }`}
               >
                 <span>{cat.categoryName}</span>
               </button>
@@ -2288,7 +2358,7 @@ export default function CmsPage() {
       {activeTab === "services" ? (
         <DataTable
           columns={serviceColumns}
-          data={filteredServices}
+          data={services}
           searchPlaceholder="Search service title or category..."
           serverPagination={true}
           currentPage={servicesTablePage}
@@ -2303,7 +2373,7 @@ export default function CmsPage() {
         />
       ) : (
         <div className="space-y-4">
-         
+
           <DataTable
             columns={addonColumns}
             data={addons}
@@ -2477,22 +2547,20 @@ export default function CmsPage() {
                       <button
                         type="button"
                         onClick={() => setAddonModalViewFilter("all")}
-                        className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
-                          addonModalViewFilter === "all"
+                        className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${addonModalViewFilter === "all"
                             ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs font-extrabold"
                             : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
-                        }`}
+                          }`}
                       >
                         All for Subcategory ({modalFilteredAddons.length})
                       </button>
                       <button
                         type="button"
                         onClick={() => setAddonModalViewFilter("linked")}
-                        className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 cursor-pointer ${
-                          addonModalViewFilter === "linked"
+                        className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 cursor-pointer ${addonModalViewFilter === "linked"
                             ? "bg-white dark:bg-slate-900 text-purple-700 dark:text-purple-300 shadow-2xs font-extrabold"
                             : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
-                        }`}
+                          }`}
                       >
                         <Tag className="w-2.5 h-2.5" />
                         Linked (
@@ -2541,11 +2609,10 @@ export default function CmsPage() {
                     return (
                       <div
                         key={addon.id}
-                        className={`p-3 sm:p-3.5 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                          isLinked
+                        className={`p-3 sm:p-3.5 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${isLinked
                             ? "bg-purple-50/40 dark:bg-purple-950/20 border-purple-200/90 dark:border-purple-800/80 shadow-2xs"
                             : "bg-white dark:bg-slate-800/40 border-slate-200 dark:border-slate-700/80 hover:border-slate-300"
-                        }`}
+                          }`}
                       >
                         {/* Left: Thumbnail & Details */}
                         <div className="flex items-start gap-3 min-w-0 flex-1">
@@ -2631,11 +2698,10 @@ export default function CmsPage() {
                                       handleToggleLinkAddonToService(selectedService.id, addon);
                                     }
                                   }}
-                                  className={`px-3 py-1.5 rounded-xl font-extrabold text-xs transition-all flex items-center gap-1 cursor-pointer border ${
-                                    isLinked
+                                  className={`px-3 py-1.5 rounded-xl font-extrabold text-xs transition-all flex items-center gap-1 cursor-pointer border ${isLinked
                                       ? "bg-purple-100 hover:bg-purple-200 text-purple-700 dark:bg-purple-950/80 dark:hover:bg-purple-900 dark:text-purple-300 border-purple-300 dark:border-purple-700 shadow-2xs"
                                       : "bg-slate-100 hover:bg-purple-50 hover:text-purple-700 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700"
-                                  }`}
+                                    }`}
                                 >
                                   {isLinked ? (
                                     <>
@@ -2866,11 +2932,11 @@ export default function CmsPage() {
                             selectOptions.length > 0
                               ? selectOptions
                               : [
-                                  {
-                                    value: "",
-                                    label: "No Service Action Available",
-                                  },
-                                ]
+                                {
+                                  value: "",
+                                  label: "No Service Action Available",
+                                },
+                              ]
                           }
                           onAddAction={() => {
                             setTargetOfferingIndexForAction(null);
@@ -3253,7 +3319,7 @@ export default function CmsPage() {
                                 <div className="min-w-0">
                                   <div className="flex items-center gap-2">
                                     <span className="font-extrabold text-slate-900 dark:text-white text-xs">
-                                    Add-ons
+                                      Add-ons
                                     </span>
                                     <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
                                       {(off.addonIds || []).length} Linked

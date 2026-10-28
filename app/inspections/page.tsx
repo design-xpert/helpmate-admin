@@ -664,11 +664,8 @@ export default function InspectionsPage() {
         <div>
           <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
             <Wrench className="w-6 h-6 text-brand-600" />
-            <span>Inspection & Price Validation Queue</span>
+            <span>Inspections</span>
           </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
-            Review site technician diagnostic quotes, validate spare parts + labour costs, track customer consent, and execute 4-digit OTP job completions.
-          </p>
         </div>
       </div>
 

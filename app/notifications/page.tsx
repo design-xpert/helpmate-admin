@@ -14,6 +14,7 @@ import {
   Clock,
   RotateCcw,
   Sparkles,
+  MessageSquare,
 } from "lucide-react";
 
 export type JobLifecycleStatus = "Assigned" | "En Route" | "In Progress" | "Completed" | "Alerts";
@@ -204,12 +205,9 @@ export default function NotificationsPage() {
       {/* ─── 1. PAGE HEADER ─── */}
       <div className="border-b border-slate-200 dark:border-slate-800 pb-4">
         <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-          <Bell className="w-6 h-6 text-brand-600" />
-          <span>Job Lifecycle Notifications</span>
+          <MessageSquare className="w-6 h-6 text-brand-600" />
+          <span>Notifications Hub</span>
         </h1>
-        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
-          Real-time operations audit trail for job assignments, en route tracking, work in progress, and completions.
-        </p>
       </div>
 
       {/* ─── 2. JOB STATUS LIFECYCLE FILTER BAR & SEARCH ─── */}

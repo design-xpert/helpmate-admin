@@ -15,7 +15,6 @@ import {
   ApiAdminReviewSummary,
 } from "@/lib/api";
 import { toast } from "@/components/Toast";
-import { ShimmerRow } from "@/components/ShimmerLoader";
 import {
   Star,
   MessageSquare,
@@ -54,9 +53,10 @@ import { getStoredModuleData, setCachedModuleData, isModuleCacheFresh } from "@/
 
 export default function ReviewsPage() {
   const initialCached = getStoredModuleData<ApiAdminReview[]>("reviews");
+  const initialCachedSummary = getStoredModuleData<ApiAdminReviewSummary>("reviews_summary");
   const [reviews, setReviews] = useState<ApiAdminReview[]>(() => initialCached || []);
-  const [summaryData, setSummaryData] = useState<ApiAdminReviewSummary | null>(null);
-  const [isLoading, setIsLoading] = useState(() => !(isModuleCacheFresh("reviews", 30000) && initialCached && initialCached.length > 0));
+  const [summaryData, setSummaryData] = useState<ApiAdminReviewSummary | null>(() => initialCachedSummary || null);
+  const [isLoading, setIsLoading] = useState(() => !(isModuleCacheFresh("reviews") && initialCached && initialCached.length > 0));
 
   // Filters state
   const [searchQuery, setSearchQuery] = useState("");
@@ -78,7 +78,7 @@ export default function ReviewsPage() {
   const [totalCount, setTotalCount] = useState(0);
 
   const fetchReviews = useCallback(async (force: boolean = false) => {
-    if (!force && !searchQuery.trim() && ratingFilter === "All" && statusFilter === "All" && publishedFilter === "All" && page === 1 && isModuleCacheFresh("reviews", 30000)) {
+    if (!force && !searchQuery.trim() && ratingFilter === "All" && statusFilter === "All" && publishedFilter === "All" && page === 1 && isModuleCacheFresh("reviews")) {
       const cached = getStoredModuleData<ApiAdminReview[]>("reviews");
       if (cached && cached.length > 0) {
         setReviews(cached);
@@ -118,13 +118,21 @@ export default function ReviewsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [searchQuery, ratingFilter, statusFilter, publishedFilter, page, limit]);
+  }, [searchQuery, ratingFilter, statusFilter, publishedFilter, page, limit, initialCached, reviews.length]);
 
-  const fetchSummary = useCallback(async () => {
+  const fetchSummary = useCallback(async (force: boolean = false) => {
+    if (!force && isModuleCacheFresh("reviews_summary")) {
+      const cached = getStoredModuleData<ApiAdminReviewSummary>("reviews_summary");
+      if (cached) {
+        setSummaryData(cached);
+        return;
+      }
+    }
     try {
       const res = await getAdminReviewsSummaryApi(true);
       if (res && res.success && res.data) {
         setSummaryData(res.data);
+        setCachedModuleData("reviews_summary", res.data);
       }
     } catch (err) {
       console.error("fetchSummary error:", err);
@@ -132,13 +140,16 @@ export default function ReviewsPage() {
   }, []);
 
   useEffect(() => {
-    if (page === 1 && ratingFilter === "All" && statusFilter === "All" && publishedFilter === "All" && !searchQuery.trim() && isModuleCacheFresh("reviews", 30000) && initialCached && initialCached.length > 0) {
+    if (page === 1 && ratingFilter === "All" && statusFilter === "All" && publishedFilter === "All" && !searchQuery.trim() && isModuleCacheFresh("reviews") && initialCached && initialCached.length > 0) {
       setIsLoading(false);
+      if (!isModuleCacheFresh("reviews_summary")) {
+        fetchSummary();
+      }
       return;
     }
     fetchReviews();
     fetchSummary();
-  }, [fetchReviews, fetchSummary, page, ratingFilter, statusFilter, publishedFilter, searchQuery]);
+  }, [fetchReviews, fetchSummary, page, ratingFilter, statusFilter, publishedFilter, searchQuery, initialCached]);
 
   // Open Manage Modal & Fetch Review Details
   const handleOpenManageModal = async (review: ApiAdminReview) => {
@@ -168,8 +179,8 @@ export default function ReviewsPage() {
       const res = await moderateAdminReviewApi(reviewId, action);
       if (res && res.success) {
         toast.success(res.message || `Review ${action === "approve" ? "approved & published" : "hidden"} successfully!`);
-        await fetchReviews();
-        await fetchSummary();
+        await fetchReviews(true);
+        await fetchSummary(true);
 
         // Refresh modal if currently inspecting this review
         if (selectedReview && selectedReview._id === reviewId) {
@@ -211,8 +222,8 @@ export default function ReviewsPage() {
       const res = await updateAdminReviewResponseApi(selectedReview._id, adminReplyText.trim());
       if (res && res.success) {
         toast.success(res.message || "Official response posted successfully!");
-        await fetchReviews();
-        await fetchSummary();
+        await fetchReviews(true);
+        await fetchSummary(true);
         setSelectedReview(null);
         setModalDetails(null);
         setAdminReplyText("");
@@ -574,11 +585,8 @@ export default function ReviewsPage() {
         <div>
           <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
             <Star className="w-6 h-6 text-brand-600 fill-brand-600" />
-            <span>Customer Review & Rating Moderation</span>
+            <span>Reviews & Ratings</span>
           </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
-            Monitor, moderate, website publication, and respond to customer feedback for HelpMate Varanasi service orders.
-          </p>
         </div>
       </div>
 
@@ -625,18 +633,15 @@ export default function ReviewsPage() {
         </div>
       </div>
 
-      {/* Main DataTable / Shimmer Loading */}
-      {isLoading ? (
-        <ShimmerRow count={6} />
-      ) : (
-        <DataTable
-          columns={columns}
-          data={reviews}
-          idField="_id"
-          searchPlaceholder="Search reviewer, partner, booking ID, review content..."
-          extraFilters={tableFilters}
-        />
-      )}
+      {/* Main DataTable with Integrated Shimmer Loading */}
+      <DataTable
+        columns={columns}
+        data={reviews}
+        idField="_id"
+        searchPlaceholder="Search reviewer, partner, booking ID, review content..."
+        extraFilters={tableFilters}
+        isLoading={isLoading}
+      />
 
       {/* Review Management Drawer / Modal */}
       {selectedReview && (

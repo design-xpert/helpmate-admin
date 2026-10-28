@@ -283,11 +283,8 @@ export default function BillingPage() {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
             <FileText className="w-6 h-6 text-brand-600" />
-            <span>Billing, GST Invoices & Tax Ledger</span>
+            <span>Billing & GST</span>
           </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
-            Automated B2C & B2B Tax Invoices, CGST (9%) + SGST (9%) split calculator, and digital receipt ledger.
-          </p>
         </div>
 
         <button

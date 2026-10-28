@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useMemo, Suspense, useEffect, useRef } from "react";
+import { useState, useMemo, Suspense, useEffect, useRef, useCallback } from "react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { DataTable, Column } from "@/components/DataTable";
 import { RowActionMenu } from "@/components/RowActionMenu";
 import { Booking, BookingStatus, Technician, initialTechnicians, SelectedAddOnItem, BroadcastPartnerOffer } from "@/lib/mockData";
+import { getStoredModuleData, setCachedModuleData, isModuleCacheFresh } from "@/lib/moduleCache";
 import {
   Calendar,
   CalendarCheck,
@@ -28,6 +29,9 @@ import {
   Grid,
   ChevronRight,
   ChevronLeft,
+  ChevronDown,
+  Check,
+  Search,
   Pin,
   PinOff,
   Globe,
@@ -37,6 +41,10 @@ import {
   ArchiveRestore,
   Ban,
   Loader2,
+  Hammer,
+  Paintbrush,
+  Bug,
+  Car,
 } from "lucide-react";
 import { Portal } from "@/components/Portal";
 import { toast } from "@/components/Toast";
@@ -50,12 +58,21 @@ import { RescheduleBookingModal } from "@/components/bookings/RescheduleBookingM
 import { ArchiveBookingModal } from "@/components/bookings/ArchiveBookingModal";
 import { CancelBookingModal } from "@/components/bookings/CancelBookingModal";
 import { useRbac } from "@/context/RbacContext";
-import { getBookingCategoriesApi, getBookingsApi, completeBookingApi, getBookingDashboardStatsApi, ApiBookingCategoryStat, archiveBookingApi, restoreBookingApi, cancelBookingApi, pinCategoryApi } from "@/lib/api";
+import { getBookingCategoriesApi, getBookingsApi, completeBookingApi, getBookingDashboardStatsApi, ApiBookingCategoryStat, archiveBookingApi, restoreBookingApi, cancelBookingApi, pinCategoryApi, formatImageUrl, getCategoriesApi } from "@/lib/api";
+import { isImagePreloaded, preloadImage, preloadImages, storeDataUrl, getStoredDataUrl, cacheImageDataUrl } from "@/lib/imageCache";
 
 export function mapApiBooking(b: any): Booking {
   const item0 = b.items?.[0];
-  const catName = item0?.category?.name || "General";
-  const subCatName = item0?.subCategory?.name || "";
+  const catName =
+    (typeof item0?.category === "object"
+      ? item0?.category?.name || item0?.category?.categoryName
+      : typeof item0?.category === "string"
+      ? item0.category
+      : "") ||
+    b.category ||
+    b.categoryName ||
+    "General";
+  const subCatName = item0?.subCategory?.name || (typeof item0?.subCategory === "string" ? item0.subCategory : "") || "";
   const serviceActionName = item0?.serviceAction?.name || "";
   const pkgTitle = item0?.package?.name || item0?.package?.packageName || serviceActionName || "Service Package";
 
@@ -275,19 +292,18 @@ function CategoryCardsShimmer() {
 
       {/* Grid of Slim Cards Shimmer */}
       <div className="space-y-3">
-        <div className="h-5 w-48 bg-slate-200 dark:bg-slate-800 rounded-lg"></div>
+        <div className="h-4 w-40 bg-slate-200 dark:bg-slate-800 rounded-lg"></div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-            <div key={i} className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
+            <div key={i} className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-9 h-9 rounded-xl bg-slate-200 dark:bg-slate-800"></div>
-                  <div className="h-3.5 w-24 bg-slate-200 dark:bg-slate-800 rounded"></div>
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-slate-200 dark:bg-slate-800"></div>
+                  <div className="h-4 w-28 bg-slate-200 dark:bg-slate-800 rounded"></div>
                 </div>
                 <div className="h-4 w-16 bg-slate-200 dark:bg-slate-800 rounded"></div>
               </div>
-              <div className="h-5 w-4/5 bg-slate-200 dark:bg-slate-800 rounded"></div>
-              <div className="grid grid-cols-4 gap-1.5">
+              <div className="grid grid-cols-4 gap-1.5 pt-1">
                 {[1, 2, 3, 4].map((j) => (
                   <div key={j} className="h-8 bg-slate-200 dark:bg-slate-800 rounded-lg"></div>
                 ))}
@@ -304,14 +320,14 @@ function TableShimmer() {
   return (
     <div className="space-y-6 animate-pulse">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
-        <div className="space-y-2">
-          <div className="flex items-center gap-3">
-            <div className="h-8 w-28 bg-slate-200 dark:bg-slate-800 rounded-xl"></div>
-            <div className="h-7 w-64 bg-slate-200 dark:bg-slate-800 rounded-xl"></div>
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-2.5">
+            <div className="h-7 w-24 bg-slate-200 dark:bg-slate-800 rounded-xl"></div>
+            <div className="h-6 w-48 bg-slate-200 dark:bg-slate-800 rounded-xl"></div>
           </div>
-          <div className="h-4 w-96 bg-slate-200 dark:bg-slate-800 rounded-lg"></div>
+          <div className="h-3.5 w-80 bg-slate-200 dark:bg-slate-800 rounded-lg"></div>
         </div>
-        <div className="h-10 w-36 bg-slate-200 dark:bg-slate-800 rounded-xl"></div>
+        <div className="h-9 bg-slate-200 dark:bg-slate-800 rounded-xl w-32"></div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
@@ -346,7 +362,86 @@ function TableShimmer() {
   );
 }
 
-import { getStoredModuleData, setCachedModuleData, isModuleCacheFresh } from "@/lib/moduleCache";
+function BookingCategoryIcon({
+  iconUrl,
+  name,
+  className = "w-8 h-8 rounded-xl",
+  imgClassName = "w-full h-full object-contain p-1",
+}: {
+  iconUrl?: string;
+  name: string;
+  className?: string;
+  imgClassName?: string;
+  fallbackIconSize?: string;
+}) {
+  const nameKey = (name || "").toLowerCase().trim();
+  const formattedUrl = formatImageUrl(iconUrl);
+
+  const resolveImmediateSrc = (url?: string, nKey?: string) => {
+    if (!url && !nKey) return "";
+    if (url && (url.startsWith("data:") || url.startsWith("blob:"))) return url;
+    const memUrl = (url ? getStoredDataUrl(url) : null) || (nKey ? getStoredDataUrl(`booking_cat_${nKey}`) : null);
+    if (memUrl) return memUrl;
+
+    if (typeof window !== "undefined") {
+      const storedMap = getStoredModuleData<Record<string, string>>("booking_category_data_urls");
+      if (storedMap) {
+        if (url && storedMap[url]) return storedMap[url];
+        if (nKey && storedMap[nKey]) return storedMap[nKey];
+      }
+    }
+    return url || "";
+  };
+
+  const [imgSrc, setImgSrc] = useState<string>(() => resolveImmediateSrc(formattedUrl, nameKey));
+  const [imgError, setImgError] = useState(false);
+
+  useEffect(() => {
+    const formatted = formatImageUrl(iconUrl);
+    const immediate = resolveImmediateSrc(formatted, nameKey);
+    setImgSrc(immediate);
+    setImgError(false);
+
+    if (formatted) {
+      if (!immediate || (!immediate.startsWith("data:") && !immediate.startsWith("blob:"))) {
+        preloadImage(formatted).then((loaded) => {
+          if (loaded) {
+            cacheImageDataUrl(formatted, `booking_cat_${nameKey}`).then((dataUrl) => {
+              if (dataUrl) {
+                setImgSrc(dataUrl);
+                const curMap = getStoredModuleData<Record<string, string>>("booking_category_data_urls") || {};
+                curMap[formatted] = dataUrl;
+                if (nameKey) curMap[nameKey] = dataUrl;
+                setCachedModuleData("booking_category_data_urls", curMap);
+              }
+            });
+          }
+        });
+      }
+    }
+  }, [iconUrl, nameKey]);
+
+  return (
+    <div
+      className={`${className} flex items-center justify-center shrink-0 shadow-2xs group-hover:scale-105 transition-transform overflow-hidden relative`}
+    >
+      {imgSrc && !imgError ? (
+        <img
+          src={imgSrc}
+          alt={name}
+          className={imgClassName}
+          onError={() => setImgError(true)}
+          loading="eager"
+          decoding="async"
+        />
+      ) : (
+        <span className="text-[10px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-tighter select-none">
+          {name ? name.trim().slice(0, 2) : "CA"}
+        </span>
+      )}
+    </div>
+  );
+}
 
 function BookingsPageContent() {
   const router = useRouter();
@@ -363,57 +458,65 @@ function BookingsPageContent() {
   const initialCachedCats = getStoredModuleData<ApiBookingCategoryStat[]>("booking_categories");
   const initialCachedAllStats = getStoredModuleData<any>("booking_categories_all");
   const [bookings, setBookings] = useState<Booking[]>(() => initialCachedBookings || []);
+  const bookingsRef = useRef<Booking[]>(bookings);
+  useEffect(() => {
+    bookingsRef.current = bookings;
+  }, [bookings]);
   const [apiCategories, setApiCategories] = useState<ApiBookingCategoryStat[]>(() => initialCachedCats || []);
   const initialCachedStats = getStoredModuleData<any>("booking_dashboard_stats");
   const [allCategoryStats, setAllCategoryStats] = useState<any>(() => initialCachedAllStats || null);
   const [dashboardStats, setDashboardStats] = useState<any | null>(() => initialCachedStats || null);
-  const [isLoadingData, setIsLoadingData] = useState(() => !(isModuleCacheFresh(cacheKey, 30000) && initialCachedBookings && initialCachedBookings.length > 0));
+  const [isLoadingData, setIsLoadingData] = useState(() => !(
+    (isModuleCacheFresh("booking_categories") && initialCachedCats && initialCachedCats.length > 0) ||
+    ((isModuleCacheFresh(cacheKey) || isModuleCacheFresh("bookings")) && initialCachedBookings && initialCachedBookings.length > 0)
+  ));
   const [viewArchiveMode, setViewArchiveMode] = useState<boolean>(false);
   const [archivedBookings, setArchivedBookings] = useState<Booking[]>([]);
   const [isLoadingArchived, setIsLoadingArchived] = useState<boolean>(false);
   const [archiveTargetBooking, setArchiveTargetBooking] = useState<Booking | null>(null);
   const [cancelTargetBooking, setCancelTargetBooking] = useState<Booking | null>(null);
 
-  // Pinned Categories State (strictly max 3)
+  // Pinned Categories State (strictly max 3, purely driven by backend isPinned)
   const [pinnedCategories, setPinnedCategories] = useState<string[]>(() => {
-    if (initialCachedCats && initialCachedCats.length > 0) {
-      const serverPinned = initialCachedCats
-        .filter((c: any) => c.isPinned)
-        .map((c: any) => c.categoryName || c.name);
-      if (serverPinned.length > 0) return serverPinned.slice(0, 3);
-    }
     if (typeof window !== "undefined") {
       try {
-        const saved = localStorage.getItem("helpmate_pinned_categories");
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            return parsed.filter((c: string) => c !== "All Service Categories" && c !== "All").slice(0, 3);
-          }
-        }
-      } catch (e) {
-        console.error("Error reading pinned categories:", e);
-      }
+        localStorage.removeItem("helpmate_pinned_categories");
+      } catch {}
     }
-    return ["AC Service & Repair", "Electrician", "Plumbing"];
+    if (initialCachedCats && initialCachedCats.length > 0) {
+      return initialCachedCats
+        .filter((c: any) => Boolean(c.isPinned))
+        .map((c: any) => c.categoryName || c.name)
+        .slice(0, 3);
+    }
+    return [];
   });
 
   const [pinLoadingCat, setPinLoadingCat] = useState<string | null>(null);
+
+  // Category switch dropdown state on Table view
+  const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
+  const [dropdownSearch, setDropdownSearch] = useState("");
+  const categoryDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (categoryDropdownRef.current && !categoryDropdownRef.current.contains(e.target as Node)) {
+        setIsCategoryDropdownOpen(false);
+      }
+    };
+    if (isCategoryDropdownOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isCategoryDropdownOpen]);
 
   const togglePinCategory = async (catName: string, e?: React.MouseEvent, catIdParam?: string) => {
     if (e) {
       e.preventDefault();
       e.stopPropagation();
-    }
-
-    const isAlreadyPinned = pinnedCategories.some(
-      (name) => name.toLowerCase().trim() === catName.toLowerCase().trim()
-    );
-
-    if (!isAlreadyPinned && pinnedCategories.length >= 3) {
-      toast.dismissAll();
-      toast.error("Pin Limit Reached", "Only 3 categories can be pinned. Unpin one first to pin another.");
-      return;
     }
 
     // Resolve category ID from parameter or apiCategories
@@ -422,20 +525,33 @@ function BookingsPageContent() {
     );
     const categoryId = catIdParam || catObj?._id;
 
+    const isAlreadyPinned = Boolean(
+      catObj ? catObj.isPinned : pinnedCategories.some((name) => name.toLowerCase().trim() === catName.toLowerCase().trim())
+    );
+
+    const currentPinnedCount = apiCategories.filter((c: any) => Boolean(c.isPinned)).length;
+
+    if (!isAlreadyPinned && currentPinnedCount >= 3) {
+      toast.dismissAll();
+      toast.error("Pin Limit Reached", "Only 3 categories can be pinned. Unpin one first to pin another.");
+      return;
+    }
+
     const nextPinState = !isAlreadyPinned;
 
-    // Optimistically update pinnedCategories
-    setPinnedCategories((prev) => {
-      const next = nextPinState
-        ? [...prev.filter((n) => n.toLowerCase().trim() !== catName.toLowerCase().trim()), catName]
-        : prev.filter((n) => n.toLowerCase().trim() !== catName.toLowerCase().trim());
-      if (typeof window !== "undefined") {
-        try {
-          localStorage.setItem("helpmate_pinned_categories", JSON.stringify(next));
-        } catch {}
-      }
-      return next;
-    });
+    // Optimistically update apiCategories and pinnedCategories
+    setApiCategories((prev) =>
+      prev.map((c: any) =>
+        (categoryId && c._id === categoryId) || (c.categoryName || c.name) === catName
+          ? { ...c, isPinned: nextPinState }
+          : c
+      )
+    );
+    setPinnedCategories((prev) =>
+      nextPinState
+        ? [...prev.filter((n) => n.toLowerCase().trim() !== catName.toLowerCase().trim()), catName].slice(0, 3)
+        : prev.filter((n) => n.toLowerCase().trim() !== catName.toLowerCase().trim())
+    );
 
     if (categoryId) {
       setPinLoadingCat(catName);
@@ -448,34 +564,50 @@ function BookingsPageContent() {
             res.message || (nextPinState ? `"${catName}" pinned to top successfully.` : `"${catName}" unpinned successfully.`)
           );
 
-          setApiCategories((prev) =>
-            prev.map((c: any) =>
-              c._id === categoryId || (c.categoryName || c.name) === catName
-                ? { ...c, isPinned: nextPinState }
-                : c
-            )
-          );
-
           getBookingCategoriesApi(true).then((freshRes) => {
             const freshList = freshRes?.data?.categories || freshRes?.categories || freshRes?.data || [];
-            if (Array.isArray(freshList) && freshList.length > 0) {
+            if (Array.isArray(freshList)) {
               setApiCategories(freshList);
               setCachedModuleData("booking_categories", freshList);
+              const freshPinned = freshList
+                .filter((c: any) => Boolean(c.isPinned))
+                .map((c: any) => c.categoryName || c.name)
+                .slice(0, 3);
+              setPinnedCategories(freshPinned);
             }
           }).catch(() => {});
         } else {
           // Revert optimistic update
-          setPinnedCategories((prev) => {
-            const reverted = isAlreadyPinned
-              ? [...prev.filter((n) => n.toLowerCase().trim() !== catName.toLowerCase().trim()), catName]
-              : prev.filter((n) => n.toLowerCase().trim() !== catName.toLowerCase().trim());
-            return reverted;
-          });
+          setApiCategories((prev) =>
+            prev.map((c: any) =>
+              (categoryId && c._id === categoryId) || (c.categoryName || c.name) === catName
+                ? { ...c, isPinned: isAlreadyPinned }
+                : c
+            )
+          );
+          setPinnedCategories((prev) =>
+            isAlreadyPinned
+              ? [...prev.filter((n) => n.toLowerCase().trim() !== catName.toLowerCase().trim()), catName].slice(0, 3)
+              : prev.filter((n) => n.toLowerCase().trim() !== catName.toLowerCase().trim())
+          );
           toast.dismissAll();
           toast.error("Pin Update Failed", res?.message || "Failed to update pin status.");
         }
       } catch (err) {
         console.error("Error pinning category:", err);
+        // Revert optimistic update
+        setApiCategories((prev) =>
+          prev.map((c: any) =>
+            (categoryId && c._id === categoryId) || (c.categoryName || c.name) === catName
+              ? { ...c, isPinned: isAlreadyPinned }
+              : c
+          )
+        );
+        setPinnedCategories((prev) =>
+          isAlreadyPinned
+            ? [...prev.filter((n) => n.toLowerCase().trim() !== catName.toLowerCase().trim()), catName].slice(0, 3)
+            : prev.filter((n) => n.toLowerCase().trim() !== catName.toLowerCase().trim())
+        );
         toast.dismissAll();
         toast.error("Network Error", "Network error while updating pin status.");
       } finally {
@@ -510,123 +642,186 @@ function BookingsPageContent() {
     router.push(`/bookings${queryStr ? `?${queryStr}` : ""}`);
   };
 
-  const refreshBookingsFromBackend = async () => {
-    try {
-      const catRes = await getBookingCategoriesApi(true);
-      const rawCatList = Array.isArray(catRes?.data?.categories)
-        ? catRes.data.categories
-        : Array.isArray(catRes?.categories)
-        ? catRes.categories
-        : Array.isArray(catRes?.data)
-        ? catRes.data
-        : [];
-      if (rawCatList.length > 0) {
-        setApiCategories(rawCatList);
-        setCachedModuleData("booking_categories", rawCatList);
-        const serverPinned = rawCatList
-          .filter((c: any) => c.isPinned)
-          .map((c: any) => c.categoryName || c.name);
-        if (serverPinned.length > 0) {
-          setPinnedCategories(serverPinned.slice(0, 3));
-        }
-      }
-      const allStatsObj = catRes?.data?.all || catRes?.data?.allServices || null;
-      if (allStatsObj) {
-        setAllCategoryStats(allStatsObj);
-        setCachedModuleData("booking_categories_all", allStatsObj);
-      }
+  const checkAndSyncBookings = useCallback(
+    async (isSilent: boolean = true) => {
+      try {
+        const bookingsRes = await getBookingsApi({
+          status: statusParam || undefined,
+          forceRefresh: true,
+        });
+        if (bookingsRes && bookingsRes.success && Array.isArray(bookingsRes.data)) {
+          const mappedList: Booking[] = bookingsRes.data.map(mapApiBooking);
+          const prev = bookingsRef.current;
+          const prevIds = new Set(prev.map((b) => b.id));
+          const newBookings = mappedList.filter((b) => !prevIds.has(b.id));
 
-      const bookingsRes = await getBookingsApi({
-        status: statusParam || undefined,
-        forceRefresh: true,
-      });
-      if (bookingsRes && bookingsRes.success && Array.isArray(bookingsRes.data)) {
-        const mappedList: Booking[] = bookingsRes.data.map(mapApiBooking);
-        setBookings(mappedList);
-        setCachedModuleData(cacheKey, mappedList);
-        setCachedModuleData("bookings", mappedList);
-      }
-      getBookingDashboardStatsApi({ bookingType: bookingTypeParam || undefined }).then((statsRes) => {
-        if (statsRes && (statsRes.data || statsRes.success || statsRes.totalBookings || statsRes.total)) {
-          const statsObj = statsRes.data || statsRes;
-          setDashboardStats(statsObj);
-          setCachedModuleData("booking_dashboard_stats", statsObj);
+          let hasChanges = newBookings.length > 0 || mappedList.length !== prev.length;
+          if (!hasChanges) {
+            const prevMap = new Map(prev.map((b) => [b.id, b]));
+            for (const b of mappedList) {
+              const existing = prevMap.get(b.id);
+              if (
+                !existing ||
+                existing.status !== b.status ||
+                existing.technicianId !== b.technicianId ||
+                existing.totalAmount !== b.totalAmount ||
+                existing.paymentStatus !== b.paymentStatus
+              ) {
+                hasChanges = true;
+                break;
+              }
+            }
+          }
+
+          if (hasChanges) {
+            setCachedModuleData(cacheKey, mappedList);
+            setCachedModuleData("bookings", mappedList);
+            setBookings(mappedList);
+
+            if (newBookings.length > 0 && prev.length > 0) {
+              toast.dismissAll();
+              toast.success(
+                "New Booking Received",
+                `${newBookings.length} new booking${newBookings.length > 1 ? "s" : ""} added to list.`
+              );
+            }
+          }
+
+          // Refresh dashboard stats quietly
+          getBookingDashboardStatsApi({ bookingType: bookingTypeParam || undefined })
+            .then((statsRes) => {
+              if (statsRes && (statsRes.data || statsRes.success || statsRes.totalBookings || statsRes.total)) {
+                const statsObj = statsRes.data || statsRes;
+                setDashboardStats(statsObj);
+                setCachedModuleData("booking_dashboard_stats", statsObj);
+              }
+            })
+            .catch(() => {});
+
+          // Refresh category stats quietly
+          getBookingCategoriesApi(true)
+            .then((catRes) => {
+              const rawCatList = Array.isArray(catRes?.data?.categories)
+                ? catRes.data.categories
+                : Array.isArray(catRes?.categories)
+                ? catRes.categories
+                : Array.isArray(catRes?.data)
+                ? catRes.data
+                : [];
+              if (rawCatList.length > 0) {
+                setApiCategories(rawCatList);
+                setCachedModuleData("booking_categories", rawCatList);
+              }
+              const allStatsObj = catRes?.data?.all || catRes?.data?.allServices || null;
+              if (allStatsObj) {
+                setAllCategoryStats(allStatsObj);
+                setCachedModuleData("booking_categories_all", allStatsObj);
+              }
+            })
+            .catch(() => {});
         }
-      }).catch(() => {});
-    } catch (err) {
-      console.error("Error refreshing bookings:", err);
-    }
+      } catch (err) {
+        console.error("Error checking for new bookings:", err);
+      } finally {
+        if (!isSilent) {
+          setIsLoadingData(false);
+        }
+      }
+    },
+    [cacheKey, statusParam, bookingTypeParam]
+  );
+
+  const refreshBookingsFromBackend = async () => {
+    setIsLoadingData(true);
+    await checkAndSyncBookings(false);
   };
 
   useEffect(() => {
     let isMounted = true;
     const loadData = async () => {
-      try {
-        const catRes = await getBookingCategoriesApi();
-        const rawCatList = Array.isArray(catRes?.data?.categories)
-          ? catRes.data.categories
-          : Array.isArray(catRes?.categories)
-          ? catRes.categories
-          : Array.isArray(catRes?.data)
-          ? catRes.data
-          : [];
-        if (isMounted && rawCatList.length > 0) {
-          setApiCategories(rawCatList);
-          setCachedModuleData("booking_categories", rawCatList);
-          const serverPinned = rawCatList
-            .filter((c: any) => c.isPinned)
-            .map((c: any) => c.categoryName || c.name);
-          if (serverPinned.length > 0) {
-            setPinnedCategories(serverPinned.slice(0, 3));
-          }
-        }
-        const allStatsObj = catRes?.data?.all || catRes?.data?.allServices || null;
-        if (isMounted && allStatsObj) {
-          setAllCategoryStats(allStatsObj);
-          setCachedModuleData("booking_categories_all", allStatsObj);
-        }
+      const hasStoredCats = isModuleCacheFresh("booking_categories") && initialCachedCats && initialCachedCats.length > 0;
+      const hasStoredBookings = (isModuleCacheFresh(cacheKey) || isModuleCacheFresh("bookings")) && initialCachedBookings && initialCachedBookings.length > 0;
 
-        const statsRes = await getBookingDashboardStatsApi({ bookingType: bookingTypeParam || undefined });
-        if (isMounted && statsRes && (statsRes.data || statsRes.success || statsRes.totalBookings || statsRes.total)) {
-          const statsObj = statsRes.data || statsRes;
-          setDashboardStats(statsObj);
-          setCachedModuleData("booking_dashboard_stats", statsObj);
+      if (!hasStoredCats) {
+        try {
+          const catRes = await getBookingCategoriesApi();
+          const rawCatList = Array.isArray(catRes?.data?.categories)
+            ? catRes.data.categories
+            : Array.isArray(catRes?.categories)
+            ? catRes.categories
+            : Array.isArray(catRes?.data)
+            ? catRes.data
+            : [];
+          if (isMounted && rawCatList.length > 0) {
+            setApiCategories(rawCatList);
+            setCachedModuleData("booking_categories", rawCatList);
+            const serverPinned = rawCatList
+              .filter((c: any) => Boolean(c.isPinned))
+              .map((c: any) => c.categoryName || c.name)
+              .slice(0, 3);
+            setPinnedCategories(serverPinned);
+          }
+          const allStatsObj = catRes?.data?.all || catRes?.data?.allServices || null;
+          if (isMounted && allStatsObj) {
+            setAllCategoryStats(allStatsObj);
+            setCachedModuleData("booking_categories_all", allStatsObj);
+          }
+
+          const statsRes = await getBookingDashboardStatsApi({ bookingType: bookingTypeParam || undefined });
+          if (isMounted && statsRes && (statsRes.data || statsRes.success || statsRes.totalBookings || statsRes.total)) {
+            const statsObj = statsRes.data || statsRes;
+            setDashboardStats(statsObj);
+            setCachedModuleData("booking_dashboard_stats", statsObj);
+          }
+        } catch (err) {
+          console.error("Error loading categories:", err);
         }
-      } catch (err) {
-        console.error("Error loading categories:", err);
       }
 
-      // If cache is fresh (< 30s), bookings are already rendered from cache
-      if (isModuleCacheFresh(cacheKey, 30000) && initialCachedBookings && initialCachedBookings.length > 0) {
+      if (hasStoredBookings) {
         setIsLoadingData(false);
+        // Silently sync in background without showing loader or shimmer
+        checkAndSyncBookings(true);
         return;
       }
 
       if (bookings.length === 0 && (!initialCachedBookings || initialCachedBookings.length === 0)) {
         setIsLoadingData(true);
       }
-      try {
-        const bookingsRes = await getBookingsApi({
-          status: statusParam || undefined,
-        });
-        if (isMounted && bookingsRes && bookingsRes.success && Array.isArray(bookingsRes.data)) {
-          const mappedList: Booking[] = bookingsRes.data.map(mapApiBooking);
-          setBookings(mappedList);
-          setCachedModuleData(cacheKey, mappedList);
-          setCachedModuleData("bookings", mappedList);
-        }
-      } catch (err) {
-        console.error("Error loading bookings:", err);
-      } finally {
-        if (isMounted) setIsLoadingData(false);
-      }
+      await checkAndSyncBookings(false);
     };
 
     loadData();
     return () => {
       isMounted = false;
     };
-  }, [bookingTypeParam, statusParam, categoryParam]);
+  }, [bookingTypeParam, statusParam, categoryParam, checkAndSyncBookings]);
+
+  // Automated background sync on tab/window focus (Event-driven, NO 15-second polling interval)
+  useEffect(() => {
+    let lastSyncTime = Date.now();
+
+    const handleFocusSync = () => {
+      const now = Date.now();
+      // Cooldown: only trigger if tab is visible and at least 30 seconds have passed since last sync
+      if (now - lastSyncTime > 30000 && typeof document !== "undefined" && document.visibilityState === "visible") {
+        lastSyncTime = now;
+        checkAndSyncBookings(true);
+      }
+    };
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("focus", handleFocusSync);
+      document.addEventListener("visibilitychange", handleFocusSync);
+    }
+
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("focus", handleFocusSync);
+        document.removeEventListener("visibilitychange", handleFocusSync);
+      }
+    };
+  }, [checkAndSyncBookings]);
 
   const [activeStatusFilter, setActiveStatusFilter] = useState<string>("All");
   const [cardFilter, setCardFilter] = useState<"ALL" | "UNASSIGNED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED">("ALL");
@@ -870,55 +1065,101 @@ function BookingsPageContent() {
     return source;
   }, [bookings, archivedBookings, viewArchiveMode, isOfficeAdmin]);
 
-  // Compute Category Level Statistics dynamically from API Categories or live fallback
+  // Compute Category Level Statistics dynamically from API Categories and actual bookings
   const categoryStatsList = useMemo(() => {
     const catMap: Record<
       string,
-      { id?: string; name: string; count: number; unassigned: number; inProgress: number; completed: number; cancelled: number; isPinned?: boolean }
+      { id?: string; name: string; iconUrl?: string; count: number; unassigned: number; inProgress: number; completed: number; cancelled: number; isPinned?: boolean }
     > = {};
 
     // 1. Initialize from API Categories if available
     if (apiCategories.length > 0) {
       apiCategories.forEach((apiCat: any) => {
-        const name = apiCat.categoryName || apiCat.name || "Category";
+        const name = (apiCat.categoryName || apiCat.name || "Category").trim();
         if (name && name !== "All Service Categories") {
           catMap[name] = {
             id: apiCat._id,
             name,
-            count: Number(apiCat.totalBookings) || 0,
-            unassigned: Number(apiCat.openBookings) || 0,
-            inProgress: Number(apiCat.activeBookings) || 0,
-            completed: Number(apiCat.completedBookings) || 0,
-            cancelled: Number(apiCat.cancelledBookings) || 0,
+            iconUrl: apiCat.iconUrl !== undefined && apiCat.iconUrl !== null ? apiCat.iconUrl : (apiCat.icon || (apiCat._id ? `/api/media/category/${apiCat._id}/icon` : "")),
+            count: 0,
+            unassigned: 0,
+            inProgress: 0,
+            completed: 0,
+            cancelled: 0,
             isPinned: Boolean(apiCat.isPinned),
           };
         }
       });
+    }
 
-      // 2. Only add any extra category from current bookings that was not present in apiCategories
+    // 2. Count actual bookings from roleFilteredBookings
+    if (roleFilteredBookings.length > 0) {
       roleFilteredBookings.forEach((b) => {
-        const cat = b.category || "General";
-        if (!catMap[cat]) {
-          catMap[cat] = { name: cat, count: 0, unassigned: 0, inProgress: 0, completed: 0, cancelled: 0 };
-          catMap[cat].count++;
-          if (!b.technicianName) catMap[cat].unassigned++;
-          if (b.status === "In Progress" || b.status === "Assigned") catMap[cat].inProgress++;
-          if (b.status === "Completed") catMap[cat].completed++;
-          if (b.status === "Cancelled" || b.status === "Rejected") catMap[cat].cancelled++;
+        const rawCat = (b.category || "General").trim();
+        if (!rawCat) return;
+
+        // Try exact match first
+        let matchedKey = Object.keys(catMap).find(
+          (k) => k.toLowerCase() === rawCat.toLowerCase()
+        );
+
+        // Try partial match if not exact
+        if (!matchedKey) {
+          matchedKey = Object.keys(catMap).find(
+            (k) =>
+              k.toLowerCase().includes(rawCat.toLowerCase()) ||
+              rawCat.toLowerCase().includes(k.toLowerCase())
+          );
+        }
+
+        // If not found in catMap, add new category dynamically
+        if (!matchedKey) {
+          matchedKey = rawCat;
+          const matchedApiCat = apiCategories.find(
+            (c: any) => (c.categoryName || c.name || "").toLowerCase().trim() === rawCat.toLowerCase().trim()
+          );
+          catMap[matchedKey] = {
+            id: matchedApiCat?._id,
+            name: rawCat,
+            iconUrl: matchedApiCat?.iconUrl !== undefined && matchedApiCat?.iconUrl !== null ? matchedApiCat.iconUrl : ((matchedApiCat as any)?.icon || ""),
+            count: 0,
+            unassigned: 0,
+            inProgress: 0,
+            completed: 0,
+            cancelled: 0,
+          };
+        }
+
+        const item = catMap[matchedKey];
+        item.count++;
+
+        const st = (b.status || "").toLowerCase().trim();
+        const hasTech = Boolean(b.technicianName && b.technicianName.trim());
+
+        if (!hasTech && st !== "completed" && st !== "cancelled") {
+          item.unassigned++;
+        }
+        if (st.includes("progress") || st.includes("assigned") || st === "in_progress") {
+          item.inProgress++;
+        }
+        if (st === "completed") {
+          item.completed++;
+        }
+        if (st === "cancelled" || st === "rejected") {
+          item.cancelled++;
         }
       });
-    } else {
-      // Fallback if apiCategories is empty: calculate entirely from roleFilteredBookings
-      roleFilteredBookings.forEach((b) => {
-        const cat = b.category || "General";
-        if (!catMap[cat]) {
-          catMap[cat] = { name: cat, count: 0, unassigned: 0, inProgress: 0, completed: 0, cancelled: 0 };
+    } else if (apiCategories.length > 0) {
+      // Fallback only if no bookings are loaded yet
+      apiCategories.forEach((apiCat: any) => {
+        const name = (apiCat.categoryName || apiCat.name || "Category").trim();
+        if (catMap[name]) {
+          catMap[name].count = Number(apiCat.totalBookings || apiCat.count) || 0;
+          catMap[name].unassigned = Number(apiCat.openBookings || apiCat.unassigned) || 0;
+          catMap[name].inProgress = Number(apiCat.activeBookings || apiCat.inProgress) || 0;
+          catMap[name].completed = Number(apiCat.completedBookings || apiCat.completed) || 0;
+          catMap[name].cancelled = Number(apiCat.cancelledBookings || apiCat.cancelled) || 0;
         }
-        catMap[cat].count++;
-        if (!b.technicianName) catMap[cat].unassigned++;
-        if (b.status === "In Progress" || b.status === "Assigned") catMap[cat].inProgress++;
-        if (b.status === "Completed") catMap[cat].completed++;
-        if (b.status === "Cancelled" || b.status === "Rejected") catMap[cat].cancelled++;
       });
     }
 
@@ -928,9 +1169,11 @@ function BookingsPageContent() {
   // 1. Filter by selected category
   const categoryBookings = useMemo(() => {
     if (!selectedCategory || selectedCategory === "All") return roleFilteredBookings;
-    return roleFilteredBookings.filter(
-      (b) => (b.category || "General").toLowerCase().trim() === selectedCategory.toLowerCase().trim()
-    );
+    const sel = selectedCategory.toLowerCase().trim();
+    return roleFilteredBookings.filter((b) => {
+      const bCat = (b.category || "General").toLowerCase().trim();
+      return bCat === sel || bCat.includes(sel) || sel.includes(bCat);
+    });
   }, [roleFilteredBookings, selectedCategory]);
 
   // 2. Filter by card status & dropdown status
@@ -1106,7 +1349,7 @@ function BookingsPageContent() {
             <button
               type="button"
               onClick={() => router.push(`/bookings/${row.id}${catQuery}`)}
-              className="font-mono font-extrabold text-brand-600 dark:text-brand-400 hover:underline cursor-pointer text-xs"
+              className="font-mono font-semibold text-brand-600 dark:text-brand-400 hover:underline cursor-pointer text-xs"
             >
               {displayId}
             </button>
@@ -1121,7 +1364,7 @@ function BookingsPageContent() {
           const isOnline = isOnlineBooking(row);
           return (
             <span
-              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-extrabold ${isOnline
+              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium ${isOnline
                 ? "bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300 border border-purple-300"
                 : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-300"
                 }`}
@@ -1142,12 +1385,12 @@ function BookingsPageContent() {
               {row.technicianName ? (
                 <>
                   <div className="space-y-0.5 min-w-0 flex-1">
-                    <div className="font-extrabold text-slate-900 dark:text-white text-xs flex items-center gap-1.5 truncate" title={row.technicianName}>
+                    <div className="font-semibold text-slate-900 dark:text-white text-xs flex items-center gap-1.5 truncate" title={row.technicianName}>
                       <ShieldCheck className="w-3.5 h-3.5 shrink-0 text-emerald-600" />
                       <span className="truncate">{row.technicianName}</span>
                     </div>
                     {row.technicianPhone && (
-                      <div className="font-mono text-[11px] text-slate-500 font-semibold flex items-center gap-1">
+                      <div className="font-mono text-[11px] text-slate-500 font-medium flex items-center gap-1">
                         <Phone className="w-3 h-3 text-slate-400 shrink-0" />
                         <span>{row.technicianPhone}</span>
                       </div>
@@ -1165,7 +1408,7 @@ function BookingsPageContent() {
                 </>
               ) : (
                 <>
-                  <span className="text-xs font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950 px-2 py-0.5 rounded-lg border border-amber-200 shrink-0">
+                  <span className="text-xs font-medium text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950 px-2 py-0.5 rounded-lg border border-amber-200 shrink-0">
                     Unassigned
                   </span>
 
@@ -1189,7 +1432,7 @@ function BookingsPageContent() {
         header: "Working date",
         className: "w-[140px] min-w-[140px] whitespace-nowrap px-4",
         accessor: (row) => (
-          <span className="font-semibold text-slate-700 dark:text-slate-300">
+          <span className="font-medium text-slate-700 dark:text-slate-300">
             {formatWorkingDate(row.date)}
           </span>
         ),
@@ -1199,7 +1442,7 @@ function BookingsPageContent() {
         key: "timeSlot",
         header: "Time",
         accessor: (row) => (
-          <span className="text-slate-700 dark:text-slate-300 font-extrabold text-xs">
+          <span className="text-slate-700 dark:text-slate-300 font-medium text-xs">
             {formatSingleTimeSlot(row.timeSlot)}
           </span>
         ),
@@ -1218,7 +1461,7 @@ function BookingsPageContent() {
         accessor: (row: Booking) => {
           if (isOfficeAdmin) {
             return (
-              <span className="font-extrabold text-slate-900 dark:text-white text-xs truncate max-w-[150px] block">
+              <span className="font-semibold text-slate-900 dark:text-white text-xs truncate max-w-[150px] block">
                 {row.customerName}
               </span>
             );
@@ -1230,7 +1473,7 @@ function BookingsPageContent() {
             <button
               type="button"
               onClick={() => router.push(targetPath)}
-              className="font-extrabold text-slate-900 dark:text-white hover:text-brand-600 dark:hover:text-brand-400 hover:underline text-left truncate max-w-[150px] block cursor-pointer"
+              className="font-semibold text-slate-900 dark:text-white hover:text-brand-600 dark:hover:text-brand-400 hover:underline text-left truncate max-w-[150px] block cursor-pointer"
               title={`View ${row.customerName} details`}
             >
               {row.customerName}
@@ -1242,7 +1485,7 @@ function BookingsPageContent() {
       {
         key: "customerPhone",
         header: "Contact no",
-        accessor: (row: Booking) => <span className="font-mono text-slate-600 dark:text-slate-400 font-semibold">{row.customerPhone}</span>,
+        accessor: (row: Booking) => <span className="font-mono text-slate-600 dark:text-slate-400 font-medium">{row.customerPhone}</span>,
         sortable: true,
       },
       {
@@ -1260,14 +1503,14 @@ function BookingsPageContent() {
         header: "Multiple Services & Item Codes",
         accessor: (row) => (
           <div className="max-w-[240px] space-y-1 py-1" title={row.serviceTitle}>
-            <div className="truncate font-extrabold text-slate-900 dark:text-white text-xs">
+            <div className="truncate font-semibold text-slate-900 dark:text-white text-xs">
               {row.serviceTitle}
             </div>
             {row.servicesList && row.servicesList.length > 0 ? (
               <div className="space-y-1">
                 {row.servicesList.map((s, idx) => (
                   <div key={s.id || idx} className="flex items-center gap-1.5 text-[10px]">
-                    <span className="font-mono font-black bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300 px-1.5 py-0.2 rounded border border-purple-200 shrink-0">
+                    <span className="font-mono font-medium bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300 px-1.5 py-0.2 rounded border border-purple-200 shrink-0">
                       {s.serviceCode || `${row.bookingNumber || row.id}-${String(idx + 1).padStart(2, "0")}`}
                     </span>
                     <span className="truncate text-slate-600 dark:text-slate-300 font-medium">
@@ -1277,7 +1520,7 @@ function BookingsPageContent() {
                 ))}
               </div>
             ) : (
-              <span className="text-[10px] font-mono font-bold bg-brand-50 text-brand-700 dark:bg-brand-950 dark:text-brand-300 px-1.5 py-0.2 rounded border border-brand-200">
+              <span className="text-[10px] font-mono font-medium bg-brand-50 text-brand-700 dark:bg-brand-950 dark:text-brand-300 px-1.5 py-0.2 rounded border border-brand-200">
                 {row.bookingNumber || row.id}-01
               </span>
             )}
@@ -1288,7 +1531,7 @@ function BookingsPageContent() {
       {
         key: "totalAmount",
         header: "Amount",
-        accessor: (row) => <span className="font-extrabold text-slate-900 dark:text-white">₹{row.totalAmount}</span>,
+        accessor: (row) => <span className="font-semibold text-slate-900 dark:text-white">₹{row.totalAmount}</span>,
         sortable: true,
       },
       {
@@ -1313,7 +1556,7 @@ function BookingsPageContent() {
         accessor: (row) => (
           <div className="flex items-center gap-1.5 flex-wrap">
             <span
-              className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider inline-flex items-center gap-1 ${row.status === "Completed"
+              className={`px-2.5 py-1 rounded-full text-[10px] font-medium uppercase tracking-wider inline-flex items-center gap-1 ${row.status === "Completed"
                 ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300"
                 : row.status === "In Progress" || row.status === "Assigned"
                   ? "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 border border-blue-300"
@@ -1326,7 +1569,7 @@ function BookingsPageContent() {
               <span>{row.status}</span>
             </span>
             {row.isArchived && (
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider inline-flex items-center gap-1 bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-medium uppercase tracking-wider inline-flex items-center gap-1 bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
                 <Archive className="w-2.5 h-2.5" />
                 <span>Archived</span>
               </span>
@@ -1456,13 +1699,10 @@ function BookingsPageContent() {
     if (selectedCatStat) {
       return selectedCatStat.count;
     }
-    return (
-      allCategoryStats?.totalBookings ??
-      dashboardStats?.totalBookings ??
-      dashboardStats?.total ??
-      categoryBookings.length
-    );
-  }, [isChannelFiltered, filteredBookings.length, selectedCatStat, allCategoryStats, dashboardStats, categoryBookings.length]);
+    return roleFilteredBookings.length > 0
+      ? roleFilteredBookings.length
+      : (allCategoryStats?.totalBookings ?? dashboardStats?.totalBookings ?? dashboardStats?.total ?? categoryBookings.length);
+  }, [isChannelFiltered, filteredBookings.length, selectedCatStat, roleFilteredBookings.length, allCategoryStats, dashboardStats, categoryBookings.length]);
 
   const unassignedCardCount = useMemo(() => {
     if (isChannelFiltered) {
@@ -1531,22 +1771,35 @@ function BookingsPageContent() {
     );
   }, [isChannelFiltered, filteredBookings, selectedCatStat, allCategoryStats, dashboardStats, categoryBookings]);
 
+  const filteredDropdownCategories = useMemo(() => {
+    const q = dropdownSearch.toLowerCase().trim();
+    return categoryStatsList
+      .slice()
+      .sort((a, b) => {
+        const aIsPinned = Boolean(a.isPinned);
+        const bIsPinned = Boolean(b.isPinned);
+        if (aIsPinned && bIsPinned) return 0;
+        if (aIsPinned) return -1;
+        if (bIsPinned) return 1;
+        return a.name.localeCompare(b.name);
+      })
+      .filter((c) => !q || c.name.toLowerCase().includes(q));
+  }, [categoryStatsList, dropdownSearch]);
+
   return (
     <div className="space-y-6">
-      {isLoadingData ? (
-        !showTableView ? <CategoryCardsShimmer /> : <TableShimmer />
-      ) : !showTableView ? (
-        /* ─── VIEW 1: CATEGORY SELECTION HUB (ONLY CATEGORIES SHOWN) ─── */
-        <div className="space-y-6 animate-in fade-in duration-300">
+      {!showTableView ? (
+        isLoadingData && categoryStatsList.length === 0 ? (
+          <CategoryCardsShimmer />
+        ) : (
+          /* ─── VIEW 1: CATEGORY SELECTION HUB (ONLY CATEGORIES SHOWN) ─── */
+          <div className="space-y-6 animate-in fade-in duration-300">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
             <div>
-              <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-                <Layers className="w-6 h-6 text-brand-600" />
-                <span>Service Category Bookings Hub</span>
+              <h1 className="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
+                <CalendarCheck className="w-5 h-5 text-brand-600" />
+                <span>Bookings</span>
               </h1>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
-                Select a service category card below to open its operations dashboard, live dispatch table, and partner tracking.
-              </p>
             </div>
 
             <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
@@ -1576,54 +1829,48 @@ function BookingsPageContent() {
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <h2 className="text-base font-black text-slate-900 dark:text-white group-hover:text-brand-600 transition-colors">
+                    <h2 className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white group-hover:text-brand-600 transition-colors">
                       All Service Categories
                     </h2>
-                    <span className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-                      Master Strip
-                    </span>
-                    <span className="text-[11px] font-mono font-extrabold text-slate-500 dark:text-slate-400">
+                    <span className="text-[11px] font-mono font-semibold text-slate-500 dark:text-slate-400">
                       {totalCardCount} Total Orders
                     </span>
                   </div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
-                    Master operational directory across all active service categories in Varanasi.
-                  </p>
                 </div>
               </div>
 
               {/* Middle / Right: 4-Stat Pills + Direct Open Action */}
               <div className="flex flex-wrap items-center gap-3 shrink-0">
                 <div className="grid grid-cols-4 gap-2 text-center">
-                  <div className="py-1 px-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200/60 dark:border-amber-800/60">
-                    <span className="text-[9px] font-black uppercase text-amber-700 dark:text-amber-300 block leading-tight">
+                  <div className="py-1 px-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60">
+                    <span className="text-[9px] font-medium uppercase text-amber-600 dark:text-amber-400 block leading-tight tracking-wide">
                       Open
                     </span>
-                    <span className="text-xs font-black text-amber-700 dark:text-amber-300">
+                    <span className="text-xs font-semibold text-amber-600 dark:text-amber-400">
                       {unassignedCardCount}
                     </span>
                   </div>
-                  <div className="py-1 px-2.5 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200/60 dark:border-blue-800/60">
-                    <span className="text-[9px] font-black uppercase text-blue-700 dark:text-blue-300 block leading-tight">
+                  <div className="py-1 px-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60">
+                    <span className="text-[9px] font-medium uppercase text-blue-600 dark:text-blue-400 block leading-tight tracking-wide">
                       Active
                     </span>
-                    <span className="text-xs font-black text-blue-700 dark:text-blue-300">
+                    <span className="text-xs font-semibold text-blue-600 dark:text-blue-400">
                       {inProgressCardCount}
                     </span>
                   </div>
-                  <div className="py-1 px-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/60 dark:border-emerald-800/60">
-                    <span className="text-[9px] font-black uppercase text-emerald-700 dark:text-emerald-300 block leading-tight">
+                  <div className="py-1 px-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60">
+                    <span className="text-[9px] font-medium uppercase text-emerald-600 dark:text-emerald-400 block leading-tight tracking-wide">
                       Done
                     </span>
-                    <span className="text-xs font-black text-emerald-700 dark:text-emerald-300">
+                    <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
                       {completedCardCount}
                     </span>
                   </div>
-                  <div className="py-1 px-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200/60 dark:border-rose-800/60">
-                    <span className="text-[9px] font-black uppercase text-rose-700 dark:text-rose-300 block leading-tight">
+                  <div className="py-1 px-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60">
+                    <span className="text-[9px] font-medium uppercase text-rose-600 dark:text-rose-400 block leading-tight tracking-wide">
                       Cancel
                     </span>
-                    <span className="text-xs font-black text-rose-700 dark:text-rose-300">
+                    <span className="text-xs font-semibold text-rose-600 dark:text-rose-400">
                       {cancelledCardCount}
                     </span>
                   </div>
@@ -1653,7 +1900,9 @@ function BookingsPageContent() {
               <div className="flex items-center gap-2 text-xs">
                 <span className="text-[11px] font-extrabold px-2.5 py-1 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 flex items-center gap-1.5">
                   <Pin className="w-3.5 h-3.5 fill-current" />
-                  <span>{pinnedCategories.length}/3 Pinned (rearranged on top)</span>
+                  <span>
+                    {categoryStatsList.filter((c) => Boolean(c.isPinned)).length}/3 Pinned (rearranged on top)
+                  </span>
                 </span>
               </div>
             </div>
@@ -1663,77 +1912,57 @@ function BookingsPageContent() {
               {categoryStatsList
                 .slice()
                 .sort((a, b) => {
-                  const aPinnedIndex = pinnedCategories.indexOf(a.name);
-                  const bPinnedIndex = pinnedCategories.indexOf(b.name);
-                  const aIsPinned = aPinnedIndex !== -1;
-                  const bIsPinned = bPinnedIndex !== -1;
+                  const aIsPinned = Boolean(a.isPinned);
+                  const bIsPinned = Boolean(b.isPinned);
 
                   if (aIsPinned && bIsPinned) {
-                    return aPinnedIndex - bPinnedIndex;
+                    const aPinnedIndex = pinnedCategories.indexOf(a.name);
+                    const bPinnedIndex = pinnedCategories.indexOf(b.name);
+                    if (aPinnedIndex !== -1 && bPinnedIndex !== -1) {
+                      return aPinnedIndex - bPinnedIndex;
+                    }
+                    return 0;
                   }
                   if (aIsPinned) return -1;
                   if (bIsPinned) return 1;
                   return 0;
                 })
                 .map((cat) => {
-                  const pinnedIdx = pinnedCategories.indexOf(cat.name);
-                  const isPinned = pinnedIdx !== -1;
+                  const isPinned = Boolean(cat.isPinned);
 
                   return (
                     <div
                       key={cat.name}
                       onClick={() => handleSelectCategory(cat.name)}
-                      className={`p-4 rounded-2xl border transition-all duration-200 cursor-pointer group flex flex-col justify-between ${
+                      className={`p-3.5 sm:p-4 rounded-2xl border transition-all duration-200 cursor-pointer group flex flex-col justify-between ${
                         isPinned
                           ? "bg-gradient-to-br from-amber-50/30 via-white to-white dark:from-amber-950/25 dark:via-slate-900 dark:to-slate-900 border-amber-300 dark:border-amber-700/70 hover:border-amber-500 hover:shadow-md shadow-2xs"
                           : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-brand-500 hover:shadow-md"
                       }`}
                     >
                       <div>
-                        {/* Header Row: Icon + Pinned/Category Tag (Left) & Orders Count + Pin Button (Right) */}
+                        {/* Header Row: Icon + Title/Pinned (in place of Service Category to reduce space) & Orders Count + Pin Button */}
                         <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <div
-                              className={`w-9 h-9 rounded-xl ${
-                                cat.name.toLowerCase().includes("ac")
-                                  ? "bg-sky-50 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400"
-                                  : cat.name.toLowerCase().includes("electr")
-                                  ? "bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400"
-                                  : cat.name.toLowerCase().includes("plumb")
-                                  ? "bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400"
-                                  : cat.name.toLowerCase().includes("clean")
-                                  ? "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400"
-                                  : "bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400"
-                              } flex items-center justify-center shrink-0 shadow-2xs group-hover:scale-105 transition-transform`}
-                            >
-                              {cat.name.toLowerCase().includes("ac") ? (
-                                <Wrench className="w-4 h-4" />
-                              ) : cat.name.toLowerCase().includes("electr") ? (
-                                <Zap className="w-4 h-4" />
-                              ) : cat.name.toLowerCase().includes("plumb") ? (
-                                <Droplets className="w-4 h-4" />
-                              ) : cat.name.toLowerCase().includes("clean") ? (
-                                <SprayCan className="w-4 h-4" />
-                              ) : (
-                                <Calendar className="w-4 h-4" />
-                              )}
-                            </div>
-                            <div className="min-w-0">
-                              {isPinned ? (
-                                <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border border-amber-300/80 dark:border-amber-700 inline-flex items-center gap-1">
-                                  <Pin className="w-2.5 h-2.5 fill-current" /> Pinned #{pinnedIdx + 1}
-                                </span>
-                              ) : (
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                                  Service Category
-                                </span>
-                              )}
+                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                            <BookingCategoryIcon
+                              iconUrl={cat.iconUrl}
+                              name={cat.name}
+                              className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80"
+                              imgClassName="w-full h-full object-contain p-1"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <h3
+                                className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white group-hover:text-brand-600 transition-colors truncate"
+                                title={cat.name}
+                              >
+                                {cat.name}
+                              </h3>
                             </div>
                           </div>
 
                           <div className="flex items-center gap-1.5 shrink-0">
                             <span
-                              className={`text-[10px] font-black px-2 py-0.5 rounded-lg border ${
+                              className={`text-[10px] font-semibold px-2 py-0.5 rounded-lg border ${
                                 isPinned
                                   ? "bg-amber-100/60 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800"
                                   : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700"
@@ -1751,7 +1980,7 @@ function BookingsPageContent() {
                                   ? "Updating pin..."
                                   : isPinned
                                   ? "Unpin category"
-                                  : pinnedCategories.length >= 3
+                                  : categoryStatsList.filter((c) => Boolean(c.isPinned)).length >= 3
                                   ? "Pin limit reached (max 3)"
                                   : "Pin to top (max 3)"
                               }
@@ -1770,53 +1999,44 @@ function BookingsPageContent() {
                           </div>
                         </div>
 
-                        {/* Category Title: Full Width, Bigger Font, Full Visibility */}
-                        <div className="mt-2.5 mb-3 min-w-0">
-                          <h3
-                            className="text-sm sm:text-base font-black text-slate-900 dark:text-white group-hover:text-brand-600 transition-colors leading-snug break-words"
-                          >
-                            {cat.name}
-                          </h3>
-                        </div>
-
                         {/* Status indicators (slim 4-pill row) */}
-                        <div className="grid grid-cols-4 gap-1.5 text-center">
-                          <div className="py-1 px-1 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200/60 dark:border-amber-800/40">
-                            <span className="text-[8px] font-black text-amber-700 dark:text-amber-300 block uppercase leading-none">
+                        <div className="grid grid-cols-4 gap-1.5 text-center mt-3">
+                          <div className="py-1 px-1 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60">
+                            <span className="text-[8px] font-medium text-amber-600 dark:text-amber-400 block uppercase leading-none tracking-wide">
                               Open
                             </span>
-                            <span className="text-xs font-black text-amber-700 dark:text-amber-300 mt-0.5 block">
+                            <span className="text-xs font-semibold text-amber-600 dark:text-amber-400 mt-0.5 block">
                               {cat.unassigned}
                             </span>
                           </div>
-                          <div className="py-1 px-1 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200/60 dark:border-blue-800/40">
-                            <span className="text-[8px] font-black text-blue-700 dark:text-blue-300 block uppercase leading-none">
+                          <div className="py-1 px-1 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60">
+                            <span className="text-[8px] font-medium text-blue-600 dark:text-blue-400 block uppercase leading-none tracking-wide">
                               Active
                             </span>
-                            <span className="text-xs font-black text-blue-700 dark:text-blue-300 mt-0.5 block">
+                            <span className="text-xs font-semibold text-blue-600 dark:text-blue-400 mt-0.5 block">
                               {cat.inProgress}
                             </span>
                           </div>
-                          <div className="py-1 px-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-800/40">
-                            <span className="text-[8px] font-black text-emerald-700 dark:text-emerald-300 block uppercase leading-none">
+                          <div className="py-1 px-1 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60">
+                            <span className="text-[8px] font-medium text-emerald-600 dark:text-emerald-400 block uppercase leading-none tracking-wide">
                               Done
                             </span>
-                            <span className="text-xs font-black text-emerald-700 dark:text-emerald-300 mt-0.5 block">
+                            <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 mt-0.5 block">
                               {cat.completed}
                             </span>
                           </div>
-                          <div className="py-1 px-1 rounded-lg bg-rose-50 dark:bg-rose-950/30 border border-rose-200/60 dark:border-rose-800/40">
-                            <span className="text-[8px] font-black text-rose-700 dark:text-rose-300 block uppercase leading-none">
+                          <div className="py-1 px-1 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60">
+                            <span className="text-[8px] font-medium text-rose-600 dark:text-rose-400 block uppercase leading-none tracking-wide">
                               Cancel
                             </span>
-                            <span className="text-xs font-black text-rose-700 dark:text-rose-300 mt-0.5 block">
+                            <span className="text-xs font-semibold text-rose-600 dark:text-rose-400 mt-0.5 block">
                               {cat.cancelled}
                             </span>
                           </div>
                         </div>
                       </div>
 
-                      <div className="pt-2.5 mt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-[11px] font-extrabold text-brand-600 dark:text-brand-400 group-hover:translate-x-0.5 transition-transform">
+                      <div className="pt-2 mt-2.5 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-[11px] font-semibold text-brand-600 dark:text-brand-400 group-hover:translate-x-0.5 transition-transform">
                         <span>Open {cat.name}</span>
                         <ChevronRight className="w-3.5 h-3.5" />
                       </div>
@@ -1826,32 +2046,172 @@ function BookingsPageContent() {
             </div>
           </div>
         </div>
+        )
       ) : (
         /* ─── VIEW 2: SELECTED CATEGORY OPERATIONS TABLE (NEXT PAGE VIEW) ─── */
         <div className="space-y-6 animate-in fade-in duration-300">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
-            <div className="space-y-2">
-              <div className="flex items-center gap-3 pt-1">
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2.5 pt-1 flex-wrap">
                 <button
                   type="button"
                   onClick={() => handleSelectCategory(null)}
-                  className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-brand-600 transition-colors bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-xl cursor-pointer shrink-0"
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-brand-600 transition-colors bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 px-3 py-1.5 rounded-xl cursor-pointer shrink-0"
                 >
-                  <ArrowLeft className="w-4 h-4 text-brand-600" />
+                  <ArrowLeft className="w-3.5 h-3.5 text-brand-600" />
                   <span>Back to Hub</span>
                 </button>
 
-                <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-                  <Calendar className="w-6 h-6 text-brand-600" />
-                  <span>
-                    {!selectedCategory || selectedCategory === "All" ? "All Bookings Directory" : `${selectedCategory} Operations Directory`}
-                  </span>
-                </h1>
-              </div>
+                {/* CATEGORY SWITCH DROPDOWN TRIGGER ON TITLE */}
+                <div className="relative inline-block" ref={categoryDropdownRef}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsCategoryDropdownOpen((prev) => !prev);
+                      setDropdownSearch("");
+                    }}
+                    className="inline-flex items-center gap-2 px-2.5 py-1 -ml-1 rounded-xl text-base sm:text-lg font-bold text-slate-900 dark:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer group border border-transparent hover:border-slate-200 dark:hover:border-slate-700 select-none"
+                    title="Click to switch category without leaving table"
+                  >
+                    <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-brand-600 shrink-0" />
+                    <span className="truncate max-w-[200px] sm:max-w-xs md:max-w-md">
+                      {!selectedCategory || selectedCategory === "All"
+                        ? "All Bookings Directory"
+                        : `${selectedCategory} Operations`}
+                    </span>
+                    <ChevronDown
+                      className={`w-4 h-4 text-slate-400 group-hover:text-brand-600 transition-transform duration-200 shrink-0 ${
+                        isCategoryDropdownOpen ? "rotate-180 text-brand-600" : ""
+                      }`}
+                    />
+                  </button>
 
-              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                Managing live dispatch, partner assignments, and order tracking for {!selectedCategory || selectedCategory === "All" ? "all categories" : selectedCategory}.
-              </p>
+                  {/* FLOATING CATEGORY DROPDOWN MENU */}
+                  {isCategoryDropdownOpen && (
+                    <div className="absolute top-full left-0 mt-2 z-50 w-72 sm:w-80 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                      {/* Search box inside dropdown */}
+                      <div className="p-2.5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
+                        <div className="relative">
+                          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                          <input
+                            type="text"
+                            value={dropdownSearch}
+                            onChange={(e) => setDropdownSearch(e.target.value)}
+                            placeholder="Filter categories..."
+                            className="w-full pl-8 pr-3 py-1.5 text-xs rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-brand-500"
+                            autoFocus
+                          />
+                        </div>
+                      </div>
+
+                      {/* Dropdown Options List */}
+                      <div className="max-h-72 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/60 no-scrollbar">
+                        {/* Option 1: All Service Categories */}
+                        {(!dropdownSearch || "all service categories".includes(dropdownSearch.toLowerCase()) || "all bookings".includes(dropdownSearch.toLowerCase())) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleSelectCategory("All");
+                              setIsCategoryDropdownOpen(false);
+                            }}
+                            className={`w-full text-left px-3.5 py-2.5 flex items-center justify-between gap-2.5 text-xs font-bold transition-colors cursor-pointer ${
+                              !selectedCategory || selectedCategory === "All"
+                                ? "bg-brand-50/80 dark:bg-brand-950/60 text-brand-700 dark:text-brand-300"
+                                : "text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="w-7 h-7 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                                <Grid className="w-3.5 h-3.5" />
+                              </div>
+                              <div className="min-w-0 truncate">
+                                <span className="block truncate font-extrabold">All Service Categories</span>
+                                <span className="text-[10px] text-slate-400 font-medium">
+                                  {totalCardCount} Total Orders
+                                </span>
+                              </div>
+                            </div>
+                            {(!selectedCategory || selectedCategory === "All") && (
+                              <Check className="w-4 h-4 text-brand-600 shrink-0" />
+                            )}
+                          </button>
+                        )}
+
+                        {/* Category items */}
+                        {filteredDropdownCategories.map((cat) => {
+                          const isSelected = selectedCategory === cat.name;
+                          const isPinned = Boolean(cat.isPinned);
+                          return (
+                            <button
+                              key={cat.name}
+                              type="button"
+                              onClick={() => {
+                                handleSelectCategory(cat.name);
+                                setIsCategoryDropdownOpen(false);
+                              }}
+                              className={`w-full text-left px-3.5 py-2.5 flex items-center justify-between gap-2.5 text-xs font-bold transition-colors cursor-pointer ${
+                                isSelected
+                                  ? "bg-brand-50/80 dark:bg-brand-950/60 text-brand-700 dark:text-brand-300"
+                                  : "text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                              }`}
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <div
+                                  className={`w-7 h-7 rounded-lg ${
+                                    cat.name.toLowerCase().includes("ac")
+                                      ? "bg-sky-50 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400"
+                                      : cat.name.toLowerCase().includes("electr")
+                                      ? "bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400"
+                                      : cat.name.toLowerCase().includes("plumb")
+                                      ? "bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400"
+                                      : cat.name.toLowerCase().includes("clean")
+                                      ? "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400"
+                                      : "bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400"
+                                  } flex items-center justify-center shrink-0`}
+                                >
+                                  {cat.name.toLowerCase().includes("ac") ? (
+                                    <Wrench className="w-3.5 h-3.5" />
+                                  ) : cat.name.toLowerCase().includes("electr") ? (
+                                    <Zap className="w-3.5 h-3.5" />
+                                  ) : cat.name.toLowerCase().includes("plumb") ? (
+                                    <Droplets className="w-3.5 h-3.5" />
+                                  ) : cat.name.toLowerCase().includes("clean") ? (
+                                    <SprayCan className="w-3.5 h-3.5" />
+                                  ) : (
+                                    <Calendar className="w-3.5 h-3.5" />
+                                  )}
+                                </div>
+                                <div className="min-w-0 truncate">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="truncate font-semibold">{cat.name}</span>
+                                    {isPinned && (
+                                      <span title="Pinned Category">
+                                        <Pin className="w-2.5 h-2.5 text-amber-500 fill-current shrink-0" />
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="text-[10px] text-slate-400 font-medium">
+                                    {cat.count} orders {cat.unassigned > 0 ? `• ${cat.unassigned} open` : ""}
+                                  </span>
+                                </div>
+                              </div>
+                              {isSelected && (
+                                <Check className="w-4 h-4 text-brand-600 shrink-0" />
+                              )}
+                            </button>
+                          );
+                        })}
+
+                        {filteredDropdownCategories.length === 0 && (
+                          <div className="p-4 text-center text-xs text-slate-400">
+                            No matching categories found
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-3 shrink-0">
@@ -1862,9 +2222,9 @@ function BookingsPageContent() {
                   setViewArchiveMode(nextMode);
                   if (nextMode) fetchArchivedBookings();
                 }}
-                className={`px-3.5 py-2.5 rounded-xl font-bold text-xs border transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 w-full sm:w-auto ${
+                className={`px-3.5 py-2.5 rounded-xl font-semibold text-xs border transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 w-full sm:w-auto ${
                   viewArchiveMode
-                    ? "bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-950 dark:text-amber-200 dark:border-amber-800"
+                    ? "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800 hover:bg-emerald-100"
                     : "bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700"
                 }`}
               >
@@ -1928,10 +2288,10 @@ function BookingsPageContent() {
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">Total Bookings</span>
                 {cardFilter === "ALL" && (
-                  <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-indigo-500 text-white">Active</span>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-500 text-white">Active</span>
                 )}
               </div>
-              <h3 className="text-xl font-black text-indigo-600 dark:text-indigo-400 mt-1">
+              <h3 className="text-xl font-bold text-indigo-600 dark:text-indigo-400 mt-1">
                 {totalCardCount} Orders
               </h3>
             </button>
@@ -1950,10 +2310,10 @@ function BookingsPageContent() {
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-amber-600 dark:text-amber-400">Waiting Partner</span>
                 {cardFilter === "UNASSIGNED" && (
-                  <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-500 text-white">Filtered</span>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500 text-white">Filtered</span>
                 )}
               </div>
-              <h3 className="text-xl font-black text-amber-600 dark:text-amber-400 mt-1">
+              <h3 className="text-xl font-bold text-amber-600 dark:text-amber-400 mt-1">
                 {unassignedCardCount} Unassigned
               </h3>
             </button>
@@ -1972,10 +2332,10 @@ function BookingsPageContent() {
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-blue-600 dark:text-blue-400">In Progress</span>
                 {cardFilter === "IN_PROGRESS" && (
-                  <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-blue-500 text-white">Filtered</span>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-500 text-white">Filtered</span>
                 )}
               </div>
-              <h3 className="text-xl font-black text-blue-600 dark:text-blue-400 mt-1">
+              <h3 className="text-xl font-bold text-blue-600 dark:text-blue-400 mt-1">
                 {inProgressCardCount} Jobs
               </h3>
             </button>
@@ -1994,10 +2354,10 @@ function BookingsPageContent() {
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">Completed Jobs</span>
                 {cardFilter === "COMPLETED" && (
-                  <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-500 text-white">Filtered</span>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500 text-white">Filtered</span>
                 )}
               </div>
-              <h3 className="text-xl font-black text-emerald-600 dark:text-emerald-400 mt-1">
+              <h3 className="text-xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">
                 {completedCardCount} Closed
               </h3>
             </button>
@@ -2016,10 +2376,10 @@ function BookingsPageContent() {
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-rose-600 dark:text-rose-400">Cancelled Jobs</span>
                 {cardFilter === "CANCELLED" && (
-                  <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-rose-500 text-white">Filtered</span>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-rose-500 text-white">Filtered</span>
                 )}
               </div>
-              <h3 className="text-xl font-black text-rose-600 dark:text-rose-400 mt-1">
+              <h3 className="text-xl font-bold text-rose-600 dark:text-rose-400 mt-1">
                 {cancelledCardCount} Cancelled
               </h3>
             </button>
@@ -2029,47 +2389,18 @@ function BookingsPageContent() {
           <DataTable
             columns={columns}
             data={filteredBookings}
+            isLoading={isLoadingData}
+            searchPlaceholder="Search order #, customer, partner, or phone..."
             extraFilters={
               <div className="flex items-center gap-2.5 flex-wrap">
-                {/* Active vs Archived Selector */}
-                <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
-                  <button
-                    type="button"
-                    onClick={() => setViewArchiveMode(false)}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                      !viewArchiveMode
-                        ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs font-extrabold"
-                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-                    }`}
-                  >
-                    Active ({bookings.length})
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setViewArchiveMode(true);
-                      fetchArchivedBookings();
-                    }}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                      viewArchiveMode
-                        ? "bg-amber-500 text-white shadow-xs font-extrabold"
-                        : "text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/60"
-                    }`}
-                  >
-                    <Archive className="w-3.5 h-3.5" />
-                    <span>Archived {archivedBookings.length > 0 ? `(${archivedBookings.length})` : ""}</span>
-                  </button>
-                </div>
-
                 {/* Origin Channels */}
                 <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
                   <button
                     type="button"
                     onClick={() => updateBookingFilters("", undefined)}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${channelFilter === "ALL"
-                      ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs font-extrabold"
-                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                    className={`px-3 py-1 rounded-lg text-xs transition-all cursor-pointer ${channelFilter === "ALL"
+                      ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs font-semibold"
+                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white font-medium"
                       }`}
                   >
                     All Origins ({categoryBookings.length})
@@ -2078,9 +2409,9 @@ function BookingsPageContent() {
                   <button
                     type="button"
                     onClick={() => updateBookingFilters(bookingTypeParam === "online" ? "" : "online", undefined)}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${channelFilter === "ONLINE"
-                      ? "bg-purple-600 text-white shadow-xs font-extrabold"
-                      : "text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/60"
+                    className={`px-3 py-1 rounded-lg text-xs flex items-center gap-1.5 transition-all cursor-pointer ${channelFilter === "ONLINE"
+                      ? "bg-purple-600 text-white shadow-xs font-semibold"
+                      : "text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/60 font-medium"
                       }`}
                   >
                     <Globe className="w-3.5 h-3.5" />
@@ -2090,9 +2421,9 @@ function BookingsPageContent() {
                   <button
                     type="button"
                     onClick={() => updateBookingFilters(bookingTypeParam === "manual" ? "" : "manual", undefined)}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${channelFilter === "MANUAL"
-                      ? "bg-slate-800 text-white shadow-xs font-extrabold"
-                      : "text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
+                    className={`px-3 py-1 rounded-lg text-xs flex items-center gap-1.5 transition-all cursor-pointer ${channelFilter === "MANUAL"
+                      ? "bg-slate-800 text-white shadow-xs font-semibold"
+                      : "text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 font-medium"
                       }`}
                   >
                     <Building2 className="w-3.5 h-3.5" />

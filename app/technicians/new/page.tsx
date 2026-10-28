@@ -63,6 +63,7 @@ import {
   RefreshCw,
   Crop,
   Move,
+  Loader2,
 } from "lucide-react";
 
 export interface CatalogServiceItem {
@@ -364,6 +365,7 @@ function TechnicianFormContent() {
   const [subTypeSearchQuery, setSubTypeSearchQuery] = useState("");
   const [serviceSearchQuery, setServiceSearchQuery] = useState("");
   const [pincodeSearchQuery, setPincodeSearchQuery] = useState("");
+  const [isLocalitySearching, setIsLocalitySearching] = useState(false);
 
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
   const [isTypeDropdownOpen, setIsTypeDropdownOpen] = useState(false);
@@ -417,6 +419,49 @@ function TechnicianFormContent() {
   const [modalCustomPincode, setModalCustomPincode] = useState("");
   const [modalCustomArea, setModalCustomArea] = useState("");
   const [coverageZones, setCoverageZones] = useState<string[]>([]);
+
+  // Debounced API Locality search when user types in locality & pincode dropdown
+  useEffect(() => {
+    if (!isPincodeDropdownOpen) return;
+    const query = pincodeSearchQuery.trim();
+    const timer = setTimeout(async () => {
+      setIsLocalitySearching(true);
+      try {
+        const res = await getLocalitiesApi({
+          search: query || undefined,
+          limit: 100,
+        });
+        if (res && res.success !== false && Array.isArray(res.data)) {
+          setApiLocalities((prev) => {
+            const map = new Map<string, ApiLocality>();
+            // Retain selected localities
+            prev.forEach((loc) => {
+              if (selectedServicePincodeIds.includes(loc._id) || coverageZones.some((z) => z.includes(loc.pincode))) {
+                map.set(loc._id, loc);
+              }
+            });
+            // Merge newly fetched results
+            res.data.forEach((loc: ApiLocality) => {
+              map.set(loc._id, loc);
+            });
+            return Array.from(map.values());
+          });
+          setAllLocalitiesMaster((prev) => {
+            const map = new Map<string, ApiLocality>();
+            prev.forEach((loc) => map.set(loc._id, loc));
+            res.data.forEach((loc: ApiLocality) => map.set(loc._id, loc));
+            return Array.from(map.values());
+          });
+        }
+      } catch (err) {
+        console.error("Failed to search localities:", err);
+      } finally {
+        setIsLocalitySearching(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [pincodeSearchQuery, isPincodeDropdownOpen, selectedServicePincodeIds, coverageZones]);
 
   const handleAddCustomPincode = () => {
     if (!customPincodeInput.trim()) return;
@@ -611,6 +656,17 @@ function TechnicianFormContent() {
     }
     return [];
   }, [apiLocalities]);
+
+  const filteredPincodeZones = useMemo(() => {
+    if (!pincodeSearchQuery.trim()) return availablePincodeZones;
+    const q = pincodeSearchQuery.toLowerCase();
+    return availablePincodeZones.filter(
+      (zone) =>
+        zone.pincode.toLowerCase().includes(q) ||
+        zone.area.toLowerCase().includes(q) ||
+        zone.label.toLowerCase().includes(q)
+    );
+  }, [availablePincodeZones, pincodeSearchQuery]);
 
   const isItemSelected = (item: CatalogServiceItem) => {
     return (
@@ -990,6 +1046,31 @@ function TechnicianFormContent() {
               return String(sp);
             });
             setCoverageZones(zoneLabels);
+
+            // Merge populated locality objects into apiLocalities so they are in the list
+            const populatedLocs: ApiLocality[] = tech.servicePincodes
+              .filter((sp: any) => typeof sp === "object" && sp && sp._id)
+              .map((sp: any) => ({
+                _id: sp._id,
+                localityName: sp.localityName || "Varanasi",
+                pincode: sp.pincode || "221002",
+                status: true,
+              }));
+
+            if (populatedLocs.length > 0) {
+              setApiLocalities((prev) => {
+                const map = new Map<string, ApiLocality>();
+                prev.forEach((l) => map.set(l._id, l));
+                populatedLocs.forEach((l) => map.set(l._id, l));
+                return Array.from(map.values());
+              });
+              setAllLocalitiesMaster((prev) => {
+                const map = new Map<string, ApiLocality>();
+                prev.forEach((l) => map.set(l._id, l));
+                populatedLocs.forEach((l) => map.set(l._id, l));
+                return Array.from(map.values());
+              });
+            }
           } else if (tech.pincode || tech.locality) {
             const pinStr = tech.pincode || "221002";
             const locStr = tech.locality || "Varanasi";
@@ -2292,10 +2373,10 @@ function TechnicianFormContent() {
             {/* Searchable Multi-Select Locality & Pincode Dropdown */}
             <div ref={pincodeRef} className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-extrabold text-slate-700 dark:text-slate-300 block">
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
                   Select Locality & Pincode *
                 </label>
-                <span className="text-[10px] font-extrabold text-brand-600 dark:text-brand-400">
+                <span className="text-[10px] font-semibold text-brand-600 dark:text-brand-400">
                   {coverageZones.length} Locations Selected
                 </span>
               </div>
@@ -2305,182 +2386,186 @@ function TechnicianFormContent() {
                   <Search className="w-4 h-4 text-slate-400 absolute left-3.5 pointer-events-none" />
                   <input
                     type="text"
-                    placeholder={
-                      coverageZones.length === 0
-                        ? "Search & select locality or pincode (e.g. 221002 - Sigra, Lanka)..."
-                        : `${coverageZones.length} Locations Selected`
-                    }
-                    value={isPincodeDropdownOpen ? pincodeSearchQuery : (pincodeSearchQuery || (coverageZones.length > 0 ? `${coverageZones.length} Locations Selected` : ""))}
+                    placeholder="Search locality name or 6-digit pincode (e.g. Sigra, Lanka, 221002)..."
+                    value={pincodeSearchQuery}
                     onChange={(e) => {
                       setPincodeSearchQuery(e.target.value);
-                      if (!isPincodeDropdownOpen) toggleDropdown("pincode");
+                      if (!isPincodeDropdownOpen) setIsPincodeDropdownOpen(true);
                     }}
                     onFocus={() => {
-                      setPincodeSearchQuery("");
-                      toggleDropdown("pincode");
+                      if (!isPincodeDropdownOpen) setIsPincodeDropdownOpen(true);
                     }}
-                    className="w-full h-11 pl-10 pr-10 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-900 dark:text-white outline-none focus:border-brand-500 shadow-2xs"
+                    className="w-full h-11 pl-10 pr-20 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-semibold text-slate-900 dark:text-white outline-none focus:border-brand-500 shadow-2xs"
                   />
-                  {pincodeSearchQuery || isPincodeDropdownOpen ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPincodeSearchQuery("");
-                        setIsPincodeDropdownOpen(false);
-                      }}
-                      className="absolute right-3.5 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPincodeSearchQuery("");
-                        toggleDropdown("pincode");
-                      }}
-                      className="absolute right-3.5 text-slate-400 hover:text-slate-600 cursor-pointer"
-                    >
-                      <ChevronDown className="w-4 h-4" />
-                    </button>
-                  )}
+                  <div className="absolute right-3 flex items-center gap-1.5">
+                    {isLocalitySearching && (
+                      <Loader2 className="w-4 h-4 text-brand-600 animate-spin" />
+                    )}
+                    {pincodeSearchQuery ? (
+                      <button
+                        type="button"
+                        onClick={() => setPincodeSearchQuery("")}
+                        className="p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer transition-colors"
+                        title="Clear search"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => toggleDropdown("pincode")}
+                        className="p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer transition-colors"
+                      >
+                        <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isPincodeDropdownOpen ? "rotate-180" : ""}`} />
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Floating Searchable API Locality Dropdown */}
                 {isPincodeDropdownOpen && (
-                  <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl z-40 max-h-72 overflow-y-auto p-2 space-y-1">
-                    {availablePincodeZones.filter((zone) => {
-                      if (!pincodeSearchQuery.trim()) return true;
-                      const q = pincodeSearchQuery.toLowerCase();
-                      return (
-                        zone.pincode.toLowerCase().includes(q) ||
-                        zone.area.toLowerCase().includes(q) ||
-                        zone.label.toLowerCase().includes(q)
-                      );
-                    }).map((zone) => {
+                  <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl z-40 max-h-80 overflow-y-auto p-2 space-y-1.5">
+                    {/* Header Strip with Search Status */}
+                    <div className="px-2.5 py-1.5 flex items-center justify-between border-b border-slate-100 dark:border-slate-800 text-[11px] text-slate-500 font-medium">
+                      <div className="flex items-center gap-1.5">
+                        {isLocalitySearching ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-brand-600" />
+                            <span>Searching Varanasi localities...</span>
+                          </>
+                        ) : (
+                          <span>
+                            {pincodeSearchQuery.trim()
+                              ? `Found ${filteredPincodeZones.length} localities`
+                              : `Varanasi Localities (${availablePincodeZones.length})`}
+                          </span>
+                        )}
+                      </div>
+                      {coverageZones.length > 0 && (
+                        <span className="text-brand-600 dark:text-brand-400 font-semibold">
+                          {coverageZones.length} selected
+                        </span>
+                      )}
+                    </div>
+
+                    {filteredPincodeZones.map((zone) => {
                       const isChecked = selectedServicePincodeIds.includes(zone.id) || coverageZones.some((z) => z.includes(zone.pincode));
 
                       return (
                         <div
                           key={zone.id || zone.pincode}
                           onClick={() => togglePincodeSelection(zone)}
-                          className={`p-2.5 rounded-xl transition-all cursor-pointer flex items-center justify-between gap-3 border ${
+                          className={`p-3 rounded-xl transition-all cursor-pointer flex items-center justify-between gap-3 border ${
                             isChecked
-                              ? "bg-brand-50 dark:bg-brand-950/60 border-brand-300 dark:border-brand-800"
-                              : "bg-slate-50/60 dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/80 hover:bg-slate-100"
+                              ? "bg-brand-50/80 dark:bg-brand-950/40 border-brand-300 dark:border-brand-700 shadow-2xs"
+                              : "bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800/80 hover:border-slate-300 dark:hover:border-slate-700 hover:bg-slate-50/80 dark:hover:bg-slate-800/40"
                           }`}
                         >
                           <div className="flex items-center gap-3 min-w-0">
-                            <div className="w-9 h-9 rounded-xl bg-brand-100 dark:bg-brand-900/60 text-brand-700 dark:text-brand-300 font-mono font-black text-xs flex items-center justify-center shrink-0 border border-brand-200 dark:border-brand-800">
-                              {zone.pincode}
+                            {/* Checkbox indicator */}
+                            <div
+                              className={`w-5 h-5 rounded-lg border flex items-center justify-center shrink-0 transition-all ${
+                                isChecked
+                                  ? "bg-brand-600 border-brand-600 text-white shadow-xs"
+                                  : "border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800"
+                              }`}
+                            >
+                              {isChecked && <Check className="w-3.5 h-3.5 stroke-[2.5]" />}
                             </div>
+
+                            {/* Locality Info */}
                             <div className="min-w-0">
-                              <h4 className="text-xs font-extrabold text-slate-900 dark:text-white truncate">
+                              <h4 className="text-xs font-semibold text-slate-900 dark:text-white truncate">
                                 {zone.area}
                               </h4>
-                              <p className="text-[10px] text-slate-500 font-semibold truncate">
-                                Locality Pincode: {zone.pincode}
-                              </p>
+                              <span className="text-[10px] text-slate-400 font-medium">
+                                Varanasi Service Zone
+                              </span>
                             </div>
                           </div>
 
-                          <div className="shrink-0">
+                          {/* Pincode Badge + Selection Action */}
+                          <div className="shrink-0 flex items-center gap-2">
                             <span
-                              className={`px-3 py-1 rounded-xl text-xs font-black flex items-center gap-1 ${
+                              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg font-mono text-xs font-semibold tracking-wider border shadow-2xs ${
                                 isChecked
-                                  ? "bg-brand-600 text-white shadow-xs"
-                                  : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700"
+                                  ? "bg-brand-100 dark:bg-brand-900/60 text-brand-700 dark:text-brand-300 border-brand-200 dark:border-brand-800"
+                                  : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700"
                               }`}
                             >
-                              {isChecked ? (
-                                <>
-                                  <Check className="w-3.5 h-3.5" />
-                                  <span>Selected</span>
-                                </>
-                              ) : (
-                                <span>+ Select</span>
-                              )}
+                              <MapPin className="w-3.5 h-3.5 text-brand-600 dark:text-brand-400 shrink-0" />
+                              <span>{zone.pincode}</span>
+                            </span>
+
+                            <span
+                              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-all ${
+                                isChecked
+                                  ? "bg-brand-600 text-white shadow-xs"
+                                  : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
+                              }`}
+                            >
+                              {isChecked ? "Added" : "+ Add"}
                             </span>
                           </div>
                         </div>
                       );
                     })}
+
+                    {filteredPincodeZones.length === 0 && (
+                      <div className="py-6 px-4 text-center space-y-2">
+                        <MapPin className="w-7 h-7 mx-auto text-slate-300 dark:text-slate-600" />
+                        <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                          {isLocalitySearching
+                            ? "Searching localities..."
+                            : `No localities found matching "${pincodeSearchQuery}"`}
+                        </p>
+                        <p className="text-[11px] text-slate-400">
+                          Search by locality name (e.g. Lanka, Sigra) or 6-digit pincode (e.g. 221005).
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Multi-Select Pincode Grid (Includes All Added Pincodes) */}
-            {/* <div className="space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <label className="text-xs font-extrabold text-slate-700 dark:text-slate-300 block">
-                  Select Pincodes Served (Click to Select / Deselect):
-                </label>
-                <span className="text-xs font-mono font-bold text-brand-600">
-                  {coverageZones.length} Pincodes Selected
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-                {availablePincodeZones.map((zone) => {
-                  const isChecked = selectedServicePincodeIds.includes(zone.id) || coverageZones.some((z) => z.includes(zone.pincode));
-
-                  return (
-                    <button
-                      key={zone.id || zone.pincode}
-                      type="button"
-                      onClick={() => togglePincodeSelection(zone)}
-                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between text-xs font-semibold ${
-                        isChecked
-                          ? "bg-brand-50 dark:bg-brand-950/40 border-brand-300 dark:border-brand-800 text-slate-900 dark:text-white"
-                          : "bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100"
-                      }`}
-                    >
-                      <div>
-                        <span className="font-mono font-extrabold text-brand-600 block">{zone.pincode}</span>
-                        <span className="text-[10px] text-slate-500 line-clamp-1">{zone.area}</span>
-                      </div>
-                      <span
-                        className={`w-5 h-5 rounded-md flex items-center justify-center text-xs font-bold ${
-                          isChecked ? "bg-brand-600 text-white" : "border border-slate-300 dark:border-slate-600"
-                        }`}
-                      >
-                        {isChecked ? "✓" : ""}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div> */}
-
             {/* Active Selected Pincodes List */}
             {coverageZones.length > 0 && (
-              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2">
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2.5">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-extrabold text-slate-900 dark:text-white block">
-                    Selected Pincodes ({coverageZones.length}):
+                  <span className="text-xs font-semibold text-slate-900 dark:text-white block">
+                    Selected Service Locations ({coverageZones.length}):
                   </span>
                   <button
                     type="button"
                     onClick={() => setIsPincodeModalOpen(true)}
-                    className="text-[11px] font-extrabold text-brand-600 dark:text-brand-400 hover:underline flex items-center gap-1 cursor-pointer"
+                    className="text-[11px] font-semibold text-brand-600 dark:text-brand-400 hover:underline flex items-center gap-1 cursor-pointer"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    <span>Add Pincode & Location</span>
+                    <span>Add Custom Location</span>
                   </button>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {coverageZones.map((z, idx) => (
                     <span
                       key={idx}
-                      className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white text-xs font-bold flex items-center gap-2 shadow-2xs"
+                      className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white text-xs font-medium flex items-center gap-2 shadow-2xs"
                     >
                       <MapPin className="w-3.5 h-3.5 text-brand-600" />
                       <span>{z}</span>
                       <button
                         type="button"
-                        onClick={() => setCoverageZones(coverageZones.filter((item) => item !== z))}
-                        className="text-slate-400 hover:text-slate-600 cursor-pointer ml-1"
+                        onClick={() => {
+                          setCoverageZones((prev) => prev.filter((item) => item !== z));
+                          const foundLoc = apiLocalities.find(
+                            (loc) => z.includes(loc.pincode) || (loc.localityName && z.includes(loc.localityName))
+                          );
+                          if (foundLoc) {
+                            setSelectedServicePincodeIds((prev) => prev.filter((id) => id !== foundLoc._id));
+                          }
+                        }}
+                        className="text-slate-400 hover:text-rose-500 cursor-pointer p-0.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                        title="Remove location"
                       >
                         <X className="w-3.5 h-3.5" />
                       </button>

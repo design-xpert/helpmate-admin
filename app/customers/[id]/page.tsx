@@ -496,15 +496,15 @@ export default function CustomerDetailPage() {
       accessor: (row) => {
         const bDate = row.schedule?.bookingDate
           ? new Date(row.schedule.bookingDate).toLocaleDateString("en-IN", {
-              day: "numeric",
-              month: "short",
-              year: "numeric",
-            })
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+          })
           : new Date(row.createdAt || Date.now()).toLocaleDateString("en-IN", {
-              day: "numeric",
-              month: "short",
-              year: "numeric",
-            });
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+          });
         return (
           <div className="text-xs">
             <span className="font-bold text-slate-800 dark:text-slate-200 block">{bDate}</span>
@@ -629,10 +629,10 @@ export default function CustomerDetailPage() {
           <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
             {invDate
               ? new Date(invDate).toLocaleDateString("en-IN", {
-                  day: "numeric",
-                  month: "short",
-                  year: "numeric",
-                })
+                day: "numeric",
+                month: "short",
+                year: "numeric",
+              })
               : "—"}
           </span>
         );
@@ -670,11 +670,10 @@ export default function CustomerDetailPage() {
           row.invoiceStatus === "paid";
         return (
           <span
-            className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border ${
-              isPaid
+            className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border ${isPaid
                 ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 border-emerald-200"
                 : "bg-amber-50 text-amber-700 dark:bg-amber-950 border-amber-200"
-            }`}
+              }`}
           >
             {isPaid ? "Paid" : "Pending"}
           </span>
@@ -818,11 +817,10 @@ export default function CustomerDetailPage() {
                 </span>
 
                 <span
-                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${
-                    customer.status !== false
+                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${customer.status !== false
                       ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 border-emerald-200"
                       : "bg-slate-100 text-slate-500 border-slate-300"
-                  }`}
+                    }`}
                 >
                   {customer.status !== false ? "Active Account" : "Inactive"}
                 </span>
@@ -990,11 +988,10 @@ export default function CustomerDetailPage() {
         <button
           type="button"
           onClick={() => setActiveTab("profile")}
-          className={`px-5 py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 ${
-            activeTab === "profile"
+          className={`px-5 py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 ${activeTab === "profile"
               ? "bg-[#7B1FA2] text-white shadow-sm scale-[1.01]"
               : "text-slate-700 dark:text-slate-300 hover:text-[#7B1FA2] hover:bg-white/60 dark:hover:bg-slate-700/60"
-          }`}
+            }`}
         >
           <UserCheck className="w-4 h-4" />
           <span>Profile</span>
@@ -1003,20 +1000,18 @@ export default function CustomerDetailPage() {
         <button
           type="button"
           onClick={() => setActiveTab("bookings")}
-          className={`px-5 py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 ${
-            activeTab === "bookings"
+          className={`px-5 py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 ${activeTab === "bookings"
               ? "bg-[#7B1FA2] text-white shadow-sm scale-[1.01]"
               : "text-slate-700 dark:text-slate-300 hover:text-[#7B1FA2] hover:bg-white/60 dark:hover:bg-slate-700/60"
-          }`}
+            }`}
         >
           <Briefcase className="w-4 h-4" />
           <span>Bookings</span>
           <span
-            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-              activeTab === "bookings"
+            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${activeTab === "bookings"
                 ? "bg-white/20 text-white"
                 : "bg-pink-100 text-pink-700 dark:bg-pink-950 dark:text-pink-300"
-            }`}
+              }`}
           >
             {summary.totalBookings}
           </span>
@@ -1025,20 +1020,18 @@ export default function CustomerDetailPage() {
         <button
           type="button"
           onClick={() => setActiveTab("invoices")}
-          className={`px-5 py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 ${
-            activeTab === "invoices"
+          className={`px-5 py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 ${activeTab === "invoices"
               ? "bg-[#7B1FA2] text-white shadow-sm scale-[1.01]"
               : "text-slate-700 dark:text-slate-300 hover:text-[#7B1FA2] hover:bg-white/60 dark:hover:bg-slate-700/60"
-          }`}
+            }`}
         >
           <Receipt className="w-4 h-4" />
           <span>Invoices</span>
           <span
-            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-              activeTab === "invoices"
+            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${activeTab === "invoices"
                 ? "bg-white/20 text-white"
                 : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
-            }`}
+              }`}
           >
             {summary.totalInvoices}
           </span>
@@ -1047,20 +1040,18 @@ export default function CustomerDetailPage() {
         <button
           type="button"
           onClick={() => setActiveTab("addresses")}
-          className={`px-5 py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 ${
-            activeTab === "addresses"
+          className={`px-5 py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 ${activeTab === "addresses"
               ? "bg-[#7B1FA2] text-white shadow-sm scale-[1.01]"
               : "text-slate-700 dark:text-slate-300 hover:text-[#7B1FA2] hover:bg-white/60 dark:hover:bg-slate-700/60"
-          }`}
+            }`}
         >
           <MapPin className="w-4 h-4" />
           <span>Manage Address</span>
           <span
-            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-              activeTab === "addresses"
+            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${activeTab === "addresses"
                 ? "bg-white/20 text-white"
                 : "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
-            }`}
+              }`}
           >
             {summary.totalAddresses}
           </span>
@@ -1069,20 +1060,18 @@ export default function CustomerDetailPage() {
         <button
           type="button"
           onClick={() => setActiveTab("reviews")}
-          className={`px-5 py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 ${
-            activeTab === "reviews"
+          className={`px-5 py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 ${activeTab === "reviews"
               ? "bg-[#7B1FA2] text-white shadow-sm scale-[1.01]"
               : "text-slate-700 dark:text-slate-300 hover:text-[#7B1FA2] hover:bg-white/60 dark:hover:bg-slate-700/60"
-          }`}
+            }`}
         >
           <Star className="w-4 h-4" />
           <span>Reviews</span>
           <span
-            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-              activeTab === "reviews"
+            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${activeTab === "reviews"
                 ? "bg-white/20 text-white"
                 : "bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300"
-            }`}
+              }`}
           >
             {summary.totalReviews}
           </span>
@@ -1169,12 +1158,12 @@ export default function CustomerDetailPage() {
                   <p className="font-semibold text-slate-700 dark:text-slate-300 text-xs mt-1">
                     {customer.createdAt
                       ? new Date(customer.createdAt).toLocaleDateString("en-IN", {
-                          day: "numeric",
-                          month: "long",
-                          year: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })
+                        day: "numeric",
+                        month: "long",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })
                       : "—"}
                   </p>
                 </div>
@@ -1261,11 +1250,10 @@ export default function CustomerDetailPage() {
                       Password / App Access
                     </span>
                     <span
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                        customer.isPasswordSet
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-black ${customer.isPasswordSet
                           ? "bg-emerald-100 text-emerald-800"
                           : "bg-amber-100 text-amber-800"
-                      }`}
+                        }`}
                     >
                       {customer.isPasswordSet ? "Active & Verified" : "Pending First Login"}
                     </span>
@@ -1291,11 +1279,10 @@ export default function CustomerDetailPage() {
                       Platform Standing
                     </span>
                     <span
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                        customer.status !== false
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-black ${customer.status !== false
                           ? "bg-emerald-100 text-emerald-800"
                           : "bg-rose-100 text-rose-800"
-                      }`}
+                        }`}
                     >
                       {customer.status !== false ? "Good Standing" : "Suspended"}
                     </span>
@@ -1565,11 +1552,10 @@ export default function CustomerDetailPage() {
                       {[1, 2, 3, 4, 5].map((s) => (
                         <Star
                           key={s}
-                          className={`w-4 h-4 ${
-                            s <= rev.rating
+                          className={`w-4 h-4 ${s <= rev.rating
                               ? "fill-amber-400 text-amber-400"
                               : "text-slate-300 dark:text-slate-700"
-                          }`}
+                            }`}
                         />
                       ))}
                       <span className="font-bold text-xs text-slate-700 dark:text-slate-300 ml-1.5">
@@ -1578,11 +1564,10 @@ export default function CustomerDetailPage() {
                     </div>
 
                     <span
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                        rev.isPublished
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${rev.isPublished
                           ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
                           : "bg-slate-100 text-slate-600"
-                      }`}
+                        }`}
                     >
                       {rev.isPublished ? "Published" : rev.status || "Pending"}
                     </span>
@@ -1601,10 +1586,10 @@ export default function CustomerDetailPage() {
                     <span>
                       {rev.createdAt
                         ? new Date(rev.createdAt).toLocaleDateString("en-IN", {
-                            day: "numeric",
-                            month: "short",
-                            year: "numeric",
-                          })
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                        })
                         : "—"}
                     </span>
                     {rev.bookingId && (

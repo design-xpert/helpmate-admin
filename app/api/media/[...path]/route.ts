@@ -17,7 +17,7 @@ export async function GET(
       headers: {
         accept: req.headers.get("accept") || "*/*",
       },
-      cache: "no-store",
+      next: { revalidate: 86400 },
     });
 
     if (!backendRes.ok) {

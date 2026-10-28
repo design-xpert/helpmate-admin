@@ -6,43 +6,43 @@ export interface ComingSoonModuleConfig {
 export const COMING_SOON_CONFIGS: Record<string, ComingSoonModuleConfig> = {
   "/": {
     path: "/",
-    title: "Executive Dashboard",
+    title: "Dashboard",
   },
   "/partner": {
     path: "/partner",
-    title: "Partner Dashboard",
+    title: "My Dashboard",
   },
   "/inspections": {
     path: "/inspections",
-    title: "Inspections Directory",
+    title: "Inspections",
   },
   "/leads": {
     path: "/leads",
-    title: "Lead CRM Operations",
+    title: "Lead CRM",
   },
   "/support": {
     path: "/support",
-    title: "Customer Support Desk",
+    title: "Customer Support",
   },
   "/pricing": {
     path: "/pricing",
-    title: "Pricing Engine & Surge Logic",
+    title: "Pricing Engine",
   },
   "/membership": {
     path: "/membership",
-    title: "VIP Membership Portal",
+    title: "Membership",
   },
   "/faq": {
     path: "/faq",
-    title: "FAQ & Help Center Manager",
+    title: "FAQ Manager",
   },
   "/payments": {
     path: "/payments",
-    title: "Payments & Online Gateway",
+    title: "Payments",
   },
   "/billing": {
     path: "/billing",
-    title: "Billing & GST Invoices",
+    title: "Billing & GST",
   },
   "/settlements": {
     path: "/settlements",
@@ -50,31 +50,31 @@ export const COMING_SOON_CONFIGS: Record<string, ComingSoonModuleConfig> = {
   },
   "/partner/payouts": {
     path: "/partner/payouts",
-    title: "Partner Payouts & Commission",
+    title: "Payouts & Commission",
   },
   "/wallets": {
     path: "/wallets",
-    title: "Helpmate Wallets Hub",
+    title: "Wallets",
   },
   "/partner/wallet": {
     path: "/partner/wallet",
-    title: "Partner Earnings Wallet",
+    title: "Wallet",
   },
   "/coupons": {
     path: "/coupons",
-    title: "Promotional Coupons & Discounts",
+    title: "Coupons",
   },
   "/notifications": {
     path: "/notifications",
-    title: "Notifications Hub & Alerts",
+    title: "Notifications Hub",
   },
   "/reports": {
     path: "/reports",
-    title: "Reports & Data Exports",
+    title: "Reports & Exports",
   },
   "/analytics": {
     path: "/analytics",
-    title: "Executive Analytics Dashboard",
+    title: "Executive Analytics",
   },
 };
 

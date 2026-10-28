@@ -170,7 +170,7 @@ export default function TechniciansPage() {
   const initialCached = getStoredModuleData<Technician[]>("technicians");
   const [techs, setTechs] = useState<Technician[]>(() => initialCached || []);
   const [isLoadingApi, setIsLoadingApi] = useState<boolean>(
-    () => !(isModuleCacheFresh("technicians", 30000) && initialCached && initialCached.length > 0)
+    () => !(isModuleCacheFresh("technicians") && initialCached && initialCached.length > 0)
   );
   const [activeTab, setActiveTab] = useState<"partner" | "map" | "settlement">("partner");
   const [settlementStartDate, setSettlementStartDate] = useState<string>("");
@@ -182,7 +182,7 @@ export default function TechniciansPage() {
   const [isAddPartnerOpen, setIsAddPartnerOpen] = useState(false);
 
   const fetchPartners = useCallback(async (force: boolean = false) => {
-    if (!force && isModuleCacheFresh("technicians", 30000)) {
+    if (!force && isModuleCacheFresh("technicians")) {
       const cached = getStoredModuleData<Technician[]>("technicians");
       if (cached && cached.length > 0) {
         setTechs(cached);
@@ -205,15 +205,15 @@ export default function TechniciansPage() {
     } finally {
       setIsLoadingApi(false);
     }
-  }, [techs.length]);
+  }, [techs.length, initialCached]);
 
   useEffect(() => {
-    if (isModuleCacheFresh("technicians", 30000) && initialCached && initialCached.length > 0) {
+    if (isModuleCacheFresh("technicians") && initialCached && initialCached.length > 0) {
       setIsLoadingApi(false);
       return;
     }
     fetchPartners();
-  }, [fetchPartners]);
+  }, [fetchPartners, initialCached]);
 
   // Full Partner Onboarding Form States (Aadhaar, Guarantor, Police Thana)
   const [partnerName, setPartnerName] = useState("");
@@ -314,8 +314,8 @@ export default function TechniciansPage() {
             ) : null}
           </div>
           <Link href={`/technicians/${row.id}`} className="flex flex-col hover:underline">
-            <span className="font-extrabold text-slate-900 dark:text-white text-xs">{row.name}</span>
-            <span className="text-[10px] text-slate-400">{row.role}</span>
+            <span className="font-semibold text-slate-900 dark:text-white text-xs">{row.name}</span>
+            <span className="text-[10px] text-slate-400 font-medium">{row.role}</span>
           </Link>
         </div>
       ),
@@ -325,14 +325,14 @@ export default function TechniciansPage() {
       header: "Category & Zone",
       accessor: (row) => (
         <div className="flex flex-col">
-          <span className="font-bold text-brand-600 text-xs">
+          <span className="font-medium text-brand-600 text-xs">
             {row.category}
           </span>
           <a
             href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(row.locality + ", " + row.pincode + ", Varanasi")}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-[10px] text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 font-semibold flex items-center gap-1 group/map"
+            className="text-[10px] text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 font-medium flex items-center gap-1 group/map"
             title="Open Zone in Google Maps"
           >
             <MapPin className="w-3 h-3 text-slate-400 group-hover/map:text-blue-500" />
@@ -347,14 +347,14 @@ export default function TechniciansPage() {
       accessor: (row) => (
         <div className="flex items-center gap-1.5">
           <span
-            className={`px-2 py-0.5 rounded text-[9px] font-bold ${
+            className={`px-2 py-0.5 rounded text-[9px] font-medium ${
               row.aadhaarVerified ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"
             }`}
           >
             Aadhaar: {row.aadhaarVerified ? "Pass" : "Fail"}
           </span>
           <span
-            className={`px-2 py-0.5 rounded text-[9px] font-bold ${
+            className={`px-2 py-0.5 rounded text-[9px] font-medium ${
               row.policeVerified ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
             }`}
           >
@@ -367,7 +367,7 @@ export default function TechniciansPage() {
       key: "rating",
       header: "Rating",
       accessor: (row) => (
-        <span className="font-extrabold text-amber-600 dark:text-amber-400 flex items-center gap-1 text-xs">
+        <span className="font-semibold text-amber-600 dark:text-amber-400 flex items-center gap-1 text-xs">
           <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" /> {row.rating}
         </span>
       ),
@@ -376,7 +376,7 @@ export default function TechniciansPage() {
       key: "totalJobs",
       header: "Jobs",
       accessor: (row) => (
-        <span className="font-black text-slate-900 dark:text-white text-xs font-mono">
+        <span className="font-semibold text-slate-900 dark:text-white text-xs font-mono">
           {row.totalJobs || 0} Jobs
         </span>
       ),
@@ -403,7 +403,7 @@ export default function TechniciansPage() {
         }
 
         return (
-          <span className={`px-2.5 py-1 rounded-full text-[10px] font-black border flex items-center gap-1 w-fit ${badgeClass}`}>
+          <span className={`px-2.5 py-1 rounded-full text-[10px] font-medium border flex items-center gap-1 w-fit ${badgeClass}`}>
             <IconComp className="w-3 h-3" /> {row.status}
           </span>
         );
@@ -464,8 +464,8 @@ export default function TechniciansPage() {
             ) : null}
           </div>
           <div className="flex flex-col">
-            <span className="font-extrabold text-slate-900 dark:text-white group-hover:text-brand-600 transition-colors">{row.name}</span>
-            <span className="text-[10px] text-slate-400 font-bold">{row.category} ({row.locality})</span>
+            <span className="font-semibold text-slate-900 dark:text-white group-hover:text-brand-600 transition-colors">{row.name}</span>
+            <span className="text-[10px] text-slate-400 font-medium">{row.category} ({row.locality})</span>
           </div>
         </Link>
       ),
@@ -476,10 +476,10 @@ export default function TechniciansPage() {
       header: "Settlement Cycle Date",
       accessor: (row) => (
         <div className="flex flex-col">
-          <span className="font-mono font-extrabold text-slate-900 dark:text-white text-xs">
+          <span className="font-mono font-medium text-slate-900 dark:text-white text-xs">
             {row.lastPayoutDate || "14 Aug 2026"}
           </span>
-          <span className="text-[10px] text-amber-600 font-bold">Weekly Cycle Payout</span>
+          <span className="text-[10px] text-amber-600 font-medium">Weekly Cycle Payout</span>
         </div>
       ),
       sortable: true,
@@ -488,7 +488,7 @@ export default function TechniciansPage() {
       key: "totalEarnings",
       header: "Gross Revenue (100%)",
       accessor: (row) => (
-        <span className="font-extrabold text-slate-900 dark:text-white">
+        <span className="font-semibold text-slate-900 dark:text-white">
           ₹{row.totalEarnings.toLocaleString()}
         </span>
       ),
@@ -963,12 +963,9 @@ export default function TechniciansPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-            <Users className="w-6 h-6 text-brand-600" />
-            <span>Partner & Payouts</span>
+            <UserCheck className="w-6 h-6 text-brand-600" />
+            <span>Partners</span>
           </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
-            Manage onboarded technicians, biometric KYC verification, and weekly commission settlements.
-          </p>
         </div>
 
         <Link
@@ -1032,16 +1029,15 @@ export default function TechniciansPage() {
         )}
       </div>
 
-      {isLoadingApi ? (
-        <TableShimmerRows />
+      {activeTab === "map" ? (
+        <PartnerMapView technicians={techs} />
       ) : activeTab === "partner" ? (
         <DataTable
           columns={partnerColumns}
           data={techs}
           searchPlaceholder="Search partner name, locality, or phone..."
+          isLoading={isLoadingApi}
         />
-      ) : activeTab === "map" ? (
-        <PartnerMapView technicians={techs} />
       ) : (
         <DataTable
           columns={commissionColumns}
@@ -1049,6 +1045,7 @@ export default function TechniciansPage() {
             checkDateInRange(t.lastPayoutDate || "14 Aug 2026", settlementStartDate, settlementEndDate)
           )}
           searchPlaceholder="Search partner name or category..."
+          isLoading={isLoadingApi}
         />
       )}
 

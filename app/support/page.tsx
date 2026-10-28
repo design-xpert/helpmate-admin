@@ -351,15 +351,12 @@ export default function SupportPage() {
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
               <Headphones className="w-6 h-6 text-brand-600" />
-              <span>Customer Support & Complaint Desk</span>
+              <span>Customer Support</span>
             </h1>
             <span className="px-2.5 py-0.5 rounded-full bg-purple-50 text-purple-700 dark:bg-purple-950 dark:text-purple-300 border border-purple-200 dark:border-purple-800 text-[10px] font-black uppercase">
               Office Admin Console
             </span>
           </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
-            Manage customer queries, complaints, and service issues with dual resolution channels (Message & Call).
-          </p>
         </div>
 
         {/* Office Admin Shift Badge & Quick Ticket Creation Button */}

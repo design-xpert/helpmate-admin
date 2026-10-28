@@ -75,10 +75,10 @@ export default function ImageSectionsPage() {
   const [categorySections, setCategorySections] = useState<CategorySectionData[]>(() => initialCachedCategorySections);
 
   // Loading states
-  const [isZonesLoading, setIsZonesLoading] = useState(() => !(isModuleCacheFresh("website_zones", 30000) && initialCachedZones.length > 0));
-  const [isTrendingLoading, setIsTrendingLoading] = useState(() => !(isModuleCacheFresh("website_trending", 30000) && initialCachedTrending.length > 0));
-  const [isQuickLoading, setIsQuickLoading] = useState(() => !(isModuleCacheFresh("website_quick", 30000) && initialCachedQuick.length > 0));
-  const [isCategorySectionsLoading, setIsCategorySectionsLoading] = useState(() => !(isModuleCacheFresh("website_category_sections", 30000) && initialCachedCategorySections.length > 0));
+  const [isZonesLoading, setIsZonesLoading] = useState(() => !(isModuleCacheFresh("website_zones") && initialCachedZones.length > 0));
+  const [isTrendingLoading, setIsTrendingLoading] = useState(() => !(isModuleCacheFresh("website_trending") && initialCachedTrending.length > 0));
+  const [isQuickLoading, setIsQuickLoading] = useState(() => !(isModuleCacheFresh("website_quick") && initialCachedQuick.length > 0));
+  const [isCategorySectionsLoading, setIsCategorySectionsLoading] = useState(() => !(isModuleCacheFresh("website_category_sections") && initialCachedCategorySections.length > 0));
   const [isCategoriesLoading, setIsCategoriesLoading] = useState(false);
   const [isCatalogLoading, setIsCatalogLoading] = useState(false);
 
@@ -126,12 +126,12 @@ export default function ImageSectionsPage() {
     } catch (e) {}
 
     // Initial API fetches — only call if not fresh in cache!
-    if (!isModuleCacheFresh("website_zones", 30000) || initialCachedZones.length === 0) fetchZones();
-    if (!isModuleCacheFresh("website_trending", 30000) || initialCachedTrending.length === 0) fetchTrendingPackages();
-    if (!isModuleCacheFresh("website_quick", 30000) || initialCachedQuick.length === 0) fetchQuickServices();
-    if (!isModuleCacheFresh("website_categories", 30000) || initialCachedCategories.length === 0) fetchCategories();
-    if (!isModuleCacheFresh("website_spotlight", 30000)) fetchSpotlightItems();
-    if (!isModuleCacheFresh("website_category_sections", 30000)) fetchCategorySections();
+    if (!isModuleCacheFresh("website_zones") || initialCachedZones.length === 0) fetchZones();
+    if (!isModuleCacheFresh("website_trending") || initialCachedTrending.length === 0) fetchTrendingPackages();
+    if (!isModuleCacheFresh("website_quick") || initialCachedQuick.length === 0) fetchQuickServices();
+    if (!isModuleCacheFresh("website_categories") || initialCachedCategories.length === 0) fetchCategories();
+    if (!isModuleCacheFresh("website_spotlight")) fetchSpotlightItems();
+    if (!isModuleCacheFresh("website_category_sections")) fetchCategorySections();
   }, []);
 
   // Fetch data on active tab switch
@@ -142,15 +142,15 @@ export default function ImageSectionsPage() {
       return;
     }
     if (activeTab === "zones") {
-      if (!isModuleCacheFresh("website_zones", 30000)) fetchZones();
+      if (!isModuleCacheFresh("website_zones")) fetchZones();
     } else if (activeTab === "trending") {
-      if (!isModuleCacheFresh("website_trending", 30000)) fetchTrendingPackages();
+      if (!isModuleCacheFresh("website_trending")) fetchTrendingPackages();
     } else if (activeTab === "quick") {
-      if (!isModuleCacheFresh("website_quick", 30000)) fetchQuickServices();
+      if (!isModuleCacheFresh("website_quick")) fetchQuickServices();
     } else if (activeTab === "spotlight") {
-      if (!isModuleCacheFresh("website_spotlight", 30000)) fetchSpotlightItems();
+      if (!isModuleCacheFresh("website_spotlight")) fetchSpotlightItems();
     } else if (activeTab === "categorySections") {
-      if (!isModuleCacheFresh("website_category_sections", 30000)) fetchCategorySections();
+      if (!isModuleCacheFresh("website_category_sections")) fetchCategorySections();
     }
   }, [activeTab]);
 
@@ -165,7 +165,7 @@ export default function ImageSectionsPage() {
   }, [isCatalogPickerOpen, catalogSearch]);
 
   const fetchSpotlightItems = async (force: boolean = false) => {
-    if (!force && isModuleCacheFresh("website_spotlight", 30000)) {
+    if (!force && isModuleCacheFresh("website_spotlight")) {
       const cached = getStoredModuleData<SpotlightBanner[]>("website_spotlight");
       if (cached && cached.length > 0) {
         setSpotlightBanners(cached);
@@ -229,7 +229,7 @@ export default function ImageSectionsPage() {
   };
 
   const fetchCategories = async (force: boolean = false) => {
-    if (!force && isModuleCacheFresh("website_categories", 30000)) {
+    if (!force && isModuleCacheFresh("website_categories")) {
       const cached = getStoredModuleData<ApiCategory[]>("website_categories");
       if (cached && cached.length > 0) {
         setApiCategories(cached);
@@ -251,7 +251,7 @@ export default function ImageSectionsPage() {
   };
 
   const fetchZones = async (force: boolean = false) => {
-    if (!force && isModuleCacheFresh("website_zones", 30000)) {
+    if (!force && isModuleCacheFresh("website_zones")) {
       const cached = getStoredModuleData<ZoneCard[]>("website_zones");
       if (cached && cached.length > 0) {
         setZones(cached);
@@ -286,7 +286,7 @@ export default function ImageSectionsPage() {
   };
 
   const fetchTrendingPackages = async (force: boolean = false) => {
-    if (!force && isModuleCacheFresh("website_trending", 30000)) {
+    if (!force && isModuleCacheFresh("website_trending")) {
       const cached = getStoredModuleData<TrendingServiceCard[]>("website_trending");
       if (cached && cached.length > 0) {
         setTrendingServices(cached);
@@ -359,7 +359,7 @@ export default function ImageSectionsPage() {
   };
 
   const fetchQuickServices = async (force: boolean = false) => {
-    if (!force && isModuleCacheFresh("website_quick", 30000)) {
+    if (!force && isModuleCacheFresh("website_quick")) {
       const cached = getStoredModuleData<TrendingServiceCard[]>("website_quick");
       if (cached && cached.length > 0) {
         setQuickServices(cached);
@@ -524,7 +524,7 @@ export default function ImageSectionsPage() {
   };
 
   const fetchCategorySections = async (force: boolean = false) => {
-    if (!force && isModuleCacheFresh("website_category_sections", 30000)) {
+    if (!force && isModuleCacheFresh("website_category_sections")) {
       const cached = getStoredModuleData<CategorySectionData[]>("website_category_sections");
       if (cached) {
         const cleanCached = cached.filter(
@@ -740,9 +740,6 @@ export default function ImageSectionsPage() {
             <Camera className="w-6 h-6 text-brand-600" />
             <span>Website Sections CMS</span>
           </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
-            Manage neighborhood zones, trending best-sellers, quick services, spotlight banners, and category sliders.
-          </p>
         </div>
       </div>
 

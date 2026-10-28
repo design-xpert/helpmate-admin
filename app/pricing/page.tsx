@@ -413,7 +413,7 @@ export default function PricingPage() {
       header: "Service Package",
       accessor: (row) => (
         <div className="flex flex-col">
-          <span className="font-extrabold text-slate-900 dark:text-white text-xs">{row.serviceTitle}</span>
+          <span className="font-semibold text-slate-900 dark:text-white text-xs">{row.serviceTitle}</span>
           <span className="text-[10px] text-slate-400 font-mono">{row.category}</span>
         </div>
       ),
@@ -422,35 +422,35 @@ export default function PricingPage() {
     {
       key: "basePrice",
       header: "Base Price",
-      accessor: (row) => <span className="font-extrabold text-slate-900 dark:text-white">₹{row.basePrice}</span>,
+      accessor: (row) => <span className="font-semibold text-slate-900 dark:text-white">₹{row.basePrice}</span>,
       sortable: true,
     },
     {
       key: "memberPrice",
       header: "Member Price",
-      accessor: (row) => <span className="font-bold text-brand-600 dark:text-brand-400">₹{row.memberPrice}</span>,
+      accessor: (row) => <span className="font-semibold text-brand-600 dark:text-brand-400">₹{row.memberPrice}</span>,
       sortable: true,
     },
     {
       key: "convenienceFee",
       header: "Tech Fee",
-      accessor: (row) => <span className="font-semibold text-slate-600 dark:text-slate-400">₹{row.convenienceFee}</span>,
+      accessor: (row) => <span className="font-medium text-slate-600 dark:text-slate-400">₹{row.convenienceFee}</span>,
     },
     {
       key: "gstPercentage",
       header: "GST Tax",
-      accessor: (row) => <span className="font-semibold text-slate-600 dark:text-slate-400">{row.gstPercentage}%</span>,
+      accessor: (row) => <span className="font-medium text-slate-600 dark:text-slate-400">{row.gstPercentage}%</span>,
     },
     {
       key: "commissionPercentage",
       header: "Commission",
-      accessor: (row) => <span className="font-extrabold text-emerald-600 dark:text-emerald-400">{row.commissionPercentage}%</span>,
+      accessor: (row) => <span className="font-semibold text-emerald-600 dark:text-emerald-400">{row.commissionPercentage}%</span>,
     },
     {
       key: "surgeMultiplier",
       header: "Surge Multiplier",
       accessor: (row) => (
-        <span className={`font-bold px-2 py-0.5 rounded text-[10px] ${row.surgeMultiplier > 1 ? "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300" : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"}`}>
+        <span className={`font-medium px-2 py-0.5 rounded text-[10px] ${row.surgeMultiplier > 1 ? "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300" : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"}`}>
           {row.surgeMultiplier}x
         </span>
       ),
@@ -518,11 +518,8 @@ export default function PricingPage() {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
             <Tag className="w-6 h-6 text-brand-600" />
-            <span>Interactive Pricing Calculator Manager</span>
+            <span>Pricing Engine</span>
           </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
-            Manage all fields, layout size tiers, add-ons, summary badges & guarantees with real-time sticky live preview.
-          </p>
         </div>
 
         <button

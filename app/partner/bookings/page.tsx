@@ -182,9 +182,6 @@ export default function PartnerBookingsPage() {
             <CalendarCheck className="w-6 h-6 text-brand-600" />
             <span>New Assigned Jobs</span>
           </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
-            View your active assigned service orders, customer location details, and complete jobs with customer OTP verification.
-          </p>
         </div>
       </div>
 

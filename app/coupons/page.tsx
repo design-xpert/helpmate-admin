@@ -280,12 +280,9 @@ export default function CouponsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-            <Gift className="w-6 h-6 text-brand-600" />
-            <span>Discount & Bank Offers Engine</span>
+            <Tag className="w-6 h-6 text-brand-600" />
+            <span>Coupons</span>
           </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
-            Manage instant promotional codes, credit card bank offers, first booking vouchers, and min-order discount rules.
-          </p>
         </div>
 
         <button

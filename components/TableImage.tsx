@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { Wrench, Image as ImageIcon } from "lucide-react";
 import { formatImageUrl, getTitleInitials } from "@/lib/api";
+import { isImagePreloaded, markImageLoaded, preloadImage } from "@/lib/imageCache";
 
 interface TableImageProps {
   src?: string;
@@ -28,6 +29,9 @@ export function TableImage({
 
   useEffect(() => {
     setHasError(!formattedUrl);
+    if (formattedUrl) {
+      preloadImage(formattedUrl);
+    }
   }, [formattedUrl]);
 
   const IconComponent = fallbackIcon === "wrench" ? Wrench : ImageIcon;
@@ -50,13 +54,18 @@ export function TableImage({
     );
   }
 
-  // 2. Render image directly via native <img> to reliably support blob:, data:, /api/media/..., etc.
+  // 2. Render image directly via native <img> with eager loading & async decoding for instant rendering
   return (
     <div className={`relative ${containerClassName}`}>
       <img
         src={formattedUrl}
         alt={alt}
+        loading="eager"
+        decoding="async"
         className={className}
+        onLoad={() => {
+          markImageLoaded(formattedUrl);
+        }}
         onError={() => {
           setHasError(true);
         }}

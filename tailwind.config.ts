@@ -32,7 +32,7 @@ const config: Config = {
         },
       },
       fontFamily: {
-        sans: ["Inter", "Manrope", "sans-serif"],
+        sans: ["'Plus Jakarta Sans'", "system-ui", "-apple-system", "BlinkMacSystemFont", "sans-serif"],
       },
       boxShadow: {
         lux: "0 10px 30px -10px rgba(141, 57, 126, 0.25)",

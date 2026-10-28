@@ -10,11 +10,8 @@ export default function PartnerWalletPage() {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
             <Wallet className="w-6 h-6 text-brand-600" />
-            <span>Partner Earnings & Wallet</span>
+            <span>Wallet</span>
           </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
-            Track daily job payout receipts, commission deductions, and security deposit balance.
-          </p>
         </div>
       </div>
 

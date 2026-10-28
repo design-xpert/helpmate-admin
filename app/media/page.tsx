@@ -36,6 +36,8 @@ import {
   ApiMediaAsset,
   formatImageUrl,
 } from "@/lib/api";
+import { getStoredModuleData, setCachedModuleData, isModuleCacheFresh } from "@/lib/moduleCache";
+import { preloadImages } from "@/lib/imageCache";
 
 // Helper: Format raw MinIO folder paths to human-friendly display labels
 function formatFolderLabel(folder: string): string {
@@ -95,11 +97,19 @@ function getPageNumbers(current: number, total: number): (number | string)[] {
 }
 
 export default function MediaPage() {
+  const initialCachedMedia = getStoredModuleData<{ assets: ApiMediaAsset[]; pagination: any }>("media_library_default");
+  const initialCachedFolders = getStoredModuleData<string[]>("media_library_folders");
+
   // Folder & Asset Data
-  const [folders, setFolders] = useState<string[]>([]);
+  const [folders, setFolders] = useState<string[]>(() => initialCachedFolders || []);
   const [selectedFolder, setSelectedFolder] = useState<string>("all");
-  const [assets, setAssets] = useState<ApiMediaAsset[]>([]);
-  const [pagination, setPagination] = useState({
+  const [assets, setAssets] = useState<ApiMediaAsset[]>(() => initialCachedMedia?.assets || []);
+  const [pagination, setPagination] = useState<{
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  }>(() => initialCachedMedia?.pagination || {
     total: 0,
     page: 1,
     limit: 20,
@@ -114,7 +124,7 @@ export default function MediaPage() {
   const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
 
   // Loading & Async Flags
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(() => !(isModuleCacheFresh("media_library_default") && initialCachedMedia?.assets && initialCachedMedia.assets.length > 0));
   const [isSyncing, setIsSyncing] = useState(false);
   const [, startTransition] = useTransition();
 
@@ -140,11 +150,19 @@ export default function MediaPage() {
   }, [searchQuery]);
 
   // Fetch Folders from API
-  const fetchFolders = useCallback(async () => {
+  const fetchFolders = useCallback(async (force: boolean = false) => {
+    if (!force && isModuleCacheFresh("media_library_folders")) {
+      const cached = getStoredModuleData<string[]>("media_library_folders");
+      if (cached && cached.length > 0) {
+        setFolders(cached);
+        return;
+      }
+    }
     try {
       const res = await getMediaLibraryFoldersApi();
       if (res.success && Array.isArray(res.data)) {
         setFolders(res.data);
+        setCachedModuleData("media_library_folders", res.data);
       }
     } catch (error) {
       console.error("fetchFolders error:", error);
@@ -153,8 +171,22 @@ export default function MediaPage() {
 
   // Fetch Media Assets from API
   const fetchAssets = useCallback(
-    async (pageToFetch: number = 1, limitToFetch?: number) => {
-      setIsLoading(true);
+    async (pageToFetch: number = 1, limitToFetch?: number, force: boolean = false) => {
+      const isDefaultView = selectedFolder === "all" && !debouncedSearch.trim() && pageToFetch === 1;
+      if (!force && isDefaultView && isModuleCacheFresh("media_library_default")) {
+        const cached = getStoredModuleData<{ assets: ApiMediaAsset[]; pagination: any }>("media_library_default");
+        if (cached && Array.isArray(cached.assets) && cached.assets.length > 0) {
+          setAssets(cached.assets);
+          if (cached.pagination) setPagination(cached.pagination);
+          setIsLoading(false);
+          preloadImages(cached.assets.map((a) => a.url));
+          return;
+        }
+      }
+
+      if (assets.length === 0 && (!initialCachedMedia || !initialCachedMedia.assets || initialCachedMedia.assets.length === 0)) {
+        setIsLoading(true);
+      }
       const effectiveLimit = limitToFetch !== undefined ? limitToFetch : pagination.limit;
       try {
         const res = await getMediaLibraryApi({
@@ -168,6 +200,10 @@ export default function MediaPage() {
 
         if (res.success && res.data) {
           setAssets(res.data.assets || []);
+          preloadImages((res.data.assets || []).map((a) => a.url));
+          if (isDefaultView && res.data.assets) {
+            setCachedModuleData("media_library_default", res.data);
+          }
           if (res.data.pagination) {
             setPagination({
               total: res.data.pagination.total,
@@ -187,7 +223,7 @@ export default function MediaPage() {
         setIsLoading(false);
       }
     },
-    [selectedFolder, debouncedSearch, pagination.limit, sortBy, sortOrder]
+    [selectedFolder, debouncedSearch, pagination.limit, sortBy, sortOrder, initialCachedMedia, assets.length]
   );
 
   const handlePageChange = (newPage: number) => {
@@ -199,7 +235,13 @@ export default function MediaPage() {
     fetchAssets(1, newSize);
   };
 
-  // Initial load
+  // Initial load & preload cached images
+  useEffect(() => {
+    if (initialCachedMedia?.assets && initialCachedMedia.assets.length > 0) {
+      preloadImages(initialCachedMedia.assets.map((a) => a.url));
+    }
+  }, [initialCachedMedia]);
+
   useEffect(() => {
     fetchFolders();
   }, [fetchFolders]);
@@ -216,8 +258,8 @@ export default function MediaPage() {
       const res = await syncMediaLibraryApi();
       if (res.success) {
         toast.success(res.message || "Media library synchronized with MinIO!");
-        await fetchFolders();
-        await fetchAssets(pagination.page);
+        await fetchFolders(true);
+        await fetchAssets(pagination.page, undefined, true);
       } else {
         toast.error(res.message || "Sync failed.");
       }
@@ -243,7 +285,7 @@ export default function MediaPage() {
   // Submit Metadata Changes
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingAsset) return;
+    if (!editingAsset || isSavingEdit) return;
 
     setIsSavingEdit(true);
     try {
@@ -261,7 +303,16 @@ export default function MediaPage() {
         setAssets((prev) =>
           prev.map((a) => (a.id === updated.id ? { ...a, ...updated } : a))
         );
-        setEditingAsset(updated);
+        // Also update cached module data so revisit stays updated
+        const cached = getStoredModuleData<{ assets: ApiMediaAsset[]; pagination: any }>("media_library_default");
+        if (cached && Array.isArray(cached.assets)) {
+          setCachedModuleData("media_library_default", {
+            ...cached,
+            assets: cached.assets.map((a) => (a.id === updated.id ? { ...a, ...updated } : a)),
+          });
+        }
+        // Close sliding form on edit success
+        setEditingAsset(null);
       } else {
         toast.error(res.message || "Failed to update media asset details.");
       }
@@ -297,9 +348,6 @@ export default function MediaPage() {
             </div>
             <span>Media Library</span>
           </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
-            Explore MinIO image assets across all platform modules. Click any image to view details and edit SEO metadata.
-          </p>
         </div>
 
         {/* Primary Action Button */}
@@ -559,6 +607,7 @@ export default function MediaPage() {
                     alt={asset.altText || asset.title || asset.fileName}
                     fill
                     unoptimized
+                    loading="eager"
                     className="object-cover group-hover:scale-105 transition-transform duration-300"
                   />
 
@@ -633,6 +682,7 @@ export default function MediaPage() {
                             alt={asset.altText || asset.fileName}
                             fill
                             unoptimized
+                            loading="eager"
                             className="object-cover"
                           />
                         </div>
@@ -795,7 +845,9 @@ export default function MediaPage() {
             {/* Backdrop click to close */}
             <div
               className="absolute inset-0"
-              onClick={() => setEditingAsset(null)}
+              onClick={() => {
+                if (!isSavingEdit) setEditingAsset(null);
+              }}
             />
 
             {/* Slide-over Right Panel */}
@@ -816,8 +868,9 @@ export default function MediaPage() {
                 </div>
                 <button
                   type="button"
+                  disabled={isSavingEdit}
                   onClick={() => setEditingAsset(null)}
-                  className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 cursor-pointer transition-colors"
+                  className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -1009,8 +1062,9 @@ export default function MediaPage() {
                 {/* Secondary Button */}
                 <button
                   type="button"
+                  disabled={isSavingEdit}
                   onClick={() => setEditingAsset(null)}
-                  className="flex-1 py-2.5 px-4 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 font-bold text-xs transition-colors cursor-pointer"
+                  className="flex-1 py-2.5 px-4 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 font-bold text-xs transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Cancel
                 </button>
@@ -1019,7 +1073,7 @@ export default function MediaPage() {
                 <button
                   type="submit"
                   disabled={isSavingEdit}
-                  className="flex-1 py-2.5 px-4 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-black text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+                  className="flex-1 py-2.5 px-4 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-black text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed"
                 >
                   {isSavingEdit ? (
                     <>

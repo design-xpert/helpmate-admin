@@ -44,11 +44,8 @@ export default function ReportsPage() {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
             <BarChart3 className="w-6 h-6 text-brand-600" />
-            <span>Data Audit & System Reports Engine</span>
+            <span>Reports & Exports</span>
           </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
-            Generate and download official audit logs for Bookings, Gross Revenue, 18% GST filing, and Partner Payouts.
-          </p>
         </div>
 
         <div className="flex items-center gap-3 shrink-0">

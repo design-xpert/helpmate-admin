@@ -695,11 +695,9 @@ export default function MembershipManagementPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-5">
         <div>
           <h1 className="text-2xl font-black text-slate-900 dark:text-white mt-1 flex items-center gap-2">
-            HelpMate Membership & Free Services Manager
+            <Crown className="w-6 h-6 text-brand-600" />
+            <span>Membership</span>
           </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Configure VIP membership plans, free complimentary services, member discounts, and subscriber CRM.
-          </p>
         </div>
 
         <div className="flex items-center gap-2">

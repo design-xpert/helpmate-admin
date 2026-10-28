@@ -31,11 +31,8 @@ export default function AnalyticsPage() {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
             <TrendingUp className="w-6 h-6 text-brand-600" />
-            <span>Executive Analytics & Revenue Intelligence</span>
+            <span>Executive Analytics</span>
           </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
-            Real-time daily telemetry, booking velocity curves, partner assignment metrics, and service category demand heatmaps.
-          </p>
         </div>
 
         <div className="flex items-center gap-3 shrink-0">

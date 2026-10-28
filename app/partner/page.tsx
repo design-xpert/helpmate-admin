@@ -20,6 +20,7 @@ import {
   KeyRound,
   FileSpreadsheet,
   Eye,
+  LayoutDashboard,
 } from "lucide-react";
 import { initialBookings, Booking } from "@/lib/mockData";
 import { DataTable, Column } from "@/components/DataTable";
@@ -110,12 +111,9 @@ export default function PartnerDashboardPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
         <div>
           <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-            <UserCheck className="w-6 h-6 text-brand-600" />
-            <span>Welcome, Ramesh Yadav!</span>
+            <LayoutDashboard className="w-6 h-6 text-brand-600" />
+            <span>My Dashboard</span>
           </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
-            Master HVAC & AC Power Jet Specialist • Sigra & Varanasi South Zone
-          </p>
         </div>
       </div>
 

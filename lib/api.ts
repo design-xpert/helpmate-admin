@@ -2107,6 +2107,7 @@ export async function calculateBookingPriceApi(payload: ApiCalculatePricePayload
 export interface ApiBookingCategoryStat {
   _id: string;
   categoryName: string;
+  iconUrl?: string;
   isPinned?: boolean;
   totalBookings: number;
   openBookings: number;

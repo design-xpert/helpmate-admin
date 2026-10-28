@@ -19,7 +19,16 @@ let listeners: ToastListener[] = [];
 const activeTimeouts: Map<string, NodeJS.Timeout> = new Map();
 
 function notifyListeners() {
-  listeners.forEach((listener) => listener([...toastMessages]));
+  const snapshot = [...toastMessages];
+  if (typeof queueMicrotask === "function") {
+    queueMicrotask(() => {
+      listeners.forEach((listener) => listener(snapshot));
+    });
+  } else {
+    setTimeout(() => {
+      listeners.forEach((listener) => listener(snapshot));
+    }, 0);
+  }
 }
 
 function clearAllTimers() {

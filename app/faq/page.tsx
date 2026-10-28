@@ -145,9 +145,6 @@ export default function FaqPage() {
             <MessageCircleQuestion className="w-6 h-6 text-brand-600" />
             <span>FAQ Manager</span>
           </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
-            Manage all frequently asked questions shown on your website. Add, edit, reorder, and toggle visibility.
-          </p>
         </div>
       </div>
 

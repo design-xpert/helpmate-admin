@@ -283,11 +283,8 @@ export default function CommissionPage() {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
             <DollarSign className="w-6 h-6 text-brand-600" />
-            <span>Commission & Revenue Ledger</span>
+            <span>Commission & Settlements</span>
           </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
-            Real-time per-order commission breakdown, category-wise take-rate rules, and partner payout balance management.
-          </p>
         </div>
       </div>
 

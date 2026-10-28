@@ -41,6 +41,7 @@ import {
 } from "lucide-react";
 import { getWebsiteBannerApi, updateWebsiteBannerApi, formatImageUrl } from "@/lib/api";
 import { toast } from "@/components/Toast";
+import { getStoredModuleData, setCachedModuleData, isModuleCacheFresh } from "@/lib/moduleCache";
 
 interface PromoBannerItem {
   id: string;
@@ -68,10 +69,12 @@ export default function BannersPage() {
   // POPUP STYLE MODE: "rich_text_image" | "pure_image"
   const [popupStyle, setPopupStyle] = useState<"rich_text_image" | "pure_image">("pure_image");
 
+  const initialCachedBanner = getStoredModuleData<any>("website_banner_data");
+
   // WEBSITE VISITOR POPUP API & SYNC STATE
-  const [isLoadingBanner, setIsLoadingBanner] = useState(true);
+  const [isLoadingBanner, setIsLoadingBanner] = useState(() => !(isModuleCacheFresh("website_banner_data") && initialCachedBanner));
   const [isSavingBanner, setIsSavingBanner] = useState(false);
-  const [bannerId, setBannerId] = useState<string | null>(null);
+  const [bannerId, setBannerId] = useState<string | null>(() => initialCachedBanner?._id || null);
 
   // File uploads
   const [mainImageFile, setMainImageFile] = useState<File | null>(null);
@@ -79,10 +82,10 @@ export default function BannersPage() {
   const [removeBadgeIcon, setRemoveBadgeIcon] = useState(false);
 
   // WEBSITE VISITOR POPUP COMMON STATE
-  const [isBannerEnabled, setIsBannerEnabled] = useState(true);
-  const [targetLinkUrl, setTargetLinkUrl] = useState("");
-  const [popupDelaySeconds, setPopupDelaySeconds] = useState(3);
-  const [popupFrequency, setPopupFrequency] = useState<"once-per-session" | "once-per-24-hours">("once-per-session");
+  const [isBannerEnabled, setIsBannerEnabled] = useState(() => initialCachedBanner?.isActive ?? true);
+  const [targetLinkUrl, setTargetLinkUrl] = useState(() => initialCachedBanner?.clickTargetUrl || "");
+  const [popupDelaySeconds, setPopupDelaySeconds] = useState(() => initialCachedBanner?.popupDelaySeconds ?? 3);
+  const [popupFrequency, setPopupFrequency] = useState<"once-per-session" | "once-per-24-hours">(() => initialCachedBanner?.displayFrequency || "once-per-session");
   const [isBannerPreviewOpen, setIsBannerPreviewOpen] = useState(false);
   const [previewDevice, setPreviewDevice] = useState<"desktop" | "mobile">("desktop");
   const [copiedLink, setCopiedLink] = useState(false);
@@ -103,18 +106,26 @@ export default function BannersPage() {
   );
 
   // STYLE 2: PURE IMAGE MODE STATE
-  const [pureBannerImageUrl, setPureBannerImageUrl] = useState("");
-  const [secondBannerIconUrl, setSecondBannerIconUrl] = useState("");
-  const [badgeText, setBadgeText] = useState("Verified Partner Special Offer");
-  const [badgePosition, setBadgePosition] = useState<"bottom-left" | "bottom-right" | "top-left" | "top-right">("bottom-left");
+  const [pureBannerImageUrl, setPureBannerImageUrl] = useState(() => initialCachedBanner?.mainImageUrl ? formatImageUrl(initialCachedBanner.mainImageUrl) : "");
+  const [secondBannerIconUrl, setSecondBannerIconUrl] = useState(() => initialCachedBanner?.badgeIconUrl ? formatImageUrl(initialCachedBanner.badgeIconUrl) : "");
+  const [badgeText, setBadgeText] = useState(() => initialCachedBanner?.badgeText ?? "Verified Partner Special Offer");
+  const [badgePosition, setBadgePosition] = useState<"bottom-left" | "bottom-right" | "top-left" | "top-right">(() => initialCachedBanner?.badgePosition || "bottom-left");
 
   // Fetch website banner configuration from API
-  const fetchWebsiteBanner = useCallback(async () => {
+  const fetchWebsiteBanner = useCallback(async (force: boolean = false) => {
+    if (!force && isModuleCacheFresh("website_banner_data")) {
+      const cached = getStoredModuleData<any>("website_banner_data");
+      if (cached) {
+        setIsLoadingBanner(false);
+        return;
+      }
+    }
     try {
-      setIsLoadingBanner(true);
+      if (!initialCachedBanner) setIsLoadingBanner(true);
       const res = await getWebsiteBannerApi();
       if (res && res.success && res.data) {
         const d = res.data;
+        setCachedModuleData("website_banner_data", d);
         if (d._id) setBannerId(d._id);
         setIsBannerEnabled(d.isActive ?? true);
         setBadgeText(d.badgeText ?? "");
@@ -136,11 +147,15 @@ export default function BannersPage() {
     } finally {
       setIsLoadingBanner(false);
     }
-  }, []);
+  }, [initialCachedBanner]);
 
   useEffect(() => {
+    if (isModuleCacheFresh("website_banner_data") && initialCachedBanner) {
+      setIsLoadingBanner(false);
+      return;
+    }
     fetchWebsiteBanner();
-  }, [fetchWebsiteBanner]);
+  }, [fetchWebsiteBanner, initialCachedBanner]);
 
   // Handle Save / Update Banner
   const handleSaveBanner = async () => {
@@ -188,6 +203,7 @@ export default function BannersPage() {
         toast.success(res.message || "Website banner saved successfully!");
         if (res.data) {
           const d = res.data;
+          setCachedModuleData("website_banner_data", d);
           if (d._id) setBannerId(d._id);
           setIsBannerEnabled(d.isActive ?? true);
           setBadgeText(d.badgeText ?? "");
@@ -314,9 +330,6 @@ export default function BannersPage() {
             <Megaphone className="w-6 h-6 text-brand-600" />
             <span>Banners & Visitor Popups</span>
           </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
-            Manage website visitor popups (Pure Image & Badge), category 2nd image badges, and hero offer banners.
-          </p>
         </div>
 
         <div className="flex items-center gap-2.5 w-full sm:w-auto">

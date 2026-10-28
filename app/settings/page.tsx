@@ -43,7 +43,7 @@ export default function SettingsPage() {
   const [sampleAmount, setSampleAmount] = useState<number | string>(500);
 
   // API Status & Loading State
-  const [loading, setLoading] = useState(() => !(isModuleCacheFresh("platform_settings", 30000) && initialCachedSettings));
+  const [loading, setLoading] = useState(() => !(isModuleCacheFresh("platform_settings") && initialCachedSettings));
   const [saving, setSaving] = useState(false);
   const [updatedBy, setUpdatedBy] = useState<{ name?: string; email?: string } | null>(() => initialCachedSettings?.updatedBy || null);
   const [updatedAt, setUpdatedAt] = useState<string | null>(() => initialCachedSettings?.updatedAt || null);
@@ -65,7 +65,7 @@ export default function SettingsPage() {
 
   // Fetch initial platform fee and GST from backend API
   const fetchSettings = async (force: boolean = false) => {
-    if (!force && isModuleCacheFresh("platform_settings", 30000)) {
+    if (!force && isModuleCacheFresh("platform_settings")) {
       const cached = getStoredModuleData<any>("platform_settings");
       if (cached) {
         if (typeof cached.platformConvenienceFee === "number") setPlatformFee(cached.platformConvenienceFee);
@@ -104,7 +104,7 @@ export default function SettingsPage() {
   };
 
   useEffect(() => {
-    if (isModuleCacheFresh("platform_settings", 30000) && initialCachedSettings) {
+    if (isModuleCacheFresh("platform_settings") && initialCachedSettings) {
       setLoading(false);
       return;
     }
@@ -155,6 +155,7 @@ export default function SettingsPage() {
           if (res.data.updatedAt) {
             setUpdatedAt(res.data.updatedAt);
           }
+          setCachedModuleData("platform_settings", res.data);
         }
       } else {
         setToast({
@@ -229,11 +230,8 @@ export default function SettingsPage() {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
             <Settings className="w-6 h-6 text-brand-600" />
-            <span>System Settings</span>
+            <span>General Settings</span>
           </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Manage operational parameters, platform fee & GST rates, notifications, data export, and security.
-          </p>
         </div>
 
         {/* Strictly ONLY ONE Primary Button on the page */}

@@ -54,6 +54,7 @@ function CategoryIconDisplay({ iconUrl, name, sizeClassName = "w-full h-full" }:
 }
 
 import { getCachedModuleData, getStoredModuleData, setCachedModuleData, isModuleCacheFresh } from "@/lib/moduleCache";
+import { preloadImages, storeDataUrl } from "@/lib/imageCache";
 
 export default function CategoriesPage() {
   // Tab State: "masterTable" is 1st tab & default active
@@ -62,13 +63,13 @@ export default function CategoriesPage() {
   const initialCached = getStoredModuleData<CategoryItem[]>("categories");
   const [categories, setCategories] = useState<CategoryItem[]>(() => initialCached || []);
   const [isLoading, setIsLoading] = useState<boolean>(
-    () => !(isModuleCacheFresh("categories", 30000) && initialCached && initialCached.length > 0)
+    () => !(isModuleCacheFresh("categories") && initialCached && initialCached.length > 0)
   );
 
   // Fetch Categories from Backend API
   const fetchCategoriesFromBackend = async (force: boolean = false) => {
-    // If cache is fresh (< 30s) and not forced, DO NOT CALL API AT ALL!
-    if (!force && isModuleCacheFresh("categories", 30000)) {
+    // If cache is fresh and not forced, DO NOT CALL API AT ALL!
+    if (!force && isModuleCacheFresh("categories")) {
       const cached = getStoredModuleData<CategoryItem[]>("categories");
       if (cached && cached.length > 0) {
         setCategories(cached);
@@ -100,6 +101,17 @@ export default function CategoriesPage() {
         });
         setCategories(mapped);
         setCachedModuleData("categories", mapped);
+
+        // Preload all category and subcategory images into memory cache
+        const urlsToPreload: string[] = [];
+        mapped.forEach((c) => {
+          if (c.iconUrl) urlsToPreload.push(c.iconUrl);
+          c.subCategoriesObj?.forEach((s) => {
+            if (s.imageUrl) urlsToPreload.push(s.imageUrl);
+            if (s.iconUrl) urlsToPreload.push(s.iconUrl);
+          });
+        });
+        preloadImages(urlsToPreload);
       }
     } catch (err) {
       console.error("fetchCategoriesFromBackend error:", err);
@@ -109,12 +121,24 @@ export default function CategoriesPage() {
   };
 
   useEffect(() => {
-    if (isModuleCacheFresh("categories", 30000) && initialCached && initialCached.length > 0) {
+    if (initialCached && initialCached.length > 0) {
+      const urlsToPreload: string[] = [];
+      initialCached.forEach((c) => {
+        if (c.iconUrl) urlsToPreload.push(c.iconUrl);
+        c.subCategoriesObj?.forEach((s) => {
+          if (s.imageUrl) urlsToPreload.push(s.imageUrl);
+          if (s.iconUrl) urlsToPreload.push(s.iconUrl);
+        });
+      });
+      preloadImages(urlsToPreload);
+    }
+
+    if (isModuleCacheFresh("categories") && initialCached && initialCached.length > 0) {
       setIsLoading(false);
       return;
     }
     fetchCategoriesFromBackend();
-  }, []);
+  }, [initialCached]);
 
   // Add / Edit Drawer State
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -133,7 +157,11 @@ export default function CategoriesPage() {
     if (catToDelete.id.length === 24) {
       await deleteCategoryApi(catToDelete.id);
     }
-    setCategories((prev) => prev.filter((c) => c.id !== catToDelete.id));
+    setCategories((prev) => {
+      const updated = prev.filter((c) => c.id !== catToDelete.id);
+      setCachedModuleData("categories", updated);
+      return updated;
+    });
     if (editingCategory?.id === catToDelete.id) {
       setIsDrawerOpen(false);
     }
@@ -313,16 +341,19 @@ export default function CategoriesPage() {
     const reader = new FileReader();
     reader.onload = (e) => {
       const result = e.target?.result as string;
-      setCategories((prev) =>
-        prev.map((c) =>
+      storeDataUrl(`cat-icon-${catId}`, result);
+      setCategories((prev) => {
+        const next = prev.map((c) =>
           c.id === catId
             ? {
               ...c,
               iconUrl: result,
             }
             : c
-        )
-      );
+        );
+        setCachedModuleData("categories", next);
+        return next;
+      });
     };
     reader.readAsDataURL(file);
   };
@@ -374,7 +405,7 @@ export default function CategoriesPage() {
             subCategories: subCatsPayload,
             status: status === "Active",
           });
-          await fetchCategoriesFromBackend();
+          await fetchCategoriesFromBackend(true);
         } else {
           const updatedList = categories.map((c) =>
             c.id === editingCategory.id
@@ -392,6 +423,7 @@ export default function CategoriesPage() {
               : c
           );
           setCategories(updatedList);
+          setCachedModuleData("categories", updatedList);
         }
       } else {
         const apiRes = await createCategoryApi({
@@ -403,7 +435,7 @@ export default function CategoriesPage() {
         });
 
         if (apiRes.success && apiRes.data) {
-          await fetchCategoriesFromBackend();
+          await fetchCategoriesFromBackend(true);
         } else {
           const newCat: CategoryItem = {
             id: `cat-${Date.now()}`,
@@ -417,7 +449,9 @@ export default function CategoriesPage() {
             servicesCount: 0,
             status,
           };
-          setCategories([newCat, ...categories]);
+          const updatedList = [newCat, ...categories];
+          setCategories(updatedList);
+          setCachedModuleData("categories", updatedList);
         }
       }
 
@@ -540,11 +574,8 @@ export default function CategoriesPage() {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
             <Sliders className="w-6 h-6 text-brand-600" />
-            <span>Category </span>
+            <span>Category Catalog</span>
           </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
-            View the Master Category Table or manage custom dual-tone SVG/image icons for Air Conditioner, Appliances, Cleaning, Plumbing, Electrician, Carpenter, Painting & Pest Control.
-          </p>
         </div>
 
         <button
@@ -587,16 +618,13 @@ export default function CategoriesPage() {
       {/* FIRST TAB: MASTER CATEGORY TABLE */}
       {activeCategoryTab === "masterTable" && (
         <div className="space-y-3">
-          {isLoading ? (
-            <ShimmerRow count={6} />
-          ) : (
-            <DataTable
-              columns={catColumns}
-              data={categories}
-              searchPlaceholder="Search category title or slug..."
-              disableDelete={true}
-            />
-          )}
+          <DataTable
+            columns={catColumns}
+            data={categories}
+            searchPlaceholder="Search category title or slug..."
+            disableDelete={true}
+            isLoading={isLoading}
+          />
         </div>
       )}
 

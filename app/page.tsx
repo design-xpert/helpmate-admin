@@ -3,6 +3,7 @@
 import { useState, useMemo, useRef } from "react";
 import Link from "next/link";
 import {
+  LayoutDashboard,
   TrendingUp,
   Users,
   CalendarCheck,
@@ -179,25 +180,13 @@ export default function ExecutiveDashboard() {
   return (
     <div className="space-y-6 animate-in fade-in duration-300 pb-10">
 
-      {/* ─── 1. MINIMALIST EXECUTIVE TOP HEADER BAR ─── */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-500" />
-            <span className="text-[11px] font-extrabold uppercase tracking-widest text-slate-500 dark:text-slate-400">
-              Helpmate Operations Dashboard
-            </span>
-            <span className="text-slate-300 dark:text-slate-700">·</span>
-            <span className="text-xs font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1">
-              <MapPin className="w-3.5 h-3.5 text-slate-400" /> Varanasi HQ
-            </span>
-          </div>
-          <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">
-            Varanasi Operational Console
+      {/* ─── 1. PAGE HEADER (Strictly ONE Primary Button per AGENTS.md) ─── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
+        <div>
+          <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
+            <LayoutDashboard className="w-6 h-6 text-brand-600" />
+            <span>Dashboard</span>
           </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-            Real-time executive oversight across 8 active service zones. Track revenue, partner assignment, and catalog metrics.
-          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3 shrink-0">

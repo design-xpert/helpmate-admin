@@ -10,11 +10,8 @@ export default function WalletsPage() {
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
             <Wallet className="w-6 h-6 text-brand-600" />
-            <span>Wallets & Reserve Settlements</span>
+            <span>Wallets</span>
           </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
-            Manage partner reserve deposits, promo wallet balances, and instant UPI payouts.
-          </p>
         </div>
       </div>
 

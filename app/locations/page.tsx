@@ -69,7 +69,7 @@ export default function LocationsPage() {
 
   // Cities Backend State
   const [cities, setCities] = useState<ApiCity[]>(() => initialCachedCities);
-  const [isCitiesLoading, setIsCitiesLoading] = useState(() => !(isModuleCacheFresh("locations_cities", 30000) && initialCachedCities.length > 0));
+  const [isCitiesLoading, setIsCitiesLoading] = useState(() => !(isModuleCacheFresh("locations_cities") && initialCachedCities.length > 0));
   const [citySearch, setCitySearch] = useState("");
   const [cityModal, setCityModal] = useState<{
     open: boolean;
@@ -97,7 +97,7 @@ export default function LocationsPage() {
       limit: number = 10
     ) => {
       const cacheKey = `locations_localities_p${page}_l${limit}_s${search.trim()}`;
-      if (!force && isModuleCacheFresh(cacheKey, 30000)) {
+      if (!force && isModuleCacheFresh(cacheKey)) {
         const cached = getStoredModuleData<{
           localities: ApiLocality[];
           total: number;
@@ -169,7 +169,7 @@ export default function LocationsPage() {
   };
 
   const fetchCities = async (force: boolean = false) => {
-    if (!force && isModuleCacheFresh("locations_cities", 30000)) {
+    if (!force && isModuleCacheFresh("locations_cities")) {
       const cached = getStoredModuleData<ApiCity[]>("locations_cities");
       if (cached && cached.length > 0) {
         setCities(cached);
@@ -195,7 +195,7 @@ export default function LocationsPage() {
 
   useEffect(() => {
     fetchLocalities(1, false, "", 10);
-    if (!isModuleCacheFresh("locations_cities", 30000) || initialCachedCities.length === 0) {
+    if (!isModuleCacheFresh("locations_cities") || initialCachedCities.length === 0) {
       fetchCities();
     }
   }, [fetchLocalities]);
@@ -518,12 +518,9 @@ export default function LocationsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
         <div>
           <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-            <MapPin className="w-6 h-6 text-brand-600" />
-            <span>Locations & City Operations</span>
+            <Building2 className="w-6 h-6 text-brand-600" />
+            <span>Locations & Pincodes</span>
           </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
-            Manage operational cities, serviceable pincodes, demand surges, and technician allocation.
-          </p>
         </div>
 
         {activeTab === "pincodes" ? (

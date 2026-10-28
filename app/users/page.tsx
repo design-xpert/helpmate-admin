@@ -57,6 +57,7 @@ import {
   updateAdminApi,
   deleteAdminApi,
 } from "@/lib/api";
+import { getStoredModuleData, setCachedModuleData, isModuleCacheFresh } from "@/lib/moduleCache";
 
 type ModuleKey =
   | "bookings" | "inspections" | "customers" | "technicians"
@@ -141,10 +142,14 @@ export interface SystemRole {
 export default function UsersPage() {
   const [activeTab, setActiveTab] = useState<"users" | "roles" | "permissions">("users");
 
-  const [users, setUsers] = useState<UserManagementItem[]>(initialUsers);
+  const initialCachedUsers = getStoredModuleData<UserManagementItem[]>("users_admins");
+  const initialCachedRoles = getStoredModuleData<SystemRole[]>("users_roles");
+  const initialCachedPerms = getStoredModuleData<PermissionItem[]>("users_permissions");
+
+  const [users, setUsers] = useState<UserManagementItem[]>(() => initialCachedUsers || initialUsers);
 
   // System Roles Directory
-  const [systemRoles, setSystemRoles] = useState<SystemRole[]>([
+  const [systemRoles, setSystemRoles] = useState<SystemRole[]>(() => initialCachedRoles || [
     {
       id: "role-super-admin",
       _id: "6aba384336ec417c47fdd2fe",
@@ -185,7 +190,7 @@ export default function UsersPage() {
   ];
 
   // System Permissions Registry (Default 44 Actions across 11 Modules from Backend)
-  const [permissionsList, setPermissionsList] = useState<PermissionItem[]>([
+  const [permissionsList, setPermissionsList] = useState<PermissionItem[]>(() => initialCachedPerms || [
     // ADMIN
     { _id: "6aba4bbf6110aa2c74213e63", id: "6aba4bbf6110aa2c74213e63", name: "Create Admins", code: "ADMIN_CREATE", module: "ADMIN", action: "create", status: "active" },
     { _id: "6aba4bbf6110aa2c74213e65", id: "6aba4bbf6110aa2c74213e65", name: "Delete Admins", code: "ADMIN_DELETE", module: "ADMIN", action: "delete", status: "active" },
@@ -371,7 +376,18 @@ export default function UsersPage() {
   };
 
   // Fetch Roles, Permissions & Admin Users from Backend APIs
-  const fetchAllData = async () => {
+  const fetchAllData = async (force: boolean = false) => {
+    if (
+      !force &&
+      isModuleCacheFresh("users_admins") &&
+      isModuleCacheFresh("users_roles") &&
+      isModuleCacheFresh("users_permissions") &&
+      initialCachedUsers &&
+      initialCachedRoles &&
+      initialCachedPerms
+    ) {
+      return;
+    }
     try {
       const [rolesRes, permsRes, adminsRes] = await Promise.all([
         getRolesApi(true),
@@ -392,7 +408,10 @@ export default function UsersPage() {
           userCount: 0,
           color: "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-800",
         }));
-        if (fetchedRoles.length > 0) setSystemRoles(fetchedRoles);
+        if (fetchedRoles.length > 0) {
+          setSystemRoles(fetchedRoles);
+          setCachedModuleData("users_roles", fetchedRoles);
+        }
       }
 
       if (permsRes && permsRes.success && Array.isArray(permsRes.data)) {
@@ -422,7 +441,10 @@ export default function UsersPage() {
             });
           }
         });
-        if (flatPerms.length > 0) setPermissionsList(flatPerms);
+        if (flatPerms.length > 0) {
+          setPermissionsList(flatPerms);
+          setCachedModuleData("users_permissions", flatPerms);
+        }
       }
 
       if (adminsRes && adminsRes.success && Array.isArray(adminsRes.data)) {
@@ -438,7 +460,10 @@ export default function UsersPage() {
           lastLogin: u.updatedAt ? new Date(u.updatedAt).toLocaleDateString() : "Active Now",
           permissions: defaultFullPermissions,
         }));
-        if (fetchedAdmins.length > 0) setUsers(fetchedAdmins);
+        if (fetchedAdmins.length > 0) {
+          setUsers(fetchedAdmins);
+          setCachedModuleData("users_admins", fetchedAdmins);
+        }
       }
     } catch (err) {
       console.error("Failed to load permissions, roles and admin users from API:", err);
@@ -446,7 +471,7 @@ export default function UsersPage() {
   };
 
   useEffect(() => {
-    fetchAllData();
+    fetchAllData(false);
   }, []);
 
   // Handler: Add New User / Admin (`POST /api/admin/create-admins`)
@@ -478,7 +503,7 @@ export default function UsersPage() {
         setPassword("12345678");
         setPhone("");
         setIsAddUserOpen(false);
-        fetchAllData();
+        fetchAllData(true);
       } else {
         const newUser: UserManagementItem = {
           id: `usr-${Date.now()}`,
@@ -492,10 +517,14 @@ export default function UsersPage() {
           permissions: defaultFullPermissions,
         };
 
-        setUsers([newUser, ...users]);
-        setSystemRoles((prev) =>
-          prev.map((r) => (r.name === selectedRole ? { ...r, userCount: (r.userCount || 0) + 1 } : r))
-        );
+        const updatedUsers = [newUser, ...users];
+        setUsers(updatedUsers);
+        setCachedModuleData("users_admins", updatedUsers);
+        setSystemRoles((prev) => {
+          const updated = prev.map((r) => (r.name === selectedRole ? { ...r, userCount: (r.userCount || 0) + 1 } : r));
+          setCachedModuleData("users_roles", updated);
+          return updated;
+        });
 
         setName("");
         setEmail("");
@@ -552,7 +581,7 @@ export default function UsersPage() {
         setNewRoleDesc("");
         setIsCreateRoleOpen(false);
 
-        fetchAllData();
+        fetchAllData(true);
       } else {
         const createdRole: SystemRole = {
           id: `role-${Date.now()}`,
@@ -563,7 +592,9 @@ export default function UsersPage() {
           color: "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-800",
         };
 
-        setSystemRoles((prev) => [createdRole, ...prev]);
+        const updatedRoles = [createdRole, ...systemRoles];
+        setSystemRoles(updatedRoles);
+        setCachedModuleData("users_roles", updatedRoles);
         setSelectedRole(createdRole.name);
 
         setNewRoleName("");
@@ -616,10 +647,10 @@ export default function UsersPage() {
         );
 
         setEditRole(null);
-        fetchAllData();
+        fetchAllData(true);
       } else {
-        setSystemRoles((prev) =>
-          prev.map((r) =>
+        setSystemRoles((prev) => {
+          const updated = prev.map((r) =>
             r.id === editRole.id
               ? {
                   ...r,
@@ -628,8 +659,10 @@ export default function UsersPage() {
                   permissionIds: editRolePermissionIds,
                 }
               : r
-          )
-        );
+          );
+          setCachedModuleData("users_roles", updated);
+          return updated;
+        });
 
         setEditRole(null);
         setToast({
@@ -704,7 +737,7 @@ export default function UsersPage() {
       setPermName("");
       setPermCode("");
       setIsCreatePermissionOpen(false);
-      fetchAllData();
+      fetchAllData(true);
     } catch (err) {
       console.error("Error creating permission:", err);
       setToast({ type: "error", message: "Failed to create permission." });
@@ -765,7 +798,7 @@ export default function UsersPage() {
       });
 
       setEditPermission(null);
-      fetchAllData();
+      fetchAllData(true);
     } catch (err) {
       console.error("Error updating permission:", err);
       setToast({ type: "error", message: "Failed to update permission." });
@@ -786,7 +819,7 @@ export default function UsersPage() {
         setToast({ type: "success", message: `Permission deleted.` });
       }
       setDeletePermissionItem(null);
-      fetchAllData();
+      fetchAllData(true);
     } catch (err) {
       console.error("Error deleting permission:", err);
       setToast({ type: "error", message: "Failed to delete permission." });
@@ -804,7 +837,7 @@ export default function UsersPage() {
       );
       setToast({ type: "success", message: `Permissions for ${deletePermissionGroup.module} deleted.` });
       setDeletePermissionGroup(null);
-      fetchAllData();
+      fetchAllData(true);
     } catch (err) {
       console.error("Error deleting permission group:", err);
       setToast({ type: "error", message: "Failed to delete permission group." });
@@ -835,9 +868,13 @@ export default function UsersPage() {
         setToast({ type: "success", message: res.message || `Updated staff user profile for ${editUser.name}.` });
         setEditUser(null);
         setEditUserPassword("");
-        fetchAllData();
+        fetchAllData(true);
       } else {
-        setUsers(users.map((u) => (u.id === editUser.id ? editUser : u)));
+        setUsers((prev) => {
+          const updated = prev.map((u) => (u.id === editUser.id ? editUser : u));
+          setCachedModuleData("users_admins", updated);
+          return updated;
+        });
         setEditUser(null);
         setEditUserPassword("");
         setToast({ type: "success", message: `Updated user profile for ${editUser.name}.` });
@@ -863,7 +900,7 @@ export default function UsersPage() {
         setToast({ type: "success", message: `User account ${deleteUser.name} deleted.` });
       }
       setDeleteUser(null);
-      fetchAllData();
+      fetchAllData(true);
     } catch (err) {
       console.error("Error deleting admin user:", err);
       setToast({ type: "error", message: "Failed to delete staff user." });
@@ -1128,11 +1165,8 @@ export default function UsersPage() {
           <div>
             <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
               <ShieldCheck className="w-6 h-6 text-brand-600" />
-              <span>Admin Users, Roles & Permissions Directory</span>
+              <span>User Management & RBAC</span>
             </h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
-              Manage system permissions, configure role permission arrays, and assign staff user roles.
-            </p>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
