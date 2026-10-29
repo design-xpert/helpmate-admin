@@ -45,6 +45,15 @@ import {
   Paintbrush,
   Bug,
   Car,
+  Hash,
+  Clock,
+  CalendarDays,
+  User,
+  IndianRupee,
+  PhoneCall,
+  UserCheck,
+  MoreVertical,
+  MapPin,
 } from "lucide-react";
 import { Portal } from "@/components/Portal";
 import { toast } from "@/components/Toast";
@@ -1206,16 +1215,8 @@ function BookingsPageContent() {
       return true;
     });
 
-    // Sort list so newest / current booking is on TOP!
-    return [...list].sort((a, b) => {
-      if (a.rawTimestamp && b.rawTimestamp && a.rawTimestamp !== b.rawTimestamp) {
-        return b.rawTimestamp - a.rawTimestamp;
-      }
-      if (a.rawBookingNumber && b.rawBookingNumber && a.rawBookingNumber !== b.rawBookingNumber) {
-        return b.rawBookingNumber - a.rawBookingNumber;
-      }
-      return (b.rawId || b.id).localeCompare(a.rawId || a.id);
-    });
+    // Maintain natural serial order as returned by backend API
+    return list;
   }, [categoryBookings, cardFilter, activeStatusFilter, channelFilter]);
 
   const handleBookingCreated = (newBooking: Booking) => {
@@ -1339,6 +1340,9 @@ function BookingsPageContent() {
       {
         key: "id",
         header: "Booking ID",
+        icon: Hash,
+        canHide: false,
+        canReorder: false,
         sticky: "left",
         stickyLeftOffset: 44,
         className: "w-[140px] min-w-[140px] max-w-[140px]",
@@ -1360,6 +1364,7 @@ function BookingsPageContent() {
       {
         key: "originChannel",
         header: "Origin",
+        icon: Globe,
         accessor: (row: Booking) => {
           const isOnline = isOnlineBooking(row);
           return (
@@ -1379,6 +1384,7 @@ function BookingsPageContent() {
       {
         key: "technicianName",
         header: "Assign Partner",
+        icon: UserCheck,
         accessor: (row) => {
           return (
             <div className="flex items-center justify-between gap-2 max-w-[200px]">
@@ -1430,6 +1436,7 @@ function BookingsPageContent() {
       {
         key: "date",
         header: "Working date",
+        icon: Calendar,
         className: "w-[140px] min-w-[140px] whitespace-nowrap px-4",
         accessor: (row) => (
           <span className="font-medium text-slate-700 dark:text-slate-300">
@@ -1441,6 +1448,7 @@ function BookingsPageContent() {
       {
         key: "timeSlot",
         header: "Time",
+        icon: Clock,
         accessor: (row) => (
           <span className="text-slate-700 dark:text-slate-300 font-medium text-xs">
             {formatSingleTimeSlot(row.timeSlot)}
@@ -1451,12 +1459,14 @@ function BookingsPageContent() {
       {
         key: "callingDate",
         header: "Calling date",
+        icon: CalendarDays,
         accessor: (row) => <span className="text-slate-500 dark:text-slate-400 font-medium">{row.callingDate || "-"}</span>,
         sortable: true,
       },
       {
         key: "customerName",
         header: "Customer Name",
+        icon: User,
         className: "w-[170px] min-w-[170px] max-w-[170px]",
         accessor: (row: Booking) => {
           if (isOfficeAdmin) {
@@ -1485,12 +1495,14 @@ function BookingsPageContent() {
       {
         key: "customerPhone",
         header: "Contact no",
+        icon: Phone,
         accessor: (row: Booking) => <span className="font-mono text-slate-600 dark:text-slate-400 font-medium">{row.customerPhone}</span>,
         sortable: true,
       },
       {
         key: "address",
         header: "Service Address Location",
+        icon: MapPin,
         accessor: (row) => (
           <div className="max-w-[200px] truncate text-slate-700 dark:text-slate-300 font-medium" title={row.address || `${row.locality}, Varanasi`}>
             {row.address || `${row.locality}, Varanasi`}
@@ -1501,6 +1513,7 @@ function BookingsPageContent() {
       {
         key: "serviceTitle",
         header: "Multiple Services & Item Codes",
+        icon: Layers,
         accessor: (row) => (
           <div className="max-w-[240px] space-y-1 py-1" title={row.serviceTitle}>
             <div className="truncate font-semibold text-slate-900 dark:text-white text-xs">
@@ -1531,18 +1544,21 @@ function BookingsPageContent() {
       {
         key: "totalAmount",
         header: "Amount",
+        icon: IndianRupee,
         accessor: (row) => <span className="font-semibold text-slate-900 dark:text-white">₹{row.totalAmount}</span>,
         sortable: true,
       },
       {
         key: "callingPerson",
         header: "Calling Person",
+        icon: PhoneCall,
         accessor: (row) => <span className="text-slate-600 dark:text-slate-400 font-medium">{row.callingPerson || "-"}</span>,
         sortable: true,
       },
       {
         key: "notes",
         header: "Remark",
+        icon: FileText,
         accessor: (row) => (
           <div className="max-w-[170px] truncate text-slate-500 italic" title={row.notes || row.inspectionRemarks || "-"}>
             {row.notes || row.inspectionRemarks || "-"}
@@ -1553,6 +1569,7 @@ function BookingsPageContent() {
       {
         key: "status",
         header: "Booking Status",
+        icon: CheckCircle2,
         accessor: (row) => (
           <div className="flex items-center gap-1.5 flex-wrap">
             <span
@@ -1581,13 +1598,17 @@ function BookingsPageContent() {
       {
         key: "handledBy",
         header: "Handel By",
+        icon: ShieldCheck,
         accessor: (row) => <span className="text-slate-600 dark:text-slate-400 font-medium">{row.handledBy || "-"}</span>,
         sortable: true,
       },
       {
         key: "actions",
         header: "Actions",
+        icon: MoreVertical,
         sticky: "right",
+        canHide: false,
+        canReorder: false,
         accessor: (row) => (
           <RowActionMenu
             actions={
@@ -2390,6 +2411,11 @@ function BookingsPageContent() {
             columns={columns}
             data={filteredBookings}
             isLoading={isLoadingData}
+            enableColumnCustomization={true}
+            columnStorageKey="helpmate_booking_columns_view"
+            onRefresh={refreshBookingsFromBackend}
+            isRefreshing={isLoadingData}
+            pinnedColumnsNotice="Booking ID & Actions are pinned"
             searchPlaceholder="Search order #, customer, partner, or phone..."
             extraFilters={
               <div className="flex items-center gap-2.5 flex-wrap">

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { CustomSelect } from "@/components/CustomSelect";
 import {
   Search,
@@ -26,9 +26,50 @@ import {
   Clock,
   UserCheck,
   MoreVertical,
+  GripVertical,
+  RefreshCw,
+  Type,
+  Check,
+  ChevronUp,
+  ChevronDown,
+  Hash,
+  Mail,
+  Phone,
+  User,
+  IndianRupee,
+  MapPin,
+  Layers,
+  ShieldCheck,
+  FileText,
+  Tag,
+  Star,
+  Globe,
 } from "lucide-react";
 import { Portal } from "@/components/Portal";
 import { RowActionMenu } from "@/components/RowActionMenu";
+
+// Intelligently deduce contextual Lucide icon for any column if not explicitly supplied
+export function getColumnIcon(col: Column<any>): React.ComponentType<{ className?: string }> {
+  if (col.icon) return col.icon;
+  const text = `${col.key} ${col.header}`.toLowerCase();
+  if (text.includes("id") || text.includes("code") || text.includes("no") || text.includes("num") || text.includes("hash")) return Hash;
+  if (text.includes("date") || text.includes("day") || text.includes("created")) return Calendar;
+  if (text.includes("time") || text.includes("slot") || text.includes("hour")) return Clock;
+  if (text.includes("phone") || text.includes("mobile") || text.includes("contact")) return Phone;
+  if (text.includes("mail")) return Mail;
+  if (text.includes("user") || text.includes("cust") || text.includes("client") || text.includes("tech") || text.includes("partner") || text.includes("name") || text.includes("lead") || text.includes("subscr") || text.includes("member")) return User;
+  if (text.includes("status")) return CheckCircle2;
+  if (text.includes("amount") || text.includes("price") || text.includes("fee") || text.includes("total") || text.includes("cost") || text.includes("revenue") || text.includes("payout") || text.includes("commission") || text.includes("rate") || text.includes("salary") || text.includes("balance") || text.includes("tax") || text.includes("gst")) return IndianRupee;
+  if (text.includes("city") || text.includes("location") || text.includes("address") || text.includes("zone") || text.includes("state") || text.includes("area") || text.includes("pin")) return MapPin;
+  if (text.includes("category") || text.includes("service") || text.includes("plan") || text.includes("type")) return Layers;
+  if (text.includes("action")) return MoreVertical;
+  if (text.includes("role") || text.includes("permission") || text.includes("security") || text.includes("verified")) return ShieldCheck;
+  if (text.includes("file") || text.includes("doc") || text.includes("desc") || text.includes("note") || text.includes("content")) return FileText;
+  if (text.includes("coupon") || text.includes("discount") || text.includes("offer") || text.includes("promo")) return Tag;
+  if (text.includes("rating") || text.includes("review") || text.includes("star") || text.includes("score")) return Star;
+  if (text.includes("web") || text.includes("url") || text.includes("link") || text.includes("source") || text.includes("channel")) return Globe;
+  return Type;
+}
 
 export interface Column<T> {
   key: string;
@@ -38,6 +79,10 @@ export interface Column<T> {
   sticky?: "left" | "right";
   stickyLeftOffset?: number;
   className?: string;
+  icon?: React.ComponentType<{ className?: string }>;
+  defaultHidden?: boolean;
+  canHide?: boolean;
+  canReorder?: boolean;
 }
 
 export interface DataTableProps<T extends Record<string, any>> {
@@ -68,6 +113,11 @@ export interface DataTableProps<T extends Record<string, any>> {
   searchValue?: string;
   onSearchChange?: (val: string) => void;
   isLoading?: boolean;
+  enableColumnCustomization?: boolean;
+  columnStorageKey?: string;
+  onRefresh?: () => void;
+  isRefreshing?: boolean;
+  pinnedColumnsNotice?: string;
 }
 
 export function DataTable<T extends Record<string, any>>({
@@ -98,6 +148,11 @@ export function DataTable<T extends Record<string, any>>({
   searchValue: searchValueProp,
   onSearchChange,
   isLoading = false,
+  enableColumnCustomization = true,
+  columnStorageKey,
+  onRefresh,
+  isRefreshing = false,
+  pinnedColumnsNotice,
 }: DataTableProps<T>) {
   const hasDefaultActionsColumn =
     !hideActionsColumn &&
@@ -180,6 +235,344 @@ export function DataTable<T extends Record<string, any>>({
   const [isAdvancedFilterOpen, setIsAdvancedFilterOpen] = useState(false);
   const [showMetadata, setShowMetadata] = useState(false);
 
+  // Column customization state
+  const [columnOrder, setColumnOrder] = useState<string[]>(() => columns.map((c) => c.key));
+  const [hiddenColumnKeys, setHiddenColumnKeys] = useState<Set<string>>(() => {
+    return new Set(columns.filter((c) => c.defaultHidden).map((c) => c.key));
+  });
+  const [isCustomiseOpen, setIsCustomiseOpen] = useState(false);
+  const [customiseSearch, setCustomiseSearch] = useState("");
+  const [dropdownDragKey, setDropdownDragKey] = useState<string | null>(null);
+  const [dropdownDragOverKey, setDropdownDragOverKey] = useState<string | null>(null);
+  const [tableDragColKey, setTableDragColKey] = useState<string | null>(null);
+  const [tableDropTargetKey, setTableDropTargetKey] = useState<string | null>(null);
+  const isDraggingColRef = useRef(false);
+  const customiseButtonRef = useRef<HTMLButtonElement>(null);
+  const customiseDropdownRef = useRef<HTMLDivElement>(null);
+  const [customiseDropdownCoords, setCustomiseDropdownCoords] = useState<{
+    top?: number;
+    bottom?: number;
+    right: number;
+    maxHeight?: number;
+  }>({ right: 16 });
+
+  const updateCustomiseCoords = useCallback(() => {
+    if (!customiseButtonRef.current || typeof window === "undefined") return;
+    const rect = customiseButtonRef.current.getBoundingClientRect();
+    const right = Math.max(16, window.innerWidth - rect.right);
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+
+    if (spaceBelow < 380 && spaceAbove > spaceBelow) {
+      setCustomiseDropdownCoords({
+        bottom: window.innerHeight - rect.top + 8,
+        right,
+        maxHeight: Math.max(240, Math.min(480, spaceAbove - 24)),
+      });
+    } else {
+      setCustomiseDropdownCoords({
+        top: rect.bottom + 8,
+        right,
+        maxHeight: Math.max(240, Math.min(480, spaceBelow - 24)),
+      });
+    }
+  }, []);
+
+  const toggleCustomise = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!isCustomiseOpen) {
+      updateCustomiseCoords();
+    }
+    setIsCustomiseOpen((prev) => !prev);
+  };
+
+  // Memoized signature of column keys for stable reactivity
+  const colKeysSignature = useMemo(() => columns.map((c) => c.key).join(","), [columns]);
+
+  // Effective column storage key so every table across the entire app has automatic isolated persistence
+  const effectiveStorageKey = useMemo(() => {
+    if (columnStorageKey) return columnStorageKey;
+    if (typeof window === "undefined") return undefined;
+    const cleanTitle = (title || "").toLowerCase().replace(/[^a-z0-9]+/g, "_");
+    let hash = 0;
+    for (let i = 0; i < colKeysSignature.length; i++) {
+      hash = (hash << 5) - hash + colKeysSignature.charCodeAt(i);
+      hash |= 0;
+    }
+    const cleanPath = window.location.pathname.replace(/[^a-z0-9]+/g, "_");
+    const prefix = cleanTitle ? `helpmate_cols_${cleanPath}_${cleanTitle}` : `helpmate_cols_${cleanPath}`;
+    return `${prefix}_${Math.abs(hash).toString(36)}`;
+  }, [columnStorageKey, title, colKeysSignature]);
+
+  const loadedStorageKeyRef = useRef<string | null>(null);
+
+  // Sync columnOrder if incoming columns prop changes
+  useEffect(() => {
+    setColumnOrder((prevOrder) => {
+      const validKeys = new Set(columns.map((c) => c.key));
+      const nextOrder = prevOrder.filter((k) => validKeys.has(k));
+      columns.forEach((c) => {
+        if (!nextOrder.includes(c.key)) nextOrder.push(c.key);
+      });
+      return nextOrder;
+    });
+  }, [colKeysSignature]);
+
+  // Load saved column preferences from localStorage
+  useEffect(() => {
+    if (!enableColumnCustomization || !effectiveStorageKey || typeof window === "undefined") return;
+    if (loadedStorageKeyRef.current === effectiveStorageKey) return;
+    loadedStorageKeyRef.current = effectiveStorageKey;
+    try {
+      const stored = localStorage.getItem(effectiveStorageKey);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed.order) && parsed.order.length > 0) {
+          const validColKeys = new Set(columns.map((c) => c.key));
+          const loadedOrder = parsed.order.filter((k: string) => validColKeys.has(k));
+          columns.forEach((c) => {
+            if (!loadedOrder.includes(c.key)) loadedOrder.push(c.key);
+          });
+          setColumnOrder(loadedOrder);
+        }
+        if (Array.isArray(parsed.hidden)) {
+          const validColKeys = new Set(columns.map((c) => c.key));
+          const validHidden = parsed.hidden.filter((k: string) => {
+            const col = columns.find((c) => c.key === k);
+            return validColKeys.has(k) && col?.sticky !== "left" && col?.sticky !== "right" && col?.canHide !== false;
+          });
+          setHiddenColumnKeys(new Set(validHidden));
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to load column preferences from localStorage", e);
+    }
+  }, [enableColumnCustomization, effectiveStorageKey, colKeysSignature]);
+
+  // Close Customise Dropdown on Outside Click or Window Scroll/Resize
+  useEffect(() => {
+    if (!isCustomiseOpen) return;
+
+    updateCustomiseCoords();
+
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        customiseDropdownRef.current &&
+        !customiseDropdownRef.current.contains(event.target as Node) &&
+        customiseButtonRef.current &&
+        !customiseButtonRef.current.contains(event.target as Node)
+      ) {
+        setIsCustomiseOpen(false);
+      }
+    }
+
+    function handleScrollOrResize() {
+      updateCustomiseCoords();
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+    window.addEventListener("scroll", handleScrollOrResize, true);
+    window.addEventListener("resize", handleScrollOrResize);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      window.removeEventListener("scroll", handleScrollOrResize, true);
+      window.removeEventListener("resize", handleScrollOrResize);
+    };
+  }, [isCustomiseOpen, updateCustomiseCoords]);
+
+  // Save Column Preferences Helper
+  const saveColumnPrefs = (newOrder: string[], newHidden: string[]) => {
+    if (!enableColumnCustomization || !effectiveStorageKey || typeof window === "undefined") return;
+    try {
+      localStorage.setItem(
+        effectiveStorageKey,
+        JSON.stringify({ order: newOrder, hidden: newHidden })
+      );
+    } catch (e) {
+      console.warn("Failed to save column preferences", e);
+    }
+  };
+
+  // Reset Columns to Default Order & Visibility
+  const handleResetColumns = () => {
+    if (effectiveStorageKey && typeof window !== "undefined") {
+      try {
+        localStorage.removeItem(effectiveStorageKey);
+      } catch {}
+    }
+    const defaultOrder = columns.map((c) => c.key);
+    const defaultHidden = new Set(columns.filter((c) => c.defaultHidden).map((c) => c.key));
+    setColumnOrder(defaultOrder);
+    setHiddenColumnKeys(defaultHidden);
+  };
+
+  // Toggle Visibility of a Column
+  const toggleColumnVisibility = (key: string) => {
+    setHiddenColumnKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        // Prevent hiding every customizable column
+        const currentVisibleNonPinned = columns.filter(
+          (c) => !c.sticky && c.canHide !== false && !next.has(c.key)
+        );
+        if (currentVisibleNonPinned.length <= 1 && currentVisibleNonPinned.some((c) => c.key === key)) {
+          return prev;
+        }
+        next.add(key);
+      }
+      saveColumnPrefs(columnOrder, Array.from(next));
+      return next;
+    });
+  };
+
+  // Reorder Columns in Column Order Array
+  const handleReorderColumns = (sourceKey: string, targetKey: string) => {
+    if (sourceKey === targetKey) return;
+    setColumnOrder((prevOrder) => {
+      const fullOrder = [...prevOrder];
+      columns.forEach((c) => {
+        if (!fullOrder.includes(c.key)) fullOrder.push(c.key);
+      });
+
+      const sourceIdx = fullOrder.indexOf(sourceKey);
+      const targetIdx = fullOrder.indexOf(targetKey);
+      if (sourceIdx === -1 || targetIdx === -1) return prevOrder;
+
+      const newOrder = [...fullOrder];
+      const [moved] = newOrder.splice(sourceIdx, 1);
+      newOrder.splice(targetIdx, 0, moved);
+
+      saveColumnPrefs(newOrder, Array.from(hiddenColumnKeys));
+      return newOrder;
+    });
+  };
+
+  // Move Column Up or Down by One Position
+  const handleMoveColumn = (colKey: string, direction: "up" | "down") => {
+    setColumnOrder((prevOrder) => {
+      const fullOrder = [...prevOrder];
+      columns.forEach((c) => {
+        if (!fullOrder.includes(c.key)) fullOrder.push(c.key);
+      });
+
+      const currentIdx = fullOrder.indexOf(colKey);
+      if (currentIdx === -1) return prevOrder;
+
+      if (direction === "up") {
+        let targetIdx = -1;
+        for (let i = currentIdx - 1; i >= 0; i--) {
+          const c = columns.find((col) => col.key === fullOrder[i]);
+          if (!c?.sticky && c?.canReorder !== false) {
+            targetIdx = i;
+            break;
+          }
+        }
+        if (targetIdx === -1) return prevOrder;
+
+        const newOrder = [...fullOrder];
+        const [moved] = newOrder.splice(currentIdx, 1);
+        newOrder.splice(targetIdx, 0, moved);
+        saveColumnPrefs(newOrder, Array.from(hiddenColumnKeys));
+        return newOrder;
+      } else {
+        let targetIdx = -1;
+        for (let i = currentIdx + 1; i < fullOrder.length; i++) {
+          const c = columns.find((col) => col.key === fullOrder[i]);
+          if (!c?.sticky && c?.canReorder !== false) {
+            targetIdx = i;
+            break;
+          }
+        }
+        if (targetIdx === -1) return prevOrder;
+
+        const newOrder = [...fullOrder];
+        const [moved] = newOrder.splice(currentIdx, 1);
+        newOrder.splice(targetIdx, 0, moved);
+        saveColumnPrefs(newOrder, Array.from(hiddenColumnKeys));
+        return newOrder;
+      }
+    });
+  };
+
+  // Construct Effective Columns (all ordered & visible)
+  const { visibleColumns, allOrderedColumns } = useMemo(() => {
+    const colMap = new Map<string, Column<T>>();
+    columns.forEach((c) => colMap.set(c.key, c));
+
+    const ordered: Column<T>[] = [];
+    columnOrder.forEach((k) => {
+      const col = colMap.get(k);
+      if (col) {
+        ordered.push(col);
+        colMap.delete(k);
+      }
+    });
+    // Append any columns not in saved order
+    colMap.forEach((col) => {
+      ordered.push(col);
+    });
+
+    if (!enableColumnCustomization) {
+      return { visibleColumns: columns, allOrderedColumns: columns };
+    }
+
+    const visible = ordered.filter((c) => {
+      if (c.sticky || c.canHide === false) return true;
+      return !hiddenColumnKeys.has(c.key);
+    });
+
+    return { visibleColumns: visible, allOrderedColumns: ordered };
+  }, [columns, columnOrder, hiddenColumnKeys, enableColumnCustomization]);
+
+  // Movable column keys (excluding left and right pinned columns)
+  const movableColKeys = useMemo(() => {
+    return allOrderedColumns
+      .filter((c) => !c.sticky && c.canReorder !== false)
+      .map((c) => c.key);
+  }, [allOrderedColumns]);
+
+  // Counts for the "Customise view" pill
+  const customizableCols = useMemo(() => {
+    return allOrderedColumns.filter((c) => !c.sticky && c.canHide !== false);
+  }, [allOrderedColumns]);
+
+  const visibleCustomCount = useMemo(() => {
+    return customizableCols.filter((c) => !hiddenColumnKeys.has(c.key)).length;
+  }, [customizableCols, hiddenColumnKeys]);
+
+  const totalCustomCount = customizableCols.length;
+
+  const canCustomizeColumns =
+    enableColumnCustomization &&
+    columns.length > 1 &&
+    (customizableCols.length > 0 || movableColKeys.length > 0);
+
+  const defaultPinnedNotice = useMemo(() => {
+    const pinned = columns.filter(
+      (c) => c.sticky === "left" || c.sticky === "right" || c.canHide === false || c.canReorder === false
+    );
+    if (pinned.length > 0) {
+      const names = pinned.map((c) => c.header).filter(Boolean);
+      return `${names.slice(0, 2).join(" & ")}${names.length > 2 ? ` (+${names.length - 2})` : ""} are pinned`;
+    }
+    if (hasDefaultActionsColumn) {
+      return "Actions are pinned";
+    }
+    return "Drag or use arrows to reorder";
+  }, [columns, hasDefaultActionsColumn]);
+
+  // Filtered customizable columns for search in the popup dropdown
+  const filteredCustomiseCols = useMemo(() => {
+    if (!customiseSearch.trim()) return allOrderedColumns;
+    const query = customiseSearch.toLowerCase().trim();
+    return allOrderedColumns.filter(
+      (c) => c.header.toLowerCase().includes(query) || c.key.toLowerCase().includes(query)
+    );
+  }, [allOrderedColumns, customiseSearch]);
+
   // Hold click & drag to scroll table state
   const tableContainerRef = React.useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -188,14 +581,16 @@ export function DataTable<T extends Record<string, any>>({
 
   const handleTableMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement;
-    // Do not initiate drag if user clicked an interactive input, button, link, select, or menu
+    // Do not initiate drag if user clicked an interactive input, button, link, select, menu, or table header
     if (
       target.closest("button") ||
       target.closest("a") ||
       target.closest("input") ||
       target.closest("select") ||
       target.closest("textarea") ||
-      target.closest("[role='button']")
+      target.closest("[role='button']") ||
+      target.closest("th") ||
+      target.closest("thead")
     ) {
       return;
     }
@@ -227,11 +622,11 @@ export function DataTable<T extends Record<string, any>>({
     setPrevInitialData(initialData);
   }, [initialData]);
 
-  // Compute sticky offsets for left columns
+  // Compute sticky offsets for left columns based on visibleColumns
   const calculatedLeftOffsets = useMemo(() => {
     let accumulator = 44; // starting after checkbox (44px)
     const offsets: Record<string, number> = {};
-    columns.forEach((col) => {
+    visibleColumns.forEach((col) => {
       if (col.sticky === "left") {
         if (col.stickyLeftOffset !== undefined) {
           offsets[col.key] = col.stickyLeftOffset;
@@ -244,9 +639,9 @@ export function DataTable<T extends Record<string, any>>({
       }
     });
     return offsets;
-  }, [columns]);
+  }, [visibleColumns]);
 
-  const leftStickyCols = useMemo(() => columns.filter((c) => c.sticky === "left"), [columns]);
+  const leftStickyCols = useMemo(() => visibleColumns.filter((c) => c.sticky === "left"), [visibleColumns]);
   const lastLeftStickyKey = leftStickyCols.length > 0 ? leftStickyCols[leftStickyCols.length - 1].key : null;
 
   const hasLeftSticky = leftStickyCols.length > 0;
@@ -273,8 +668,12 @@ export function DataTable<T extends Record<string, any>>({
   const sortedData = useMemo(() => {
     if (!sortKey) return filteredData;
     return [...filteredData].sort((a, b) => {
-      const valA = a[sortKey];
-      const valB = b[sortKey];
+      let valA = a[sortKey];
+      let valB = b[sortKey];
+      if (sortKey === "id") {
+        valA = a.bookingNumber || a.jobId || a.id;
+        valB = b.bookingNumber || b.jobId || b.id;
+      }
       if (valA === valB) return 0;
       if (valA === null || valA === undefined) return 1;
       if (valB === null || valB === undefined) return -1;
@@ -336,9 +735,14 @@ export function DataTable<T extends Record<string, any>>({
 
   const handleExportCSV = () => {
     if (sortedData.length === 0) return;
-    const headers = columns.map((c) => c.header).join(",");
+    const exportableCols = visibleColumns.filter(
+      (c) =>
+        !c.key.toLowerCase().includes("action") &&
+        !c.header.toLowerCase().includes("action")
+    );
+    const headers = exportableCols.map((c) => c.header).join(",");
     const rows = sortedData.map((row) =>
-      columns.map((c) => `"${String(row[c.key] ?? "").replace(/"/g, '""')}"`).join(",")
+      exportableCols.map((c) => `"${String(row[c.key] ?? "").replace(/"/g, '""')}"`).join(",")
     );
     const csvContent = "data:text/csv;charset=utf-8," + [headers, ...rows].join("\n");
     const encodedUri = encodeURI(csvContent);
@@ -522,6 +926,268 @@ export function DataTable<T extends Record<string, any>>({
               </div>
             )}
 
+            {onRefresh && (
+              <button
+                type="button"
+                onClick={onRefresh}
+                disabled={isRefreshing}
+                className="h-9 px-3.5 rounded-xl bg-white hover:bg-slate-50 dark:bg-slate-900 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors disabled:opacity-60"
+                title="Refresh table data"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 text-slate-500 ${isRefreshing ? "animate-spin" : ""}`} />
+                <span>Refresh</span>
+              </button>
+            )}
+
+            {canCustomizeColumns && (
+              <div className="relative inline-block">
+                <button
+                  ref={customiseButtonRef}
+                  type="button"
+                  onClick={toggleCustomise}
+                  className={`h-9 px-3.5 rounded-xl border text-xs font-semibold flex items-center gap-2 cursor-pointer shadow-xs transition-all ${
+                    isCustomiseOpen
+                      ? "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-600 text-slate-900 dark:text-white"
+                      : "bg-white hover:bg-slate-50 dark:bg-slate-900 dark:hover:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300"
+                  }`}
+                  title="Customize visible table columns and arrangement"
+                >
+                  <SlidersHorizontal className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Customise view</span>
+                  <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                    {visibleCustomCount}/{totalCustomCount}
+                  </span>
+                </button>
+
+                {isCustomiseOpen && (
+                  <Portal>
+                    <div
+                      ref={customiseDropdownRef}
+                      style={{
+                        position: "fixed",
+                        right: `${customiseDropdownCoords.right}px`,
+                        ...(customiseDropdownCoords.top !== undefined
+                          ? { top: `${customiseDropdownCoords.top}px` }
+                          : {}),
+                        ...(customiseDropdownCoords.bottom !== undefined
+                          ? { bottom: `${customiseDropdownCoords.bottom}px` }
+                          : {}),
+                        zIndex: 9999,
+                        maxHeight: customiseDropdownCoords.maxHeight
+                          ? `${customiseDropdownCoords.maxHeight}px`
+                          : "480px",
+                      }}
+                      className="w-80 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl z-[9999] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+                    >
+                      {/* Dropdown Header */}
+                      <div className="p-3.5 pb-2.5 border-b border-slate-100 dark:border-slate-800 flex items-start justify-between gap-2 shrink-0 bg-white dark:bg-slate-900">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-extrabold text-sm text-slate-900 dark:text-white">
+                              Customise view
+                            </h4>
+                            <span className="text-xs font-semibold text-slate-400">
+                              ({visibleCustomCount}/{totalCustomCount})
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-400 font-medium mt-0.5">
+                            Select at max {totalCustomCount} fields
+                          </p>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={handleResetColumns}
+                          className="text-xs text-slate-500 hover:text-brand-600 dark:hover:text-brand-400 flex items-center gap-1 cursor-pointer font-medium transition-colors"
+                          title="Reset columns order and visibility to default"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          <span>Reset</span>
+                        </button>
+                      </div>
+
+                      {/* Search Field */}
+                      <div className="p-2.5 pb-1 shrink-0 bg-white dark:bg-slate-900">
+                        <div className="relative">
+                          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                          <input
+                            type="text"
+                            placeholder="Search"
+                            value={customiseSearch}
+                            onChange={(e) => setCustomiseSearch(e.target.value)}
+                            className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl pl-8 pr-7 h-8 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-brand-500 font-normal transition-colors"
+                          />
+                          {customiseSearch && (
+                            <button
+                              type="button"
+                              onClick={() => setCustomiseSearch("")}
+                              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 cursor-pointer"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Draggable List */}
+                      <div className="flex-1 overflow-y-auto px-2 py-1.5 space-y-0.5 custom-scrollbar min-h-0">
+                        {filteredCustomiseCols.map((col) => {
+                          const isPinned = col.sticky === "left" || col.sticky === "right" || col.canHide === false;
+                          const isVisible = isPinned || !hiddenColumnKeys.has(col.key);
+                          const ColIcon = getColumnIcon(col);
+                          const isDragging = dropdownDragKey === col.key;
+                          const isDragOver = dropdownDragOverKey === col.key && !isDragging;
+                          const movableIdx = movableColKeys.indexOf(col.key);
+                          const canMoveUp = movableIdx > 0;
+                          const canMoveDown = movableIdx >= 0 && movableIdx < movableColKeys.length - 1;
+
+                          return (
+                            <div
+                              key={col.key}
+                              draggable={!isPinned}
+                              onDragStart={(e) => {
+                                if (isPinned) return;
+                                e.dataTransfer.setData("text/plain", col.key);
+                                e.dataTransfer.effectAllowed = "move";
+                                setDropdownDragKey(col.key);
+                              }}
+                              onDragOver={(e) => {
+                                if (isPinned || !dropdownDragKey || dropdownDragKey === col.key) return;
+                                e.preventDefault();
+                                e.dataTransfer.dropEffect = "move";
+                                if (dropdownDragOverKey !== col.key) {
+                                  setDropdownDragOverKey(col.key);
+                                }
+                              }}
+                              onDragLeave={() => {
+                                if (dropdownDragOverKey === col.key) setDropdownDragOverKey(null);
+                              }}
+                              onDrop={(e) => {
+                                e.preventDefault();
+                                if (isPinned || !dropdownDragKey || dropdownDragKey === col.key) return;
+                                handleReorderColumns(dropdownDragKey, col.key);
+                                setDropdownDragKey(null);
+                                setDropdownDragOverKey(null);
+                              }}
+                              onDragEnd={() => {
+                                setDropdownDragKey(null);
+                                setDropdownDragOverKey(null);
+                              }}
+                              className={`group/col flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl text-xs transition-all select-none ${
+                                isDragging
+                                  ? "opacity-40 bg-slate-100 dark:bg-slate-800 border border-dashed border-brand-400"
+                                  : isDragOver
+                                  ? "border-t-2 border-brand-500 bg-brand-50/50 dark:bg-brand-950/40"
+                                  : "hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                              }`}
+                            >
+                              <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                {/* Drag Handle */}
+                                <div
+                                  className={`p-0.5 shrink-0 ${
+                                    isPinned
+                                      ? "text-slate-300 dark:text-slate-700 cursor-not-allowed"
+                                      : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 cursor-grab active:cursor-grabbing"
+                                  }`}
+                                  title={isPinned ? "Pinned column cannot be moved" : "Drag to reorder"}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <GripVertical className="w-3.5 h-3.5" />
+                                </div>
+
+                                {/* Whole Data Area: Checkbox, Icon & Title wrapped in full-width clickable label */}
+                                <label
+                                  className={`flex items-center gap-2 min-w-0 flex-1 py-1 px-1 rounded-lg select-none ${
+                                    isPinned
+                                      ? "cursor-default opacity-85"
+                                      : "cursor-pointer hover:bg-slate-100/60 dark:hover:bg-slate-800/80 active:bg-slate-200/50"
+                                  }`}
+                                  onClick={(e) => {
+                                    if (isPinned) {
+                                      e.preventDefault();
+                                    }
+                                  }}
+                                >
+                                  {/* Checkbox */}
+                                  <input
+                                    type="checkbox"
+                                    checked={isVisible}
+                                    disabled={isPinned}
+                                    onChange={() => toggleColumnVisibility(col.key)}
+                                    className="w-4 h-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500 cursor-pointer disabled:cursor-not-allowed accent-brand-600 shrink-0"
+                                  />
+
+                                  {/* Icon */}
+                                  <div className="w-4 h-4 text-slate-500 dark:text-slate-400 shrink-0 flex items-center justify-center">
+                                    <ColIcon className="w-3.5 h-3.5" />
+                                  </div>
+
+                                  {/* Header Name */}
+                                  <span className="font-medium text-slate-800 dark:text-slate-200 truncate flex-1" title={col.header}>
+                                    {col.header}
+                                  </span>
+                                </label>
+                              </div>
+
+                              {/* Actions on the right: Pinned badge OR Up & Down arrows */}
+                              {isPinned ? (
+                                <span className="text-[10px] font-medium text-slate-400 dark:text-slate-500 shrink-0">
+                                  Pinned
+                                </span>
+                              ) : (
+                                <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover/col:opacity-100 focus-within:opacity-100 transition-opacity duration-150">
+                                  <button
+                                    type="button"
+                                    disabled={!canMoveUp}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleMoveColumn(col.key, "up");
+                                    }}
+                                    className="p-1 rounded-md text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-700/60 disabled:opacity-20 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                                    title="Move column up"
+                                    aria-label={`Move ${col.header} up`}
+                                  >
+                                    <ChevronUp className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={!canMoveDown}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleMoveColumn(col.key, "down");
+                                    }}
+                                    className="p-1 rounded-md text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-700/60 disabled:opacity-20 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                                    title="Move column down"
+                                    aria-label={`Move ${col.header} down`}
+                                  >
+                                    <ChevronDown className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Dropdown Footer */}
+                      <div className="p-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50 shrink-0">
+                        <span className="text-[11px] text-slate-400 font-normal">
+                          {pinnedColumnsNotice || defaultPinnedNotice}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setIsCustomiseOpen(false)}
+                          className="text-xs font-bold text-amber-700 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-300 cursor-pointer transition-colors"
+                        >
+                          Done
+                        </button>
+                      </div>
+                    </div>
+                  </Portal>
+                )}
+              </div>
+            )}
+
             <button
               type="button"
               onClick={handleExportCSV}
@@ -638,7 +1304,7 @@ export function DataTable<T extends Record<string, any>>({
 
                   {/* Card Data Fields */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
-                    {columns.map((col) => {
+                    {visibleColumns.map((col) => {
                       if (
                         col.key === idField ||
                         col.key === statusField ||
@@ -747,7 +1413,7 @@ export function DataTable<T extends Record<string, any>>({
                     className="w-4 h-4 rounded border-slate-300 text-brand-500 cursor-pointer align-middle"
                   />
                 </th>
-                {columns.map((col) => {
+                {visibleColumns.map((col) => {
                   const isActionsCol =
                     col.header.toLowerCase().includes("action") ||
                     col.key.toLowerCase().includes("action") ||
@@ -756,6 +1422,7 @@ export function DataTable<T extends Record<string, any>>({
                   const isLeftSticky = col.sticky === "left";
                   const isRightSticky = col.sticky === "right" || isActionsCol;
                   const isLastLeft = col.key === lastLeftStickyKey;
+                  const isPinned = isLeftSticky || isRightSticky || col.canReorder === false;
 
                   const stickyStyle: React.CSSProperties = isLeftSticky
                     ? { position: "sticky", left: `${calculatedLeftOffsets[col.key] || 0}px`, zIndex: 35 }
@@ -771,18 +1438,76 @@ export function DataTable<T extends Record<string, any>>({
                     ? "bg-slate-100 dark:bg-slate-800 shadow-[-4px_0_8px_-2px_rgba(0,0,0,0.1)]"
                     : "";
 
+                  const isTableDragging = tableDragColKey === col.key;
+                  const isTableDropTarget = tableDropTargetKey === col.key && !isTableDragging;
+
                   return (
                     <th
                       key={col.key}
                       style={stickyStyle}
-                      onClick={() => col.sortable !== false && handleSort(col.key)}
-                      className={`py-3.5 px-4 align-middle cursor-pointer select-none whitespace-nowrap ${
+                      draggable={canCustomizeColumns && !isPinned}
+                      onDragStart={(e) => {
+                        if (isPinned) return;
+                        isDraggingColRef.current = true;
+                        e.dataTransfer.setData("text/plain", col.key);
+                        e.dataTransfer.effectAllowed = "move";
+                        setTableDragColKey(col.key);
+                      }}
+                      onDragOver={(e) => {
+                        if (isPinned || !tableDragColKey || tableDragColKey === col.key) return;
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = "move";
+                        if (tableDropTargetKey !== col.key) {
+                          setTableDropTargetKey(col.key);
+                        }
+                      }}
+                      onDragLeave={() => {
+                        if (tableDropTargetKey === col.key) {
+                          setTableDropTargetKey(null);
+                        }
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        if (isPinned || !tableDragColKey || tableDragColKey === col.key) {
+                          setTableDragColKey(null);
+                          setTableDropTargetKey(null);
+                          return;
+                        }
+                        handleReorderColumns(tableDragColKey, col.key);
+                        setTableDragColKey(null);
+                        setTableDropTargetKey(null);
+                        setTimeout(() => {
+                          isDraggingColRef.current = false;
+                        }, 150);
+                      }}
+                      onDragEnd={() => {
+                        setTableDragColKey(null);
+                        setTableDropTargetKey(null);
+                        setTimeout(() => {
+                          isDraggingColRef.current = false;
+                        }, 150);
+                      }}
+                      onClick={() => {
+                        if (isDraggingColRef.current) return;
+                        if (col.sortable !== false) handleSort(col.key);
+                      }}
+                      className={`py-3.5 px-4 align-middle select-none whitespace-nowrap transition-all group/th ${
                         isActionsCol ? "text-right" : ""
-                      } ${stickyClass} ${col.className || ""}`}
+                      } ${stickyClass} ${col.className || ""} ${
+                        isPinned ? "cursor-pointer" : "cursor-grab active:cursor-grabbing hover:bg-slate-200/70 dark:hover:bg-slate-700/70"
+                      } ${
+                        isTableDragging ? "opacity-30 bg-slate-200/80 dark:bg-slate-700/80 scale-[0.98]" : ""
+                      } ${
+                        isTableDropTarget ? "border-l-4 border-brand-500 bg-brand-50/80 dark:bg-brand-950/60" : ""
+                      }`}
+                      title={isPinned ? undefined : "Click to sort • Drag to rearrange column"}
                     >
                       <div className={`flex items-center gap-1.5 ${isActionsCol ? "justify-end" : ""}`}>
+                        {!isPinned && canCustomizeColumns && (
+                          <GripVertical className="w-3 h-3 text-slate-400 dark:text-slate-500 opacity-0 group-hover/th:opacity-100 transition-opacity shrink-0" />
+                        )}
                         <span>{col.header}</span>
-                        {col.sortable !== false && <ArrowUpDown className="w-3 h-3 text-slate-400" />}
+                        {col.sortable !== false && <ArrowUpDown className="w-3 h-3 text-slate-400 shrink-0" />}
                       </div>
                     </th>
                   );
@@ -813,7 +1538,7 @@ export function DataTable<T extends Record<string, any>>({
                     >
                       <div className="w-4 h-4 rounded bg-slate-200 dark:bg-slate-700/60" />
                     </td>
-                    {columns.map((col, cIdx) => {
+                    {visibleColumns.map((col, cIdx) => {
                       const isActionsCol =
                         col.header.toLowerCase().includes("action") ||
                         col.key.toLowerCase().includes("action") ||
@@ -863,7 +1588,7 @@ export function DataTable<T extends Record<string, any>>({
               ) : paginatedData.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={columns.length + 1 + (showMetadata ? 2 : 0) + (hasDefaultActionsColumn ? 1 : 0)}
+                    colSpan={visibleColumns.length + 1 + (showMetadata ? 2 : 0) + (hasDefaultActionsColumn ? 1 : 0)}
                     className="py-12 text-center text-slate-400 align-middle"
                   >
                     <FileSpreadsheet className="w-10 h-10 mx-auto text-slate-300 dark:text-slate-600 mb-2" />
@@ -897,7 +1622,7 @@ export function DataTable<T extends Record<string, any>>({
                         />
                       </td>
 
-                      {columns.map((col) => {
+                      {visibleColumns.map((col) => {
                         const isActionsCol =
                           col.header.toLowerCase().includes("action") ||
                           col.key.toLowerCase().includes("action") ||

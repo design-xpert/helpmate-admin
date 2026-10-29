@@ -28,10 +28,12 @@ import {
   Check,
   Tag,
   Building,
+  Ban,
 } from "lucide-react";
 import {
   getCustomerDetailsApi,
   updateCustomerApi,
+  updateCustomerStatusApi,
   deleteCustomerApi,
   createCustomerAddressApi,
   updateCustomerAddressApi,
@@ -47,6 +49,7 @@ import {
 import { CustomSelect } from "@/components/CustomSelect";
 import { Portal } from "@/components/Portal";
 import { DataTable, Column } from "@/components/DataTable";
+import { toast } from "@/components/Toast";
 
 export default function CustomerDetailPage() {
   const params = useParams();
@@ -60,6 +63,7 @@ export default function CustomerDetailPage() {
   const [localities, setLocalities] = useState<ApiLocality[]>([]);
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Tab Navigation: Profile -> Bookings -> Invoices -> Manage Address -> Reviews
@@ -454,6 +458,64 @@ export default function CustomerDetailPage() {
     }
   };
 
+  // ─── TOGGLE CUSTOMER STATUS (Active <-> Inactive via PATCH /api/admin/customer/:id/status) ───
+  const handleToggleStatus = async () => {
+    if (!customer || isUpdatingStatus) return;
+    const newStatus = customer.status === false ? true : false;
+    const actionText = newStatus ? "activate" : "deactivate";
+
+    setIsUpdatingStatus(true);
+    // Optimistic local state update
+    setData((prev) => {
+      if (!prev || !prev.customer) return prev;
+      return {
+        ...prev,
+        customer: {
+          ...prev.customer,
+          status: newStatus,
+        },
+      };
+    });
+
+    try {
+      const res = await updateCustomerStatusApi(customer._id || custId, newStatus);
+      if (res && res.success !== false) {
+        toast.success(
+          `Customer ${newStatus ? "Activated" : "Deactivated"}`,
+          `${customer.fullName} is now ${newStatus ? "active" : "inactive"}.`
+        );
+      } else {
+        // Revert optimistic update
+        setData((prev) => {
+          if (!prev || !prev.customer) return prev;
+          return {
+            ...prev,
+            customer: {
+              ...prev.customer,
+              status: !newStatus,
+            },
+          };
+        });
+        toast.error("Failed", res?.message || `Failed to ${actionText} customer.`);
+      }
+    } catch (err: any) {
+      // Revert optimistic update
+      setData((prev) => {
+        if (!prev || !prev.customer) return prev;
+        return {
+          ...prev,
+          customer: {
+            ...prev.customer,
+            status: !newStatus,
+          },
+        };
+      });
+      toast.error("Error", err?.message || `Failed to ${actionText} customer.`);
+    } finally {
+      setIsUpdatingStatus(false);
+    }
+  };
+
   // ─── DATATABLE: BOOKING COLUMNS ───
   const bookingColumns: Column<ApiCustomerDetailsBooking>[] = [
     {
@@ -816,14 +878,27 @@ export default function CustomerDetailPage() {
                     : "Individual Household"}
                 </span>
 
-                <span
-                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${customer.status !== false
-                      ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 border-emerald-200"
-                      : "bg-slate-100 text-slate-500 border-slate-300"
+                <button
+                  type="button"
+                  onClick={handleToggleStatus}
+                  disabled={isUpdatingStatus}
+                  title={customer.status !== false ? "Click to deactivate customer" : "Click to activate customer"}
+                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-60 ${customer.status !== false
+                      ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 border-slate-300 dark:border-slate-700"
                     }`}
                 >
-                  {customer.status !== false ? "Active Account" : "Inactive"}
-                </span>
+                  {isUpdatingStatus ? (
+                    <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                  ) : (
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        customer.status !== false ? "bg-emerald-500 animate-pulse" : "bg-slate-400"
+                      }`}
+                    />
+                  )}
+                  <span>{customer.status !== false ? "Active Account" : "Inactive"}</span>
+                </button>
 
                 {customer.isPasswordSet && (
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200 flex items-center gap-1">
@@ -884,6 +959,28 @@ export default function CustomerDetailPage() {
             >
               <Edit2 className="w-4 h-4" />
               <span>Edit Profile</span>
+            </button>
+
+            {/* Status Toggle Secondary Button */}
+            <button
+              type="button"
+              onClick={handleToggleStatus}
+              disabled={isUpdatingStatus}
+              className={`px-4 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center gap-2 cursor-pointer shrink-0 disabled:opacity-50 ${
+                customer.status !== false
+                  ? "bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-700 dark:bg-slate-800 dark:hover:bg-rose-950/40 dark:text-slate-300 dark:hover:text-rose-300 border border-slate-200 dark:border-slate-700 hover:border-rose-200"
+                  : "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
+              }`}
+              title={customer.status !== false ? "Deactivate customer account" : "Activate customer account"}
+            >
+              {isUpdatingStatus ? (
+                <Loader2 className="w-4 h-4 animate-spin text-slate-500" />
+              ) : customer.status !== false ? (
+                <Ban className="w-4 h-4 text-rose-500" />
+              ) : (
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              )}
+              <span>{customer.status !== false ? "Deactivate" : "Activate"}</span>
             </button>
 
             <a
@@ -1270,23 +1367,42 @@ export default function CustomerDetailPage() {
                   )}
                 </div>
 
-                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-1">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase block">
-                    Account Status
-                  </span>
+                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2.5">
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-800 dark:text-slate-200">
-                      Platform Standing
-                    </span>
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-black ${customer.status !== false
-                          ? "bg-emerald-100 text-emerald-800"
-                          : "bg-rose-100 text-rose-800"
-                        }`}
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase block">
+                        Account Status
+                      </span>
+                      <span className="font-bold text-slate-800 dark:text-slate-200 text-xs">
+                        Platform Standing
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleToggleStatus}
+                      disabled={isUpdatingStatus}
+                      className={`px-3 py-1 rounded-xl text-[11px] font-black border transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-60 ${
+                        customer.status !== false
+                          ? "bg-emerald-50 hover:bg-rose-50 text-emerald-800 hover:text-rose-700 border-emerald-200 hover:border-rose-200 dark:bg-emerald-950/60 dark:border-emerald-800 dark:text-emerald-300"
+                          : "bg-rose-50 hover:bg-emerald-50 text-rose-800 hover:text-emerald-700 border-rose-200 hover:border-emerald-200 dark:bg-rose-950/60 dark:border-rose-800 dark:text-rose-300"
+                      }`}
+                      title={customer.status !== false ? "Click to deactivate" : "Click to activate"}
                     >
-                      {customer.status !== false ? "Good Standing" : "Suspended"}
-                    </span>
+                      {isUpdatingStatus ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : customer.status !== false ? (
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                      ) : (
+                        <Ban className="w-3 h-3 text-rose-600" />
+                      )}
+                      <span>{customer.status !== false ? "Active (Click to Deactivate)" : "Inactive (Click to Activate)"}</span>
+                    </button>
                   </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                    {customer.status !== false
+                      ? "Account is active. The customer can place service bookings and log in."
+                      : "Account is inactive/suspended. The customer is restricted from booking or logging in."}
+                  </p>
                 </div>
 
                 <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-1">

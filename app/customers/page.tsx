@@ -28,11 +28,13 @@ import {
   AlertCircle,
   Loader2,
   RefreshCw,
+  Ban,
 } from "lucide-react";
 import {
   getAdminCustomersApi,
   createCustomerApi,
   updateCustomerApi,
+  updateCustomerStatusApi,
   deleteCustomerApi,
   getLocalitiesApi,
   ApiAdminCustomerItem,
@@ -42,6 +44,7 @@ import { CustomSelect } from "@/components/CustomSelect";
 import { DataTable, Column } from "@/components/DataTable";
 import { RowActionMenu } from "@/components/RowActionMenu";
 import { Portal } from "@/components/Portal";
+import { toast } from "@/components/Toast";
 
 export interface CustomerRow {
   id: string;
@@ -78,6 +81,8 @@ export default function CustomersPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [localityFilter, setLocalityFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [togglingStatusId, setTogglingStatusId] = useState<string | null>(null);
 
   // Slide-Over Drawer State (Used for BOTH Add & Edit)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -368,11 +373,48 @@ export default function CustomersPage() {
     }
   };
 
+  // Toggle Customer Status (Active <-> Inactive via PATCH /api/admin/customer/:id/status)
+  const handleToggleCustomerStatus = async (customer: CustomerRow) => {
+    const newStatus = !customer.status;
+    const actionText = newStatus ? "activate" : "deactivate";
+
+    setTogglingStatusId(customer.id);
+    // Optimistic UI update
+    setCustomers((prev) =>
+      prev.map((c) => (c.id === customer.id ? { ...c, status: newStatus } : c))
+    );
+
+    try {
+      const res = await updateCustomerStatusApi(customer.id, newStatus);
+      if (res && res.success !== false) {
+        toast.success(
+          `Customer ${newStatus ? "Activated" : "Deactivated"}`,
+          `${customer.fullName} is now ${newStatus ? "active" : "inactive"}.`
+        );
+      } else {
+        // Revert optimistic update
+        setCustomers((prev) =>
+          prev.map((c) => (c.id === customer.id ? { ...c, status: customer.status } : c))
+        );
+        toast.error("Failed", res?.message || `Failed to ${actionText} customer.`);
+      }
+    } catch (err: any) {
+      // Revert optimistic update
+      setCustomers((prev) =>
+        prev.map((c) => (c.id === customer.id ? { ...c, status: customer.status } : c))
+      );
+      toast.error("Error", err?.message || `Failed to ${actionText} customer.`);
+    } finally {
+      setTogglingStatusId(null);
+    }
+  };
+
   // Client-side filtering over fetched list
   const filteredCustomers = customers.filter((c) => {
     const matchesLocality = localityFilter === "all" || c.localityId === localityFilter || c.localityName.toLowerCase() === localityFilter.toLowerCase();
     const matchesCategory = categoryFilter === "all" || c.customerCategory === categoryFilter;
-    return matchesLocality && matchesCategory;
+    const matchesStatus = statusFilter === "all" || (statusFilter === "active" ? c.status : !c.status);
+    return matchesLocality && matchesCategory && matchesStatus;
   });
 
   // Table Columns
@@ -457,18 +499,32 @@ export default function CustomersPage() {
     {
       key: "status",
       header: "Status",
-      accessor: (row) => (
-        <span
-          className={`px-2.5 py-1 rounded-full text-[10px] font-medium border inline-flex items-center gap-1 ${
-            row.status
-              ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800"
-              : "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800"
-          }`}
-        >
-          <span className={`w-1.5 h-1.5 rounded-full ${row.status ? "bg-emerald-500" : "bg-rose-500"}`} />
-          {row.status ? "Active" : "Inactive"}
-        </span>
-      ),
+      accessor: (row) => {
+        const isToggling = togglingStatusId === row.id;
+        return (
+          <button
+            type="button"
+            disabled={isToggling}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleToggleCustomerStatus(row);
+            }}
+            title={`Click to ${row.status ? "deactivate" : "activate"} customer`}
+            className={`px-2.5 py-1 rounded-full text-[10px] font-semibold border inline-flex items-center gap-1.5 transition-all cursor-pointer hover:shadow-xs active:scale-95 disabled:opacity-60 disabled:cursor-wait ${
+              row.status
+                ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900"
+                : "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800 hover:bg-rose-100 dark:hover:bg-rose-900"
+            }`}
+          >
+            {isToggling ? (
+              <Loader2 className="w-2.5 h-2.5 animate-spin" />
+            ) : (
+              <span className={`w-1.5 h-1.5 rounded-full ${row.status ? "bg-emerald-500" : "bg-rose-500"}`} />
+            )}
+            <span>{row.status ? "Active" : "Inactive"}</span>
+          </button>
+        );
+      },
     },
     {
       key: "id",
@@ -481,6 +537,11 @@ export default function CustomersPage() {
               label: "View",
               icon: Eye,
               href: `/customers/${row.id}`,
+            },
+            {
+              label: row.status ? "Deactivate" : "Activate",
+              icon: row.status ? Ban : CheckCircle2,
+              onClick: () => handleToggleCustomerStatus(row),
             },
             {
               label: "Edit",
@@ -553,8 +614,16 @@ export default function CustomersPage() {
               {customers.length}
             </span>
           </div>
-          <p className="text-[11px] text-slate-500 font-semibold flex items-center gap-1">
-            <TrendingUp className="w-3 h-3 text-emerald-600 inline" /> Registered Customers
+          <p className="text-[11px] text-slate-500 font-semibold flex items-center gap-1.5 flex-wrap">
+            <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              {customers.filter((c) => c.status).length} Active
+            </span>
+            <span className="text-slate-300 dark:text-slate-700">•</span>
+            <span className="inline-flex items-center gap-1 text-rose-600 dark:text-rose-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+              {customers.filter((c) => !c.status).length} Inactive
+            </span>
           </p>
         </div>
 
@@ -627,6 +696,19 @@ export default function CustomersPage() {
         hideStatusFilter={true}
         extraFilters={
           <div className="flex flex-wrap items-center gap-2.5">
+            <div className="w-40">
+              <CustomSelect
+                value={statusFilter}
+                onChange={(val) => setStatusFilter(val)}
+                options={[
+                  { value: "all", label: "All Statuses" },
+                  { value: "active", label: "Active" },
+                  { value: "inactive", label: "Inactive" },
+                ]}
+                placeholder="Filter Status"
+              />
+            </div>
+
             <div className="w-44">
               <CustomSelect
                 value={categoryFilter}

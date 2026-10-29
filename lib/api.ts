@@ -2712,6 +2712,33 @@ export async function updateCustomerApi(id: string, payload: ApiCreateCustomerPa
   }
 }
 
+export async function updateCustomerStatusApi(
+  customerId: string,
+  status: boolean,
+  token?: string
+) {
+  try {
+    const reqHeaders: Record<string, string> = { "Content-Type": "application/json" };
+    if (token) {
+      reqHeaders["Authorization"] = token.startsWith("Bearer ") ? token : `Bearer ${token}`;
+    }
+
+    const res = await authFetch(`${API_BASE_URL}/api/admin/customer/${customerId}/status`, {
+      method: "PATCH",
+      headers: reqHeaders,
+      body: JSON.stringify({ status }),
+    });
+    const data = await safeJsonResponse(res);
+    if (data && data.success !== false) {
+      apiCache.clear();
+    }
+    return data;
+  } catch (error) {
+    console.error("updateCustomerStatusApi error:", error);
+    return { success: false, message: "Failed to update customer status." };
+  }
+}
+
 export async function deleteCustomerApi(id: string, token?: string) {
   try {
     const reqHeaders: Record<string, string> = {};
