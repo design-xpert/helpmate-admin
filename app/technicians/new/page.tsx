@@ -2773,7 +2773,7 @@ function TechnicianFormContent() {
               onClick={() => setCurrentStep(1)}
               className="px-5 py-3 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-extrabold text-xs border border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 transition-all cursor-pointer shadow-2xs"
             >
-              ← Back to Step 1
+              ← Back
             </button>
 
             <button
@@ -3246,7 +3246,7 @@ function TechnicianFormContent() {
               onClick={() => setCurrentStep(2)}
               className="px-5 py-3 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-extrabold text-xs border border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 transition-all cursor-pointer shadow-2xs"
             >
-              ← Back to Step 2
+              ← Back
             </button>
 
             <button
@@ -3441,7 +3441,7 @@ function TechnicianFormContent() {
               onClick={() => setCurrentStep(3)}
               className="w-full sm:w-auto px-5 py-3 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-extrabold text-xs border border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 transition-all cursor-pointer shadow-2xs"
             >
-              ← Back to Step 3
+              ← Back
             </button>
 
             <div className="flex items-center gap-3 w-full sm:w-auto justify-end">

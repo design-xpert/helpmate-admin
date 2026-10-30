@@ -510,7 +510,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
             className="text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-brand-600 transition-colors bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 w-fit"
           >
             <ArrowLeft className="w-4 h-4 text-brand-600" />
-            <span>Back to Bookings</span>
+            <span>Back</span>
           </Link>
         </div>
         <div className="p-12 text-center rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
@@ -578,7 +578,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
               className="text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-brand-600 transition-colors bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 w-fit"
             >
               <ArrowLeft className="w-4 h-4 text-brand-600" />
-              <span>Back to Bookings</span>
+              <span>Back</span>
             </Link>
 
             <span className="font-mono text-xs font-black text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-950 px-3 py-1 rounded-xl border border-brand-200 dark:border-brand-800 w-fit break-all">
@@ -707,7 +707,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                 className="text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-brand-600 transition-colors bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 shrink-0"
               >
                 <ArrowLeft className="w-4 h-4 text-brand-600" />
-                <span>Back to {currentBooking.category || "Bookings"}</span>
+                <span>Back</span>
               </Link>
 
               <span className="font-mono text-xs font-black text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-950 px-3 py-1 rounded-xl border border-brand-200 dark:border-brand-800 shrink-0">

@@ -810,7 +810,7 @@ export default function CustomerDetailPage() {
             className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 text-xs font-bold transition-colors cursor-pointer inline-flex items-center gap-2"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>Back to Customers</span>
+            <span>Back</span>
           </button>
           <button
             type="button"
@@ -842,7 +842,7 @@ export default function CustomerDetailPage() {
             className="inline-flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-brand-600 transition-colors bg-slate-100 dark:bg-slate-800 px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer"
           >
             <ArrowLeft className="w-4 h-4 text-brand-600" />
-            <span>{fromPath ? "Back to Previous Page" : "Back to Customer Directory"}</span>
+            <span>Back</span>
           </button>
 
           <div className="flex items-center gap-2">

@@ -139,7 +139,7 @@ export default function SupportTicketDetailPage({ params }: { params: Promise<{ 
           href="/support"
           className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs hover:bg-slate-200"
         >
-          <ArrowLeft className="w-4 h-4" /> Back to Support Desk
+          <ArrowLeft className="w-4 h-4" /> Back
         </Link>
       </div>
     );
@@ -156,7 +156,7 @@ export default function SupportTicketDetailPage({ params }: { params: Promise<{ 
             className="p-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors flex items-center gap-2 text-xs font-extrabold cursor-pointer"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>Back to Support Desk</span>
+            <span>Back</span>
           </Link>
           <div>
             <div className="flex items-center gap-2">

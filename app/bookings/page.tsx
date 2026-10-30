@@ -1898,7 +1898,7 @@ function BookingsPageContent() {
                 </div>
 
                 <div className="hidden sm:flex items-center gap-1 text-xs font-extrabold text-indigo-600 dark:text-indigo-400 group-hover:translate-x-1 transition-transform pl-2">
-                  <span>Open Master Table</span>
+                  <span>Open Table</span>
                   <ChevronRight className="w-4 h-4" />
                 </div>
               </div>
@@ -2080,7 +2080,7 @@ function BookingsPageContent() {
                   className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-brand-600 transition-colors bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 px-3 py-1.5 rounded-xl cursor-pointer shrink-0"
                 >
                   <ArrowLeft className="w-3.5 h-3.5 text-brand-600" />
-                  <span>Back to Hub</span>
+                  <span>Back</span>
                 </button>
 
                 {/* CATEGORY SWITCH DROPDOWN TRIGGER ON TITLE */}

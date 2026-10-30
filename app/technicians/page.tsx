@@ -579,7 +579,7 @@ export default function TechniciansPage() {
             onClick={() => setViewTech(null)}
             className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-extrabold flex items-center gap-2 transition-all shadow-xs"
           >
-            ← Back to Partner Directory
+            ← Back
           </button>
           <div className="flex items-center gap-2">
             <button

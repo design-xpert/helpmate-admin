@@ -285,7 +285,7 @@ export default function InvoiceDetailPage() {
             className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-extrabold flex items-center gap-2 transition-all shadow-xs cursor-pointer"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>Back to Booking ({bookingNumber})</span>
+            <span>Back</span>
           </button>
           <Link
             href="/billing"

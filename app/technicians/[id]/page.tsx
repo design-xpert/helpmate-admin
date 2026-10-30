@@ -828,7 +828,7 @@ export default function TechnicianDetailPage() {
           className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-extrabold flex items-center gap-2 transition-all shadow-xs"
         >
           <ArrowLeft className="w-4 h-4 text-brand-500" />
-          <span>Back to Partner Directory</span>
+          <span>Back</span>
         </Link>
 
         <div className="flex items-center gap-2">
