@@ -42,6 +42,7 @@ import {
 import { getWebsiteBannerApi, updateWebsiteBannerApi, formatImageUrl } from "@/lib/api";
 import { toast } from "@/components/Toast";
 import { getStoredModuleData, setCachedModuleData, isModuleCacheFresh } from "@/lib/moduleCache";
+import { useRbac } from "@/context/RbacContext";
 
 interface PromoBannerItem {
   id: string;
@@ -64,6 +65,7 @@ const PRESET_BANNER_IMAGES = [
 ];
 
 export default function BannersPage() {
+  const { canCreate, canEdit, canDelete } = useRbac();
   const [activeTab, setActiveTab] = useState<"popupModal" | "homepageBanners">("popupModal");
 
   // POPUP STYLE MODE: "rich_text_image" | "pure_image"
@@ -345,28 +347,32 @@ export default function BannersPage() {
 
           {/* Strictly ONLY ONE Primary Button per view */}
           {activeTab === "popupModal" ? (
-            <button
-              type="button"
-              onClick={handleSaveBanner}
-              disabled={isSavingBanner || isLoadingBanner}
-              className="px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 active:scale-95 text-white font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 disabled:opacity-50 flex-1 sm:flex-none"
-            >
-              {isSavingBanner ? (
-                <RefreshCw className="w-4 h-4 animate-spin" />
-              ) : (
-                <Save className="w-4 h-4" />
-              )}
-              <span>{isSavingBanner ? "Saving..." : "Save Banner"}</span>
-            </button>
+            canEdit("BANNER") && (
+              <button
+                type="button"
+                onClick={handleSaveBanner}
+                disabled={isSavingBanner || isLoadingBanner}
+                className="px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 active:scale-95 text-white font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 disabled:opacity-50 flex-1 sm:flex-none"
+              >
+                {isSavingBanner ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Save className="w-4 h-4" />
+                )}
+                <span>{isSavingBanner ? "Saving..." : "Save Banner"}</span>
+              </button>
+            )
           ) : (
-            <button
-              type="button"
-              onClick={() => setIsAddBannerOpen(true)}
-              className="px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 active:scale-95 text-white font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 flex-1 sm:flex-none"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Add Banner</span>
-            </button>
+            canCreate("BANNER") && (
+              <button
+                type="button"
+                onClick={() => setIsAddBannerOpen(true)}
+                className="px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 active:scale-95 text-white font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 flex-1 sm:flex-none"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Add Banner</span>
+              </button>
+            )
           )}
         </div>
       </div>
@@ -519,7 +525,7 @@ export default function BannersPage() {
                             className="w-full h-full object-cover"
                           />
                         ) : null}
-                        <div className="absolute bottom-1.5 left-1.5 bg-black/70 text-white text-[9px] font-mono px-1.5 py-0.5 rounded z-10">
+                        <div className="absolute bottom-1.5 left-1.5 bg-slate-950/70 text-white text-[9px] font-mono px-1.5 py-0.5 rounded z-10">
                           Preview
                         </div>
                       </div>
@@ -943,19 +949,21 @@ export default function BannersPage() {
                   )}
                 </div>
 
-                <button
-                  type="button"
-                  onClick={handleSaveBanner}
-                  disabled={isSavingBanner || isLoadingBanner}
-                  className="px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 active:scale-95 text-white font-extrabold text-xs shadow-xs transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
-                >
-                  {isSavingBanner ? (
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Save className="w-4 h-4" />
-                  )}
-                  <span>{isSavingBanner ? "Saving Changes..." : "Save Banner Configuration"}</span>
-                </button>
+                {canEdit("BANNER") && (
+                  <button
+                    type="button"
+                    onClick={handleSaveBanner}
+                    disabled={isSavingBanner || isLoadingBanner}
+                    className="px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 active:scale-95 text-white font-extrabold text-xs shadow-xs transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    {isSavingBanner ? (
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Save className="w-4 h-4" />
+                    )}
+                    <span>{isSavingBanner ? "Saving Changes..." : "Save Banner Configuration"}</span>
+                  </button>
+                )}
               </div>
 
             </div>
@@ -1031,7 +1039,7 @@ export default function BannersPage() {
                             />
                           ) : null}
                           {warrantyBadgeText && (
-                            <div className="absolute top-2 left-2 w-12 h-12 rounded-full border border-dashed border-white/80 text-white font-black text-[7px] uppercase tracking-wider flex items-center justify-center text-center p-1 bg-black/40 backdrop-blur-xs">
+                            <div className="absolute top-2 left-2 w-12 h-12 rounded-full border border-dashed border-white/80 text-white font-black text-[7px] uppercase tracking-wider flex items-center justify-center text-center p-1 bg-slate-950/50 backdrop-blur-xs">
                               {warrantyBadgeText}
                             </div>
                           )}
@@ -1247,26 +1255,30 @@ export default function BannersPage() {
                 </div>
 
                 <div className="p-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex items-center justify-between">
-                  <button
-                    type="button"
-                    onClick={() => togglePromoBannerStatus(banner.id)}
-                    className={`px-3 py-1 rounded-xl text-[11px] font-bold transition-colors cursor-pointer ${
-                      banner.status === "Active"
-                        ? "bg-slate-200 text-slate-700 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-300"
-                        : "bg-emerald-600 text-white hover:bg-emerald-700"
-                    }`}
-                  >
-                    {banner.status === "Active" ? "Pause Banner" : "Activate Banner"}
-                  </button>
+                  {canEdit("BANNER") && (
+                    <button
+                      type="button"
+                      onClick={() => togglePromoBannerStatus(banner.id)}
+                      className={`px-3 py-1 rounded-xl text-[11px] font-bold transition-colors cursor-pointer ${
+                        banner.status === "Active"
+                          ? "bg-slate-200 text-slate-700 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-300"
+                          : "bg-emerald-600 text-white hover:bg-emerald-700"
+                      }`}
+                    >
+                      {banner.status === "Active" ? "Pause Banner" : "Activate Banner"}
+                    </button>
+                  )}
 
-                  <button
-                    type="button"
-                    onClick={() => setPromoBanners(promoBanners.filter((b) => b.id !== banner.id))}
-                    className="p-1.5 rounded-xl bg-red-50 text-red-600 dark:bg-red-950 dark:text-red-300 border border-red-200 dark:border-red-800 hover:bg-red-100 transition-colors cursor-pointer"
-                    title="Delete Banner"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  {canDelete("BANNER") && (
+                    <button
+                      type="button"
+                      onClick={() => setPromoBanners(promoBanners.filter((b) => b.id !== banner.id))}
+                      className="p-1.5 rounded-xl bg-red-50 text-red-600 dark:bg-red-950 dark:text-red-300 border border-red-200 dark:border-red-800 hover:bg-red-100 transition-colors cursor-pointer ml-auto"
+                      title="Delete Banner"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -1472,7 +1484,7 @@ export default function BannersPage() {
 
                     {/* Circular Warranty Badge top left */}
                     {warrantyBadgeText && (
-                      <div className="absolute top-6 left-6 z-20 w-24 h-24 rounded-full border-2 border-dashed border-white/80 text-white font-black text-[9px] uppercase tracking-wider flex items-center justify-center text-center p-2 backdrop-blur-xs bg-black/20 shadow-xl">
+                      <div className="absolute top-6 left-6 z-20 w-24 h-24 rounded-full border-2 border-dashed border-white/80 text-white font-black text-[9px] uppercase tracking-wider flex items-center justify-center text-center p-2 backdrop-blur-xs bg-slate-950/30 shadow-xl">
                         {warrantyBadgeText}
                       </div>
                     )}

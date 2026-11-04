@@ -18,6 +18,8 @@ import {
 } from "@/lib/api";
 import { toast } from "@/components/Toast";
 import { ShimmerRow } from "@/components/ShimmerLoader";
+import { StatusDropdown } from "@/components/StatusDropdown";
+import { useRbac } from "@/context/RbacContext";
 import {
   Building2,
   Plus,
@@ -34,6 +36,7 @@ import {
 import { Portal } from "@/components/Portal";
 
 export default function LocationsPage() {
+  const { canView, canCreate, canEdit, canDelete } = useRbac();
   const initialCachedData = getStoredModuleData<{ localities: ApiLocality[]; total: number; totalPages: number }>("locations_localities_p1_l10_s");
   const initialCachedLocalities = initialCachedData?.localities || getStoredModuleData<ApiLocality[]>("locations_localities") || [];
   const initialCachedCities = getStoredModuleData<ApiCity[]>("locations_cities") || [];
@@ -250,9 +253,10 @@ export default function LocationsPage() {
     }
   };
 
-  const handleToggleLocalityStatus = async (locality: ApiLocality) => {
+  const handleToggleLocalityStatus = async (locality: ApiLocality, targetStatusBool?: boolean) => {
     try {
-      const newStatus = locality.status === false ? true : false;
+      const newStatus = typeof targetStatusBool === "boolean" ? targetStatusBool : locality.status === false ? true : false;
+      if (newStatus === locality.status) return;
       const res = await updateLocalityApi(locality._id, { status: newStatus });
       if (res && res.success) {
         toast.success(`Locality status updated to ${newStatus ? "Active" : "Inactive"}`);
@@ -334,9 +338,10 @@ export default function LocationsPage() {
     }
   };
 
-  const handleToggleCityStatus = async (city: ApiCity) => {
+  const handleToggleCityStatus = async (city: ApiCity, targetStatusBool?: boolean) => {
     try {
-      const newStatus = !city.status;
+      const newStatus = typeof targetStatusBool === "boolean" ? targetStatusBool : !city.status;
+      if (newStatus === city.status) return;
       const res = await updateCityApi(city._id, { status: newStatus });
       if (res && res.success) {
         toast.success(`City status updated to ${newStatus ? "Active" : "Inactive"}`);
@@ -391,18 +396,16 @@ export default function LocationsPage() {
     },
     {
       key: "status",
-      header: "Operational Status",
+      header: "Status",
       accessor: (row) => (
-        <span
-          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${
-            row.status !== false
-              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
-              : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700"
-          }`}
-        >
-          <CheckCircle2 className="w-3 h-3" />
-          {row.status !== false ? "Active Operations" : "Inactive"}
-        </span>
+        <StatusDropdown
+          status={row.status !== false ? "Active" : "Inactive"}
+          disabled={!canEdit("locations")}
+          onChange={(newStatus) =>
+            handleToggleLocalityStatus(row, newStatus === "Active")
+          }
+          title="Click to change locality status"
+        />
       ),
     },
     {
@@ -412,24 +415,32 @@ export default function LocationsPage() {
       accessor: (row) => (
         <RowActionMenu
           actions={[
-            {
-              label: row.status !== false ? "Set Inactive" : "Set Active",
-              icon: CheckCircle2,
-              onClick: () => handleToggleLocalityStatus(row),
-            },
-            {
-              label: "Edit Locality",
-              icon: Edit,
-              onClick: () =>
-                setLocalityModal({ open: true, mode: "edit", data: row }),
-            },
-            {
-              label: "Delete Locality",
-              icon: Trash2,
-              onClick: () =>
-                setDeleteLocalityModal({ open: true, locality: row }),
-              danger: true,
-            },
+            ...(canEdit("locations")
+              ? [
+                  {
+                    label: row.status !== false ? "Set Inactive" : "Set Active",
+                    icon: CheckCircle2,
+                    onClick: () => handleToggleLocalityStatus(row),
+                  },
+                  {
+                    label: "Edit Locality",
+                    icon: Edit,
+                    onClick: () =>
+                      setLocalityModal({ open: true, mode: "edit", data: row }),
+                  },
+                ]
+              : []),
+            ...(canDelete("locations")
+              ? [
+                  {
+                    label: "Delete Locality",
+                    icon: Trash2,
+                    onClick: () =>
+                      setDeleteLocalityModal({ open: true, locality: row }),
+                    danger: true,
+                  },
+                ]
+              : []),
           ]}
         />
       ),
@@ -460,18 +471,16 @@ export default function LocationsPage() {
     },
     {
       key: "status",
-      header: "Operational Status",
+      header: "Status",
       accessor: (row) => (
-        <span
-          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${
-            row.status
-              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
-              : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700"
-          }`}
-        >
-          <CheckCircle2 className="w-3 h-3" />
-          {row.status ? "Active Operations" : "Inactive"}
-        </span>
+        <StatusDropdown
+          status={row.status ? "Active" : "Inactive"}
+          disabled={!canEdit("locations")}
+          onChange={(newStatus) =>
+            handleToggleCityStatus(row, newStatus === "Active")
+          }
+          title="Click to change city status"
+        />
       ),
     },
     {
@@ -481,24 +490,32 @@ export default function LocationsPage() {
       accessor: (row) => (
         <RowActionMenu
           actions={[
-            {
-              label: row.status ? "Set Inactive" : "Set Active",
-              icon: CheckCircle2,
-              onClick: () => handleToggleCityStatus(row),
-            },
-            {
-              label: "Edit City",
-              icon: Edit,
-              onClick: () =>
-                setCityModal({ open: true, mode: "edit", data: row }),
-            },
-            {
-              label: "Delete City",
-              icon: Trash2,
-              onClick: () =>
-                setDeleteCityModal({ open: true, city: row }),
-              danger: true,
-            },
+            ...(canEdit("locations")
+              ? [
+                  {
+                    label: row.status ? "Set Inactive" : "Set Active",
+                    icon: CheckCircle2,
+                    onClick: () => handleToggleCityStatus(row),
+                  },
+                  {
+                    label: "Edit City",
+                    icon: Edit,
+                    onClick: () =>
+                      setCityModal({ open: true, mode: "edit", data: row }),
+                  },
+                ]
+              : []),
+            ...(canDelete("locations")
+              ? [
+                  {
+                    label: "Delete City",
+                    icon: Trash2,
+                    onClick: () =>
+                      setDeleteCityModal({ open: true, city: row }),
+                    danger: true,
+                  },
+                ]
+              : []),
           ]}
         />
       ),
@@ -523,36 +540,38 @@ export default function LocationsPage() {
           </h1>
         </div>
 
-        {activeTab === "pincodes" ? (
-          <button
-            type="button"
-            onClick={() =>
-              setLocalityModal({
-                open: true,
-                mode: "add",
-                data: { localityName: "", pincode: "", status: true },
-              })
-            }
-            className="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 w-full sm:w-auto"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add New Pincode Zone</span>
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={() =>
-              setCityModal({
-                open: true,
-                mode: "add",
-                data: { cityName: "", stateName: "Uttar Pradesh", status: true },
-              })
-            }
-            className="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 w-full sm:w-auto"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add New City</span>
-          </button>
+        {canCreate("locations") && (
+          activeTab === "pincodes" ? (
+            <button
+              type="button"
+              onClick={() =>
+                setLocalityModal({
+                  open: true,
+                  mode: "add",
+                  data: { localityName: "", pincode: "", status: true },
+                })
+              }
+              className="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 w-full sm:w-auto"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add New Pincode Zone</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() =>
+                setCityModal({
+                  open: true,
+                  mode: "add",
+                  data: { cityName: "", stateName: "Uttar Pradesh", status: true },
+                })
+              }
+              className="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 w-full sm:w-auto"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add New City</span>
+            </button>
+          )
         )}
       </div>
 

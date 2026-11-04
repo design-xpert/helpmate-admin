@@ -23,6 +23,7 @@ const config: Config = {
           900: "#441d3b",
           950: "#290b22",
         },
+        black: "#0f172a", // Overrides default #000000 with rich dark slate to avoid 100% pure black
         light: {
           bg: "#F8FAFC",
           card: "#FFFFFF",

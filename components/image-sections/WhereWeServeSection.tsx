@@ -331,7 +331,7 @@ export function WhereWeServeSection({
       {/* ZONE PREVIEW MODAL */}
       {previewZone && (
         <Portal>
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm">
             <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden border border-slate-200 dark:border-slate-800">
               <div className="relative h-52 bg-slate-200 overflow-hidden">
                 <SectionCardImage
@@ -340,11 +340,11 @@ export function WhereWeServeSection({
                   badgeSize="w-16 h-16 text-3xl"
                   fallback="WZ"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent pointer-events-none" />
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/60 to-transparent pointer-events-none" />
                 <button
                   type="button"
                   onClick={() => setPreviewZone(null)}
-                  className="absolute top-3 right-3 bg-black/40 text-white rounded-full p-1.5 cursor-pointer hover:bg-black/60 transition-colors z-10"
+                  className="absolute top-3 right-3 bg-slate-900/60 text-white rounded-full p-1.5 cursor-pointer hover:bg-slate-900/80 transition-colors z-10"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -389,7 +389,7 @@ export function WhereWeServeSection({
       {/* ZONE ADD/EDIT MODAL */}
       {zoneModal.open && (
         <Portal>
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm">
             <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-200 dark:border-slate-800">
               <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-800">
                 <h2 className="font-black text-slate-900 dark:text-white text-base">

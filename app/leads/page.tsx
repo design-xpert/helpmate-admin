@@ -57,6 +57,7 @@ import {
   CalendarCheck,
 } from "lucide-react";
 import { Portal } from "@/components/Portal";
+import { useRbac } from "@/context/RbacContext";
 
 const STAGES: {
   label: LeadStatus;
@@ -174,6 +175,7 @@ function getSourceIcon(source: LeadSource) {
 }
 
 export default function LeadCRMPage() {
+  const { canCreate, canEdit, canDelete } = useRbac();
   const [leads, setLeads] = useState<LeadCRMItem[]>(initialLeadItems);
   const [viewMode, setViewMode] = useState<"kanban" | "table">("kanban");
 
@@ -630,14 +632,16 @@ export default function LeadCRMPage() {
           </button>
 
           {/* SINGLE PRIMARY BUTTON FOR THE PAGE HEADER */}
-          <button
-            type="button"
-            onClick={() => setIsCreateModalOpen(true)}
-            className="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0"
-          >
-            <UserPlus className="w-4 h-4" />
-            <span>+ Add New Lead</span>
-          </button>
+          {canCreate("LEAD") && (
+            <button
+              type="button"
+              onClick={() => setIsCreateModalOpen(true)}
+              className="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0"
+            >
+              <UserPlus className="w-4 h-4" />
+              <span>+ Add New Lead</span>
+            </button>
+          )}
         </div>
       </div>
 

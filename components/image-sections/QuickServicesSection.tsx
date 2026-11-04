@@ -85,7 +85,7 @@ export function QuickServicesSection({
                     badgeSize="w-12 h-12 text-xl"
                     fallback="QS"
                   />
-                  <div className="absolute top-2 left-2 bg-black/60 text-white text-[9px] font-black px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <div className="absolute top-2 left-2 bg-slate-950/70 text-white text-[9px] font-black px-2 py-0.5 rounded-full flex items-center gap-1">
                     <Zap className="w-2.5 h-2.5 text-amber-400 fill-amber-400" />
                     {item.discountPercentage}
                   </div>

@@ -54,6 +54,7 @@ import {
   UserCheck,
   MoreVertical,
   MapPin,
+  Table,
 } from "lucide-react";
 import { Portal } from "@/components/Portal";
 import { toast } from "@/components/Toast";
@@ -66,211 +67,11 @@ import { BookingDetailsDrawer } from "@/components/bookings/BookingDetailsDrawer
 import { RescheduleBookingModal } from "@/components/bookings/RescheduleBookingModal";
 import { ArchiveBookingModal } from "@/components/bookings/ArchiveBookingModal";
 import { CancelBookingModal } from "@/components/bookings/CancelBookingModal";
+import { BookingCalendarView } from "@/components/bookings/BookingCalendarView";
 import { useRbac } from "@/context/RbacContext";
 import { getBookingCategoriesApi, getBookingsApi, completeBookingApi, getBookingDashboardStatsApi, ApiBookingCategoryStat, archiveBookingApi, restoreBookingApi, cancelBookingApi, pinCategoryApi, formatImageUrl, getCategoriesApi } from "@/lib/api";
 import { isImagePreloaded, preloadImage, preloadImages, storeDataUrl, getStoredDataUrl, cacheImageDataUrl } from "@/lib/imageCache";
-
-export function mapApiBooking(b: any): Booking {
-  const item0 = b.items?.[0];
-  const catName =
-    (typeof item0?.category === "object"
-      ? item0?.category?.name || item0?.category?.categoryName
-      : typeof item0?.category === "string"
-      ? item0.category
-      : "") ||
-    b.category ||
-    b.categoryName ||
-    "General";
-  const subCatName = item0?.subCategory?.name || (typeof item0?.subCategory === "string" ? item0.subCategory : "") || "";
-  const serviceActionName = item0?.serviceAction?.name || "";
-  const pkgTitle = item0?.package?.name || item0?.package?.packageName || serviceActionName || "Service Package";
-
-  const rawOrigin = b.origin || b.bookingSource || "";
-  const originStr = String(rawOrigin).toLowerCase();
-  const isOnline =
-    originStr === "website" ||
-    originStr === "app" ||
-    originStr === "online" ||
-    b.bookingType === "online" ||
-    (typeof b.bookingNumber === "string" && b.bookingNumber.startsWith("WEB-"));
-
-  const createdByStr = isOnline
-    ? "Customer Online"
-    : b.createdBy?.name
-      ? b.createdBy.name
-      : b.handledBy?.name
-        ? b.handledBy.name
-        : originStr === "admin"
-          ? "Super Admin (HQ)"
-          : "Customer Online";
-
-  const workingDateRaw = b.schedule?.bookingDate || b.workingDate || "";
-  const rawWorkingDate = workingDateRaw ? workingDateRaw.split("T")[0] : "";
-  const formattedWorkingDate = rawWorkingDate
-    ? new Date(workingDateRaw).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
-    : "Today";
-
-  const callingDateRaw = b.callingDate || b.createdAt || "";
-  const rawCallingDate = callingDateRaw ? callingDateRaw.split("T")[0] : "";
-  const formattedCallingDate = callingDateRaw
-    ? new Date(callingDateRaw).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
-    : "";
-
-  const bookingIdDisplay = b.bookingNumber || (b._id ? `BK-${b._id.slice(-6).toUpperCase()}` : "BK-UNKNOWN");
-
-  // Map all items into servicesList
-  const servicesList = (b.items || []).map((item: any, idx: number) => {
-    const itemTitle = item.package?.name || item.package?.packageName || item.serviceAction?.name || "Service";
-    return {
-      id: item.package?.id || item.package?._id || item.serviceAction?.id || item._id || String(idx),
-      serviceCode: `${bookingIdDisplay}-${String(idx + 1).padStart(2, "0")}`,
-      title: itemTitle,
-      price: item.totalPrice || item.unitPrice || item.package?.price || 0,
-      quantity: item.quantity || 1,
-      category: item.category?.name,
-      duration: item.package?.duration ? `${item.package.duration} mins` : undefined,
-    };
-  });
-
-  // Strictly map status from API response (b.bookingStatus || b.status)
-  let status: BookingStatus = "Pending";
-  const rawStatus = b.status || b.bookingStatus || "";
-  const statusStr = rawStatus.toLowerCase().trim();
-
-  if (statusStr === "completed") {
-    status = "Completed";
-  } else if (statusStr === "cancelled") {
-    status = "Cancelled";
-  } else if (statusStr === "rejected") {
-    status = "Rejected";
-  } else if (statusStr === "in_progress" || statusStr === "in progress" || statusStr === "on_the_way") {
-    status = "In Progress";
-  } else if (statusStr === "assigned" || statusStr === "partner_assigned" || statusStr === "partner assigned") {
-    status = "Assigned";
-  } else if (statusStr === "accepted" || statusStr === "partner_accepted" || statusStr === "partner accepted") {
-    status = "Partner Accepted";
-  } else if (statusStr === "pending") {
-    status = "Pending";
-  } else if (statusStr === "draft") {
-    status = "Draft";
-  } else if (rawStatus) {
-    status = rawStatus
-      .replace(/_/g, " ")
-      .replace(/\b\w/g, (c: string) => c.toUpperCase()) as BookingStatus;
-  }
-
-  // Address mapping
-  const addrObj = b.address || b.serviceAddress || {};
-  const fullAddress = [
-    addrObj.serviceAddress || addrObj.address,
-    addrObj.landmark ? `Near ${addrObj.landmark}` : "",
-    addrObj.localityName,
-    addrObj.pincode,
-  ]
-    .filter(Boolean)
-    .join(", ") || "Varanasi, UP";
-
-  // Financial / Billing mapping
-  const billingObj = b.billing || {};
-  const basePriceVal = billingObj.sellingPrice ?? billingObj.mrp ?? item0?.totalPrice ?? item0?.unitPrice ?? b.amount ?? 0;
-  const convenienceFeeVal = billingObj.platformFee ?? b.convenienceFee ?? 49;
-  const totalAmountVal = billingObj.totalAmount ?? b.amount ?? (basePriceVal + convenienceFeeVal);
-  const gstVal = billingObj.gst ?? (basePriceVal + convenienceFeeVal) * 0.18;
-  const cgstVal = Number((gstVal / 2).toFixed(2));
-  const sgstVal = Number((gstVal - cgstVal).toFixed(2));
-
-  const paymentObj = billingObj.payment || {};
-  const rawPayMethod = paymentObj.paymentMethod || b.paymentMethod || "";
-  const paymentMethodVal = rawPayMethod.toLowerCase() === "upi" ? "UPI" : rawPayMethod || (isOnline ? "Online" : "Cash on Service");
-  const paymentStatusVal = paymentObj.paymentStatus || (status === "Completed" ? "paid" : "pending");
-
-  // Partner / Assignment mapping
-  const assignmentObj = b.assignment || {};
-  const partnerObj =
-    (typeof assignmentObj.partnerId === "object" && assignmentObj.partnerId !== null ? assignmentObj.partnerId : null) ||
-    b.assignedPartner ||
-    b.partner ||
-    assignmentObj.partner ||
-    {};
-
-  const partnerNameVal =
-    partnerObj.name ||
-    partnerObj.partnerName ||
-    assignmentObj.partnerName ||
-    (typeof b.assignedPartner === "string" ? b.assignedPartner : undefined);
-
-  const partnerPhoneVal =
-    partnerObj.mobile ||
-    partnerObj.phone ||
-    assignmentObj.partnerPhone ||
-    (typeof assignmentObj.partnerId === "object" ? assignmentObj.partnerId?.mobile || assignmentObj.partnerId?.phone : undefined);
-
-  const partnerIdVal =
-    partnerObj._id ||
-    partnerObj.id ||
-    partnerObj.partnerId ||
-    (typeof assignmentObj.partnerId === "string" ? assignmentObj.partnerId : undefined);
-
-  const rawCallingDateStr = b.createdAt || b.workingDate || "";
-  const rawTimestampVal = rawCallingDateStr ? new Date(rawCallingDateStr).getTime() : 0;
-  const rawBookingNumVal = parseInt((b.bookingNumber || "").replace(/\D/g, ""), 10) || 0;
-
-  return {
-    id: b._id || b.bookingNumber,
-    rawId: b._id || b.bookingNumber || "",
-    rawTimestamp: rawTimestampVal,
-    rawBookingNumber: rawBookingNumVal,
-    jobId: bookingIdDisplay,
-    bookingNumber: b.bookingNumber || bookingIdDisplay,
-    customerId: b.customer?.customerId || b.customer?._id,
-    customerBookingCount: b.customerBookingCount ?? b.customer?.bookingCount ?? undefined,
-    createdBy: createdByStr,
-    origin: isOnline ? "online" : "manual",
-    bookingSource: rawOrigin || (isOnline ? "website" : "admin"),
-    isOnline: isOnline,
-    customerName: b.customer?.name || "Customer",
-    customerPhone: b.customer?.mobile || b.customer?.phone || "",
-    customerEmail: b.customer?.email || "",
-    city: "Varanasi",
-    locality: addrObj.localityName || "Varanasi Zone",
-    pincode: addrObj.pincode || "221002",
-    address: fullAddress,
-    serviceTitle: pkgTitle,
-    serviceName: serviceActionName || pkgTitle,
-    scheduledDate: formattedWorkingDate,
-    scheduledTime: b.schedule?.timeSlot || b.time || "12:00 PM",
-    category: catName,
-    subCategory: subCatName,
-    packageTitle: pkgTitle,
-    addons: (item0?.selectedAddons || []).map((a: any) => a.name || a.title || "Addon"),
-    servicesList: servicesList,
-    basePrice: basePriceVal,
-    convenienceFee: convenienceFeeVal,
-    discountAmount: billingObj.discount || 0,
-    gst: gstVal,
-    cgst: cgstVal,
-    sgst: sgstVal,
-    totalAmount: totalAmountVal,
-    finalAmount: totalAmountVal,
-    commissionAmount: Math.round(basePriceVal * 0.25),
-    partnerEarnings: Math.round(basePriceVal * 0.75),
-    invoiceType: "B2C",
-    paymentMethod: paymentMethodVal,
-    paymentStatus: paymentStatusVal,
-    status: status,
-    technicianId: partnerIdVal,
-    technicianName: partnerNameVal,
-    technicianPhone: partnerPhoneVal,
-    bookingDate: formattedCallingDate || formattedWorkingDate,
-    callingDate: formattedCallingDate || rawCallingDate,
-    callingPerson: b.createdBy?.name || b.handledBy?.name || (isOnline ? "Online Direct" : "HQ Admin"),
-    handledBy: b.createdBy?.name || b.handledBy?.name || (isOnline ? "Website Direct" : "HQ Admin"),
-    date: formattedWorkingDate,
-    timeSlot: b.schedule?.timeSlot || b.time || "12:00 PM",
-    isArchived: Boolean(b.isArchived || b.archived),
-    archivedAt: b.archivedAt ? String(b.archivedAt) : undefined,
-  };
-}
+import { mapApiBooking } from "@/lib/bookingMapper";
 
 function CategoryCardsShimmer() {
   return (
@@ -459,13 +260,14 @@ function BookingsPageContent() {
   const bookingTypeParam = searchParams?.get("bookingType");
   const statusParam = searchParams?.get("status");
   const selectedCategory = categoryParam || null;
-  const { role } = useRbac();
+  const { role, canView, canCreate, canEdit, canDelete } = useRbac();
   const isOfficeAdmin = role === "Office Admin";
 
   const cacheKey = `bookings:${bookingTypeParam || ""}:${statusParam || ""}`;
   const initialCachedBookings = getStoredModuleData<Booking[]>(cacheKey) || getStoredModuleData<Booking[]>("bookings");
   const initialCachedCats = getStoredModuleData<ApiBookingCategoryStat[]>("booking_categories");
   const initialCachedAllStats = getStoredModuleData<any>("booking_categories_all");
+  const initialCachedArchivedBookings = getStoredModuleData<Booking[]>("archived_bookings");
   const [bookings, setBookings] = useState<Booking[]>(() => initialCachedBookings || []);
   const bookingsRef = useRef<Booking[]>(bookings);
   useEffect(() => {
@@ -480,7 +282,8 @@ function BookingsPageContent() {
     ((isModuleCacheFresh(cacheKey) || isModuleCacheFresh("bookings")) && initialCachedBookings && initialCachedBookings.length > 0)
   ));
   const [viewArchiveMode, setViewArchiveMode] = useState<boolean>(false);
-  const [archivedBookings, setArchivedBookings] = useState<Booking[]>([]);
+  const [isCalendarView, setIsCalendarView] = useState<boolean>(false);
+  const [archivedBookings, setArchivedBookings] = useState<Booking[]>(() => initialCachedArchivedBookings || []);
   const [isLoadingArchived, setIsLoadingArchived] = useState<boolean>(false);
   const [archiveTargetBooking, setArchiveTargetBooking] = useState<Booking | null>(null);
   const [cancelTargetBooking, setCancelTargetBooking] = useState<Booking | null>(null);
@@ -651,6 +454,22 @@ function BookingsPageContent() {
     router.push(`/bookings${queryStr ? `?${queryStr}` : ""}`);
   };
 
+  const fetchArchivedBookings = useCallback(async () => {
+    setIsLoadingArchived(true);
+    try {
+      const res = await getBookingsApi({ archived: true, forceRefresh: true });
+      if (res && res.success && Array.isArray(res.data)) {
+        const mappedList: Booking[] = res.data.map(mapApiBooking);
+        setArchivedBookings(mappedList);
+        setCachedModuleData("archived_bookings", mappedList);
+      }
+    } catch (err) {
+      console.error("Error fetching archived bookings:", err);
+    } finally {
+      setIsLoadingArchived(false);
+    }
+  }, []);
+
   const checkAndSyncBookings = useCallback(
     async (isSilent: boolean = true) => {
       try {
@@ -660,40 +479,20 @@ function BookingsPageContent() {
         });
         if (bookingsRes && bookingsRes.success && Array.isArray(bookingsRes.data)) {
           const mappedList: Booking[] = bookingsRes.data.map(mapApiBooking);
+          setCachedModuleData(cacheKey, mappedList);
+          setCachedModuleData("bookings", mappedList);
+          setBookings(mappedList);
+
           const prev = bookingsRef.current;
           const prevIds = new Set(prev.map((b) => b.id));
           const newBookings = mappedList.filter((b) => !prevIds.has(b.id));
 
-          let hasChanges = newBookings.length > 0 || mappedList.length !== prev.length;
-          if (!hasChanges) {
-            const prevMap = new Map(prev.map((b) => [b.id, b]));
-            for (const b of mappedList) {
-              const existing = prevMap.get(b.id);
-              if (
-                !existing ||
-                existing.status !== b.status ||
-                existing.technicianId !== b.technicianId ||
-                existing.totalAmount !== b.totalAmount ||
-                existing.paymentStatus !== b.paymentStatus
-              ) {
-                hasChanges = true;
-                break;
-              }
-            }
-          }
-
-          if (hasChanges) {
-            setCachedModuleData(cacheKey, mappedList);
-            setCachedModuleData("bookings", mappedList);
-            setBookings(mappedList);
-
-            if (newBookings.length > 0 && prev.length > 0) {
-              toast.dismissAll();
-              toast.success(
-                "New Booking Received",
-                `${newBookings.length} new booking${newBookings.length > 1 ? "s" : ""} added to list.`
-              );
-            }
+          if (newBookings.length > 0 && prev.length > 0) {
+            toast.dismissAll();
+            toast.success(
+              "New Booking Received",
+              `${newBookings.length} new booking${newBookings.length > 1 ? "s" : ""} added to list.`
+            );
           }
 
           // Refresh dashboard stats quietly
@@ -728,26 +527,31 @@ function BookingsPageContent() {
               }
             })
             .catch(() => {});
+
+          // Refresh archived bookings count quietly
+          fetchArchivedBookings();
         }
       } catch (err) {
         console.error("Error checking for new bookings:", err);
       } finally {
-        if (!isSilent) {
-          setIsLoadingData(false);
-        }
+        setIsLoadingData(false);
       }
     },
-    [cacheKey, statusParam, bookingTypeParam]
+    [cacheKey, statusParam, bookingTypeParam, fetchArchivedBookings]
   );
 
   const refreshBookingsFromBackend = async () => {
     setIsLoadingData(true);
-    await checkAndSyncBookings(false);
+    await Promise.all([
+      checkAndSyncBookings(false),
+      fetchArchivedBookings(),
+    ]);
   };
 
   useEffect(() => {
     let isMounted = true;
     const loadData = async () => {
+      fetchArchivedBookings();
       const hasStoredCats = isModuleCacheFresh("booking_categories") && initialCachedCats && initialCachedCats.length > 0;
       const hasStoredBookings = (isModuleCacheFresh(cacheKey) || isModuleCacheFresh("bookings")) && initialCachedBookings && initialCachedBookings.length > 0;
 
@@ -960,21 +764,6 @@ function BookingsPageContent() {
     }, 100);
   };
 
-  const fetchArchivedBookings = async () => {
-    setIsLoadingArchived(true);
-    try {
-      const res = await getBookingsApi({ archived: true, forceRefresh: true });
-      if (res && res.success && Array.isArray(res.data)) {
-        const mappedList: Booking[] = res.data.map(mapApiBooking);
-        setArchivedBookings(mappedList);
-      }
-    } catch (err) {
-      console.error("Error fetching archived bookings:", err);
-    } finally {
-      setIsLoadingArchived(false);
-    }
-  };
-
   const handleArchiveBooking = (row: Booking) => {
     setArchiveTargetBooking(row);
   };
@@ -985,7 +774,11 @@ function BookingsPageContent() {
       if (res && res.success) {
         setBookings((prev) => prev.filter((b) => b.id !== row.id));
         const archivedItem: Booking = { ...row, isArchived: true, archivedAt: new Date().toISOString() };
-        setArchivedBookings((prev) => [archivedItem, ...prev.filter((b) => b.id !== row.id)]);
+        setArchivedBookings((prev) => {
+          const updated = [archivedItem, ...prev.filter((b) => b.id !== row.id)];
+          setCachedModuleData("archived_bookings", updated);
+          return updated;
+        });
         toast.dismissAll();
         toast.success("Booking Archived", `Booking #${row.bookingNumber || row.id} archived successfully.`);
         setArchiveTargetBooking(null);
@@ -1033,7 +826,11 @@ function BookingsPageContent() {
     try {
       const res = await restoreBookingApi(row.id);
       if (res && res.success) {
-        setArchivedBookings((prev) => prev.filter((b) => b.id !== row.id));
+        setArchivedBookings((prev) => {
+          const updated = prev.filter((b) => b.id !== row.id);
+          setCachedModuleData("archived_bookings", updated);
+          return updated;
+        });
         const restoredItem: Booking = { ...row, isArchived: false, archivedAt: undefined };
         setBookings((prev) => [restoredItem, ...prev.filter((b) => b.id !== row.id)]);
         toast.dismissAll();
@@ -1338,11 +1135,11 @@ function BookingsPageContent() {
   const columns = useMemo<Column<Booking>[]>(() => {
     const baseCols: Column<Booking>[] = [
       {
-        key: "id",
+        key: "bookingId",
         header: "Booking ID",
         icon: Hash,
-        canHide: false,
-        canReorder: false,
+        locked: true,
+        fixedPosition: "first",
         sticky: "left",
         stickyLeftOffset: 44,
         className: "w-[140px] min-w-[140px] max-w-[140px]",
@@ -1362,9 +1159,10 @@ function BookingsPageContent() {
         sortable: true,
       },
       {
-        key: "originChannel",
+        key: "origin",
         header: "Origin",
         icon: Globe,
+        className: "w-[120px] min-w-[120px] max-w-[120px]",
         accessor: (row: Booking) => {
           const isOnline = isOnlineBooking(row);
           return (
@@ -1382,7 +1180,7 @@ function BookingsPageContent() {
         sortable: true,
       },
       {
-        key: "technicianName",
+        key: "assignPartner",
         header: "Assign Partner",
         icon: UserCheck,
         accessor: (row) => {
@@ -1434,7 +1232,7 @@ function BookingsPageContent() {
         sortable: true,
       },
       {
-        key: "date",
+        key: "workingDate",
         header: "Working date",
         icon: Calendar,
         className: "w-[140px] min-w-[140px] whitespace-nowrap px-4",
@@ -1446,7 +1244,7 @@ function BookingsPageContent() {
         sortable: true,
       },
       {
-        key: "timeSlot",
+        key: "time",
         header: "Time",
         icon: Clock,
         accessor: (row) => (
@@ -1471,36 +1269,43 @@ function BookingsPageContent() {
         accessor: (row: Booking) => {
           if (isOfficeAdmin) {
             return (
-              <span className="font-semibold text-slate-900 dark:text-white text-xs truncate max-w-[150px] block">
-                {row.customerName}
-              </span>
+              <div className="space-y-0.5 max-w-[150px]">
+                <span className="font-semibold text-slate-900 dark:text-white text-xs truncate block">
+                  {row.customerName}
+                </span>
+                {row.customerPhone && (
+                  <span className="font-mono text-[11px] text-slate-500 font-medium block">
+                    {row.customerPhone}
+                  </span>
+                )}
+              </div>
             );
           }
           const targetPath = row.customerId
             ? `/customers/${row.customerId}?from=${encodeURIComponent("/bookings")}`
             : `/customers?search=${encodeURIComponent(row.customerPhone || row.customerName)}`;
           return (
-            <button
-              type="button"
-              onClick={() => router.push(targetPath)}
-              className="font-semibold text-slate-900 dark:text-white hover:text-brand-600 dark:hover:text-brand-400 hover:underline text-left truncate max-w-[150px] block cursor-pointer"
-              title={`View ${row.customerName} details`}
-            >
-              {row.customerName}
-            </button>
+            <div className="space-y-0.5 max-w-[150px]">
+              <button
+                type="button"
+                onClick={() => router.push(targetPath)}
+                className="font-semibold text-slate-900 dark:text-white hover:text-brand-600 dark:hover:text-brand-400 hover:underline text-left truncate block cursor-pointer"
+                title={`View ${row.customerName} details`}
+              >
+                {row.customerName}
+              </button>
+              {row.customerPhone && (
+                <span className="font-mono text-[11px] text-slate-500 font-medium block">
+                  {row.customerPhone}
+                </span>
+              )}
+            </div>
           );
         },
         sortable: true,
       },
       {
-        key: "customerPhone",
-        header: "Contact no",
-        icon: Phone,
-        accessor: (row: Booking) => <span className="font-mono text-slate-600 dark:text-slate-400 font-medium">{row.customerPhone}</span>,
-        sortable: true,
-      },
-      {
-        key: "address",
+        key: "serviceAddressLocation",
         header: "Service Address Location",
         icon: MapPin,
         accessor: (row) => (
@@ -1511,7 +1316,7 @@ function BookingsPageContent() {
         sortable: true,
       },
       {
-        key: "serviceTitle",
+        key: "multipleServicesItemCodes",
         header: "Multiple Services & Item Codes",
         icon: Layers,
         accessor: (row) => (
@@ -1542,7 +1347,7 @@ function BookingsPageContent() {
         sortable: true,
       },
       {
-        key: "totalAmount",
+        key: "amount",
         header: "Amount",
         icon: IndianRupee,
         accessor: (row) => <span className="font-semibold text-slate-900 dark:text-white">₹{row.totalAmount}</span>,
@@ -1556,7 +1361,7 @@ function BookingsPageContent() {
         sortable: true,
       },
       {
-        key: "notes",
+        key: "remark",
         header: "Remark",
         icon: FileText,
         accessor: (row) => (
@@ -1567,7 +1372,7 @@ function BookingsPageContent() {
         sortable: true,
       },
       {
-        key: "status",
+        key: "bookingStatus",
         header: "Booking Status",
         icon: CheckCircle2,
         accessor: (row) => (
@@ -1596,8 +1401,8 @@ function BookingsPageContent() {
         sortable: true,
       },
       {
-        key: "handledBy",
-        header: "Handel By",
+        key: "handleBy",
+        header: "Handle By",
         icon: ShieldCheck,
         accessor: (row) => <span className="text-slate-600 dark:text-slate-400 font-medium">{row.handledBy || "-"}</span>,
         sortable: true,
@@ -1607,8 +1412,8 @@ function BookingsPageContent() {
         header: "Actions",
         icon: MoreVertical,
         sticky: "right",
-        canHide: false,
-        canReorder: false,
+        locked: true,
+        fixedPosition: "last",
         accessor: (row) => (
           <RowActionMenu
             actions={
@@ -1655,12 +1460,16 @@ function BookingsPageContent() {
                         href: `/billing/${row.id}`,
                       },
                     ]),
-                  {
-                    label: "View",
-                    icon: Eye,
-                    href: `/bookings/${row.id}${selectedCategory ? `?category=${encodeURIComponent(selectedCategory)}` : ""}`,
-                  },
-                  ...(!row.isArchived
+                  ...(canView("bookings")
+                    ? [
+                        {
+                          label: "View",
+                          icon: Eye,
+                          href: `/bookings/${row.id}${selectedCategory ? `?category=${encodeURIComponent(selectedCategory)}` : ""}`,
+                        },
+                      ]
+                    : []),
+                  ...(!row.isArchived && canEdit("bookings")
                     ? [
                       {
                         label: "Edit",
@@ -1676,7 +1485,7 @@ function BookingsPageContent() {
                           },
                         ]
                         : []),
-                      ...(row.status !== "Completed" && row.status !== "Cancelled"
+                      ...(canDelete("bookings") && row.status !== "Completed" && row.status !== "Cancelled"
                         ? [
                           {
                             label: "Cancel Booking",
@@ -1809,7 +1618,7 @@ function BookingsPageContent() {
 
   return (
     <div className="space-y-6">
-      {!showTableView ? (
+      {!showTableView && !isCalendarView ? (
         isLoadingData && categoryStatsList.length === 0 ? (
           <CategoryCardsShimmer />
         ) : (
@@ -1824,16 +1633,25 @@ function BookingsPageContent() {
             </div>
 
             <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
-             
-
               <button
                 type="button"
-                onClick={() => setIsWizardOpen(true)}
-                className="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 w-full sm:w-auto"
+                onClick={() => setIsCalendarView(true)}
+                className="px-3.5 py-2.5 rounded-xl font-semibold text-xs border transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 w-full sm:w-auto bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700"
               >
-                <Plus className="w-4 h-4" />
-                <span>Create Booking</span>
+                <Calendar className="w-4 h-4 text-brand-600" />
+                <span>Calendar View</span>
               </button>
+
+              {canCreate("bookings") && (
+                <button
+                  type="button"
+                  onClick={() => setIsWizardOpen(true)}
+                  className="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 w-full sm:w-auto"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Create Booking</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -2076,7 +1894,12 @@ function BookingsPageContent() {
               <div className="flex items-center gap-2.5 pt-1 flex-wrap">
                 <button
                   type="button"
-                  onClick={() => handleSelectCategory(null)}
+                  onClick={() => {
+                    setIsCalendarView(false);
+                    if (selectedCategory) {
+                      handleSelectCategory(null);
+                    }
+                  }}
                   className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-brand-600 transition-colors bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 px-3 py-1.5 rounded-xl cursor-pointer shrink-0"
                 >
                   <ArrowLeft className="w-3.5 h-3.5 text-brand-600" />
@@ -2236,6 +2059,34 @@ function BookingsPageContent() {
             </div>
 
             <div className="flex flex-wrap items-center gap-3 shrink-0">
+              {/* Segmented View Mode Toggle: Table / Calendar */}
+              <div className="flex items-center p-1 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => setIsCalendarView(false)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-all cursor-pointer ${
+                    !isCalendarView
+                      ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs font-bold"
+                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white font-medium"
+                  }`}
+                >
+                  <Table className="w-3.5 h-3.5" />
+                  <span>Table</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsCalendarView(true)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-all cursor-pointer ${
+                    isCalendarView
+                      ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs font-bold"
+                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white font-medium"
+                  }`}
+                >
+                  <Calendar className="w-3.5 h-3.5" />
+                  <span>Calendar</span>
+                </button>
+              </div>
+
               <button
                 type="button"
                 onClick={() => {
@@ -2262,14 +2113,16 @@ function BookingsPageContent() {
                 )}
               </button>
 
-              <button
-                type="button"
-                onClick={() => setIsWizardOpen(true)}
-                className="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 w-full sm:w-auto"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Create Booking</span>
-              </button>
+              {canCreate("bookings") && (
+                <button
+                  type="button"
+                  onClick={() => setIsWizardOpen(true)}
+                  className="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 w-full sm:w-auto"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Create Booking</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -2292,7 +2145,19 @@ function BookingsPageContent() {
             </div>
           )}
 
-          {/* 5 KPI Status Summary Cards for the active category */}
+          {isCalendarView ? (
+            <BookingCalendarView
+              bookings={categoryBookings}
+              categories={categoryStatsList}
+              selectedCategory={selectedCategory}
+              onSelectCategory={handleSelectCategory}
+              onSelectBooking={(b) => setDrawerBooking(b)}
+              onAssignPartner={(b) => setAssignBooking(b)}
+              onCreateBooking={() => setIsWizardOpen(true)}
+            />
+          ) : (
+            <>
+              {/* 5 KPI Status Summary Cards for the active category */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
             <button
               type="button"
@@ -2412,6 +2277,7 @@ function BookingsPageContent() {
             data={filteredBookings}
             isLoading={isLoadingData}
             enableColumnCustomization={true}
+            tableKey="booking"
             columnStorageKey="helpmate_booking_columns_view"
             onRefresh={refreshBookingsFromBackend}
             isRefreshing={isLoadingData}
@@ -2459,6 +2325,8 @@ function BookingsPageContent() {
               </div>
             }
           />
+          </>
+          )}
         </div>
       )}
 
@@ -2602,7 +2470,7 @@ function BookingsPageContent() {
             max-height: 100% !important;
             overflow: hidden !important;
             background: #ffffff !important;
-            color: #000000 !important;
+            color: #0f172a !important;
             margin: 0 !important;
             padding: 0 !important;
           }
@@ -2633,7 +2501,7 @@ function BookingsPageContent() {
         <Portal>
           <div
             id="printable-tax-invoice-portal"
-            className="hidden print:block p-0 rounded-3xl bg-white text-black space-y-4 w-full"
+            className="hidden print:block p-0 rounded-3xl bg-white text-slate-900 space-y-4 w-full"
           >
             {/* Header */}
             <div className="flex flex-row items-start justify-between gap-2 border-b border-slate-300 pb-3">
@@ -2649,10 +2517,10 @@ function BookingsPageContent() {
                 </div>
                 <div className="space-y-0.5">
                   <div className="flex items-center gap-2">
-                    <h1 className="font-extrabold text-xl text-black tracking-tight leading-none">
+                    <h1 className="font-extrabold text-xl text-slate-900 tracking-tight leading-none">
                       HelpMate
                     </h1>
-                    <span className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded bg-slate-100 text-black border border-slate-300">
+                    <span className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded bg-slate-100 text-slate-900 border border-slate-300">
                       Varanasi HQ
                     </span>
                   </div>
@@ -2666,17 +2534,17 @@ function BookingsPageContent() {
               </div>
 
               <div className="flex flex-col items-end text-right space-y-1 shrink-0">
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-slate-100 text-black font-extrabold text-[10px] border border-slate-400">
-                  <span className="w-1.5 h-1.5 rounded-full bg-black inline-block" />
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-900 font-extrabold text-[10px] border border-slate-400">
+                  <span className="w-1.5 h-1.5 rounded-full bg-slate-900 inline-block" />
                   <span>OFFICIAL GST TAX INVOICE</span>
                 </div>
 
-                <div className="font-mono text-xs font-black text-black bg-slate-100 px-2.5 py-0.5 rounded-lg border border-slate-300">
-                  Invoice No: <span className="text-black font-extrabold">{formatInvoiceNumber(printTargetBooking.bookingNumber || printTargetBooking.id)}</span>
+                <div className="font-mono text-xs font-black text-slate-900 bg-slate-100 px-2.5 py-0.5 rounded-lg border border-slate-300">
+                  Invoice No: <span className="text-slate-900 font-extrabold">{formatInvoiceNumber(printTargetBooking.bookingNumber || printTargetBooking.id)}</span>
                 </div>
 
                 <div className="text-[10px] text-slate-600 font-semibold">
-                  Invoice Date: <span className="font-bold text-black">{printTargetBooking.date || "Today"}</span>
+                  Invoice Date: <span className="font-bold text-slate-900">{printTargetBooking.date || "Today"}</span>
                 </div>
               </div>
             </div>
@@ -2687,7 +2555,7 @@ function BookingsPageContent() {
                 <span className="font-extrabold text-slate-500 uppercase tracking-wider block text-[9px]">
                   Billed To (Customer Details)
                 </span>
-                <div className="font-extrabold text-black text-xs">
+                <div className="font-extrabold text-slate-900 text-xs">
                   {printTargetBooking.customerName}
                 </div>
                 <div className="text-slate-800 font-medium text-[10px]">
@@ -2697,7 +2565,7 @@ function BookingsPageContent() {
                   Phone: {printTargetBooking.customerPhone}
                 </div>
                 {printTargetBooking.customerGstin && (
-                  <div className="font-mono font-bold text-black bg-slate-100 p-0.5 rounded border border-slate-300 text-[9px] w-fit">
+                  <div className="font-mono font-bold text-slate-900 bg-slate-100 p-0.5 rounded border border-slate-300 text-[9px] w-fit">
                     B2B GSTIN: {printTargetBooking.customerGstin}
                   </div>
                 )}
@@ -2707,7 +2575,7 @@ function BookingsPageContent() {
                 <span className="font-extrabold text-slate-500 uppercase tracking-wider block text-[9px]">
                   Service & Payment Details
                 </span>
-                <div className="font-extrabold text-black text-xs">
+                <div className="font-extrabold text-slate-900 text-xs">
                   Service: {printTargetBooking.serviceTitle}
                 </div>
                 <div className="text-slate-800 font-medium text-[10px]">
@@ -2734,7 +2602,7 @@ function BookingsPageContent() {
                     <th className="pb-1.5 text-right">Total (₹)</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200 font-semibold text-black">
+                <tbody className="divide-y divide-slate-200 font-semibold text-slate-900">
                   <tr>
                     <td className="py-2">
                       <div className="font-extrabold text-xs">{printTargetBooking.serviceTitle}</div>
@@ -2745,7 +2613,7 @@ function BookingsPageContent() {
                     <td className="py-2 text-right font-mono font-bold text-xs">₹{printTargetBooking.basePrice || 699}</td>
                     <td className="py-2 text-right font-mono text-slate-700 text-xs">₹{printTargetBooking.cgst || Math.round((printTargetBooking.basePrice || 699) * 0.09)}</td>
                     <td className="py-2 text-right font-mono text-slate-700 text-xs">₹{printTargetBooking.sgst || Math.round((printTargetBooking.basePrice || 699) * 0.09)}</td>
-                    <td className="py-2 text-right font-mono font-extrabold text-black text-xs">
+                    <td className="py-2 text-right font-mono font-extrabold text-slate-900 text-xs">
                       ₹{(printTargetBooking.basePrice || 699) + (printTargetBooking.cgst || Math.round((printTargetBooking.basePrice || 699) * 0.09)) + (printTargetBooking.sgst || Math.round((printTargetBooking.basePrice || 699) * 0.09))}
                     </td>
                   </tr>
@@ -2768,7 +2636,7 @@ function BookingsPageContent() {
             {/* Tax Summary & Total Box */}
             <div className="flex flex-row justify-between items-start gap-4 border-t border-slate-300 pt-3">
               <div className="text-[10px] text-slate-600 space-y-0.5 max-w-sm">
-                <span className="font-extrabold text-black block text-xs">Terms & Conditions</span>
+                <span className="font-extrabold text-slate-900 block text-xs">Terms & Conditions</span>
                 <p>1. Invoice generated under GST Act 2017 for Varanasi Jurisdiction.</p>
                 <p>2. Standard terms apply to Home Maintenance & Repair Services.</p>
               </div>
@@ -2786,7 +2654,7 @@ function BookingsPageContent() {
                   <span>SGST (9%)</span>
                   <span className="font-mono font-bold">₹{printTargetBooking.sgst || Math.round((printTargetBooking.basePrice || 699) * 0.09)}</span>
                 </div>
-                <div className="flex justify-between py-0.5 text-xs font-black text-black">
+                <div className="flex justify-between py-0.5 text-xs font-black text-slate-900">
                   <span>Grand Total</span>
                   <span className="font-mono text-emerald-700 font-bold text-xs">₹{printTargetBooking.totalAmount || 873}</span>
                 </div>

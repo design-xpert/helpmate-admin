@@ -41,7 +41,6 @@ import { preloadImages } from "@/lib/imageCache";
 
 // Helper: Format raw MinIO folder paths to human-friendly display labels
 function formatFolderLabel(folder: string): string {
-  if (!folder) return "General";
   const name = folder.replace(/^helpMate\//i, "");
   return name
     .split(/[-_/]/)

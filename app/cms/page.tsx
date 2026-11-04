@@ -16,6 +16,7 @@ import {
   createPackageApi,
   updatePackageApi,
   deletePackageApi,
+  bulkDeletePackagesApi,
   togglePackageStatusApi,
   getCategoriesApi,
   createCategoryApi,
@@ -42,6 +43,7 @@ import {
 } from "@/lib/api";
 import { ShimmerRow, ShimmerCardGrid } from "@/components/ShimmerLoader";
 import { Wrench, Plus, CheckCircle2, Check, Search, MapPin, Tag, X, Filter, Sliders, Briefcase, Trash2, Link, Layers, AlertCircle, Edit, ChevronDown, FileImage, Upload, Megaphone, Eye, Flame, Image as ImageIcon, Link as LinkIcon, Copy, Loader2, Clock, Lock } from "lucide-react";
+import { useRbac } from "@/context/RbacContext";
 
 function safeStr(val: any): string {
   if (val === null || val === undefined) return "";
@@ -131,6 +133,11 @@ import { CustomSelect } from "@/components/CustomSelect";
 import { StatusDropdown } from "@/components/StatusDropdown";
 
 export default function CmsPage() {
+  const { canView, canCreate, canEdit, canDelete } = useRbac();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
   const [categorySubcategoriesMap, setCategorySubcategoriesMap] = useState<Record<string, string[]>>({
     "AC Service & Repair": ["Split AC", "Window AC", "Cassette AC / Commercial", "Inverter AC", "Tower AC"],
     "Appliance Repair": ["Washing Machine", "Refrigerator", "Microwave", "Water Purifier (RO)", "Geyser"],
@@ -697,6 +704,27 @@ export default function CmsPage() {
     });
   };
 
+  const handleBulkDeletePackages = async (ids: string[]) => {
+    const validIds = ids.filter((id) => id && id.length === 24);
+    if (validIds.length > 0) {
+      try {
+        const res = await bulkDeletePackagesApi(validIds);
+        if (res && res.success !== false) {
+          toast.success("Packages Deleted", res.message || `Successfully deleted ${validIds.length} package(s).`);
+        } else {
+          toast.error("Bulk Delete Failed", res?.message || "Failed to bulk delete packages.");
+        }
+      } catch (err: any) {
+        toast.error("Bulk Delete Failed", err?.message || "Failed to bulk delete packages.");
+      }
+    }
+    setServices((prev) => {
+      const updated = prev.filter((s) => !ids.includes(s.id));
+      setCachedModuleData("cms_services", updated);
+      return updated;
+    });
+  };
+
   const [updatingServiceStatusId, setUpdatingServiceStatusId] = useState<string | null>(null);
 
   const handleToggleServiceStatus = async (
@@ -982,8 +1010,12 @@ export default function CmsPage() {
 
   const serviceColumns: Column<ServiceItem>[] = [
     {
-      key: "thumbnailUrl",
+      key: "thumbnail",
       header: "Thumbnail",
+      locked: true,
+      fixedPosition: "first",
+      canHide: false,
+      canReorder: false,
       accessor: (row) => (
         <TableImage
           src={row.thumbnailUrl || (row as any).imageUrl}
@@ -994,7 +1026,7 @@ export default function CmsPage() {
       ),
     },
     {
-      key: "title",
+      key: "servicePackageTitle",
       header: "Service Package Title",
       accessor: (row) => (
         <div className="flex flex-col">
@@ -1025,7 +1057,7 @@ export default function CmsPage() {
       ),
     },
     {
-      key: "category",
+      key: "categorySubcategory",
       header: "Category & Subcategory",
       accessor: (row) => (
         <div className="flex flex-col gap-1 items-start">
@@ -1061,7 +1093,7 @@ export default function CmsPage() {
       ),
     },
     {
-      key: "addons",
+      key: "addOns",
       header: "Add-ons",
       accessor: (row) => {
         const count = row.addons?.length || 0;
@@ -1099,35 +1131,47 @@ export default function CmsPage() {
       key: "actions",
       header: "Actions",
       sticky: "right",
+      canHide: false,
+      canReorder: false,
+      locked: true,
+      fixedPosition: "last",
       accessor: (row) => (
         <RowActionMenu
           actions={[
-            {
-              label: row.status === "Active" ? "Set Inactive" : "Set Active",
-              icon: CheckCircle2,
-              onClick: () => handleToggleServiceStatus(row.id, row.status),
-            },
-            {
-              label: row.isTrending ? "Remove Trending" : "Set Trending",
-              icon: Flame,
-              onClick: () => handleToggleTrending(row.id),
-            },
-            {
-              label: "Edit",
-              icon: Edit,
-              onClick: () => openEditServiceDrawer(row),
-            },
-            {
-              label: "Add-ons",
-              icon: Wrench,
-              onClick: () => handleOpenAddonsModal(row),
-            },
-            {
-              label: "Delete",
-              icon: Trash2,
-              onClick: () => handleDeleteService(row.id),
-              danger: true,
-            },
+            ...(canEdit("cms")
+              ? [
+                  {
+                    label: row.status === "Active" ? "Set Inactive" : "Set Active",
+                    icon: CheckCircle2,
+                    onClick: () => handleToggleServiceStatus(row.id, row.status),
+                  },
+                  {
+                    label: row.isTrending ? "Remove Trending" : "Set Trending",
+                    icon: Flame,
+                    onClick: () => handleToggleTrending(row.id),
+                  },
+                  {
+                    label: "Edit",
+                    icon: Edit,
+                    onClick: () => openEditServiceDrawer(row),
+                  },
+                  {
+                    label: "Add-ons",
+                    icon: Wrench,
+                    onClick: () => handleOpenAddonsModal(row),
+                  },
+                ]
+              : []),
+            ...(canDelete("cms")
+              ? [
+                  {
+                    label: "Delete",
+                    icon: Trash2,
+                    onClick: () => handleDeleteService(row.id),
+                    danger: true,
+                  },
+                ]
+              : []),
           ]}
         />
       ),
@@ -1214,22 +1258,30 @@ export default function CmsPage() {
       accessor: (row) => (
         <RowActionMenu
           actions={[
-            {
-              label: row.status === "Active" ? "Set Inactive" : "Set Active",
-              icon: CheckCircle2,
-              onClick: () => handleToggleAddonStatus(row.id, row.status),
-            },
-            {
-              label: "Edit Add-on",
-              icon: Edit,
-              onClick: () => openEditAddonDrawer(row),
-            },
-            {
-              label: "Delete Add-on",
-              icon: Trash2,
-              onClick: () => handleDeleteAddon(row.id),
-              danger: true,
-            },
+            ...(canEdit("cms")
+              ? [
+                  {
+                    label: row.status === "Active" ? "Set Inactive" : "Set Active",
+                    icon: CheckCircle2,
+                    onClick: () => handleToggleAddonStatus(row.id, row.status),
+                  },
+                  {
+                    label: "Edit Add-on",
+                    icon: Edit,
+                    onClick: () => openEditAddonDrawer(row),
+                  },
+                ]
+              : []),
+            ...(canDelete("cms")
+              ? [
+                  {
+                    label: "Delete Add-on",
+                    icon: Trash2,
+                    onClick: () => handleDeleteAddon(row.id),
+                    danger: true,
+                  },
+                ]
+              : []),
           ]}
         />
       ),
@@ -2277,21 +2329,23 @@ export default function CmsPage() {
           </h1>
         </div>
 
-        <button
-          type="button"
-          onClick={() => {
-            if (activeTab === "services") openAddServiceDrawer();
-            else openAddAddonDrawer();
-          }}
-          className="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 w-full sm:w-auto"
-        >
-          <Plus className="w-4 h-4" />
-          <span>
-            {activeTab === "services"
-              ? "Create Service Offer"
-              : "Add Spare Component"}
-          </span>
-        </button>
+        {mounted && canCreate("cms") && (
+          <button
+            type="button"
+            onClick={() => {
+              if (activeTab === "services") openAddServiceDrawer();
+              else openAddAddonDrawer();
+            }}
+            className="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 w-full sm:w-auto"
+          >
+            <Plus className="w-4 h-4" />
+            <span>
+              {activeTab === "services"
+                ? "Create Service Offer"
+                : "Add Spare Component"}
+            </span>
+          </button>
+        )}
       </div>
 
       {/* Tab Controls */}
@@ -2370,6 +2424,12 @@ export default function CmsPage() {
           searchValue={servicesSearch}
           onSearchChange={handleServicesSearchChange}
           isLoading={isLoading}
+          enableColumnCustomization={true}
+          tableKey="package"
+          columnStorageKey="helpmate_package_columns_view"
+          hideStatusFilter={true}
+          disableDelete={!canDelete("cms")}
+          onBulkDelete={handleBulkDeletePackages}
         />
       ) : (
         <div className="space-y-4">
@@ -2379,6 +2439,7 @@ export default function CmsPage() {
             data={addons}
             searchPlaceholder="Search add-on title..."
             isLoading={isLoading}
+            hideStatusFilter={true}
           />
         </div>
       )}

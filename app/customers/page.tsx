@@ -41,10 +41,12 @@ import {
   ApiLocality,
 } from "@/lib/api";
 import { CustomSelect } from "@/components/CustomSelect";
+import { StatusDropdown } from "@/components/StatusDropdown";
 import { DataTable, Column } from "@/components/DataTable";
 import { RowActionMenu } from "@/components/RowActionMenu";
 import { Portal } from "@/components/Portal";
 import { toast } from "@/components/Toast";
+import { useRbac } from "@/context/RbacContext";
 
 export interface CustomerRow {
   id: string;
@@ -53,8 +55,8 @@ export interface CustomerRow {
   mobile: string;
   alternatePhone?: string;
   email?: string;
-  customerCategory: "individual_household" | "business" | string;
-  propertyHouseholdType: "apartment_flat" | "independent_house" | "villa" | "office_shop" | "other" | string;
+  customerCategory?: "individual_household" | "business" | string;
+  propertyHouseholdType?: "apartment_flat" | "independent_house" | "villa" | "office_shop" | "other" | string;
   localityId: string;
   localityName: string;
   pincode: string;
@@ -71,6 +73,7 @@ import { getStoredModuleData, setCachedModuleData, isModuleCacheFresh } from "@/
 
 export default function CustomersPage() {
   const initialCached = getStoredModuleData<CustomerRow[]>("customers");
+  const { canView, canCreate, canEdit, canDelete } = useRbac();
   const initialCachedLocs = getStoredModuleData<ApiLocality[]>("customer_localities");
   const [customers, setCustomers] = useState<CustomerRow[]>(() => initialCached || []);
   const [localities, setLocalities] = useState<ApiLocality[]>(() => initialCachedLocs || []);
@@ -81,7 +84,6 @@ export default function CustomersPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [localityFilter, setLocalityFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
   const [togglingStatusId, setTogglingStatusId] = useState<string | null>(null);
 
   // Slide-Over Drawer State (Used for BOTH Add & Edit)
@@ -99,8 +101,9 @@ export default function CustomersPage() {
   const [formPhone, setFormPhone] = useState("");
   const [formAlternatePhone, setFormAlternatePhone] = useState("");
   const [formEmail, setFormEmail] = useState("");
-  const [formCustomerCategory, setFormCustomerCategory] = useState<"individual_household" | "business">("individual_household");
-  const [formPropertyType, setFormPropertyType] = useState<"apartment_flat" | "independent_house" | "villa" | "office_shop" | "other">("apartment_flat");
+  const [formCustomerCategory, setFormCustomerCategory] = useState<string>("");
+  const [formPropertyType, setFormPropertyType] = useState<string>("");
+  const [formStatus, setFormStatus] = useState<boolean>(true);
   const [formAddressLabel, setFormAddressLabel] = useState("Home (Primary)");
   const [formRelationshipType, setFormRelationshipType] = useState<"self" | "family_member" | "friend_neighbor" | "office_work" | "other_person">("self");
   const [formLocalityId, setFormLocalityId] = useState("");
@@ -138,15 +141,7 @@ export default function CustomersPage() {
 
   // Fetch Customers from Backend API
   const fetchCustomers = useCallback(async (force: boolean = false) => {
-    if (!force && !searchQuery && isModuleCacheFresh("customers")) {
-      const cached = getStoredModuleData<CustomerRow[]>("customers");
-      if (cached && cached.length > 0) {
-        setCustomers(cached);
-        setLoading(false);
-        return;
-      }
-    }
-    if (customers.length === 0 && (!initialCached || initialCached.length === 0)) {
+    if (customers.length === 0) {
       setLoading(true);
     }
     setErrorMsg(null);
@@ -154,6 +149,7 @@ export default function CustomersPage() {
       const res = await getAdminCustomersApi({
         search: searchQuery || undefined,
         limit: 100,
+        forceRefresh: true,
       });
 
       if (res && res.success !== false) {
@@ -165,17 +161,34 @@ export default function CustomersPage() {
 
         const formatted: CustomerRow[] = rawList.map((item) => {
           const addressObj = item.primaryAddress;
-          let locName = "Varanasi";
-          let locPincode = addressObj?.pincode || "221002";
+          let locName = "";
+          let locPincode = "";
           let locId = "";
+          let servAddress = "";
+          let addrLabel = "";
+          let landmark = "";
+          let relType = "self";
 
-          if (addressObj?.localityId) {
-            if (typeof addressObj.localityId === "object") {
-              locName = addressObj.localityId.localityName || "Varanasi";
-              locPincode = addressObj.localityId.pincode || addressObj.pincode || "221002";
-              locId = addressObj.localityId._id || "";
-            } else {
-              locId = addressObj.localityId;
+          if (addressObj) {
+            servAddress = addressObj.serviceAddress || "";
+            addrLabel = addressObj.addressLabel || "";
+            landmark = addressObj.landmark || "";
+            relType = addressObj.relationshipType || "self";
+            locPincode = addressObj.pincode || "";
+
+            if (addressObj.localityId) {
+              if (typeof addressObj.localityId === "object") {
+                locName = addressObj.localityId.localityName || "";
+                locPincode = addressObj.localityId.pincode || locPincode;
+                locId = addressObj.localityId._id || "";
+              } else {
+                locId = String(addressObj.localityId);
+                const matchedLoc = localities.find((l) => l._id === locId);
+                if (matchedLoc) {
+                  locName = matchedLoc.localityName;
+                  if (!locPincode) locPincode = matchedLoc.pincode;
+                }
+              }
             }
           }
 
@@ -186,15 +199,15 @@ export default function CustomersPage() {
             mobile: item.mobile,
             alternatePhone: item.alternatePhone || "",
             email: item.email || "",
-            customerCategory: item.customerCategory || "individual_household",
-            propertyHouseholdType: item.propertyHouseholdType || "apartment_flat",
+            customerCategory: item.customerCategory || "",
+            propertyHouseholdType: item.propertyHouseholdType || "",
             localityId: locId,
             localityName: locName,
             pincode: locPincode,
-            serviceAddress: addressObj?.serviceAddress || "",
-            addressLabel: addressObj?.addressLabel || "Home (Primary)",
-            relationshipType: addressObj?.relationshipType || "self",
-            landmark: addressObj?.landmark || "",
+            serviceAddress: servAddress,
+            addressLabel: addrLabel,
+            relationshipType: relType,
+            landmark: landmark,
             status: item.status ?? true,
             createdAt: item.createdAt,
             raw: item,
@@ -231,9 +244,10 @@ export default function CustomersPage() {
     setFormPhone("");
     setFormAlternatePhone("");
     setFormEmail("");
-    setFormCustomerCategory("individual_household");
-    setFormPropertyType("apartment_flat");
-    setFormAddressLabel("Home (Primary)");
+    setFormCustomerCategory("");
+    setFormPropertyType("");
+    setFormStatus(true);
+    setFormAddressLabel("Home");
     setFormRelationshipType("self");
 
     // Default locality to empty so select locality placeholder is shown
@@ -252,17 +266,11 @@ export default function CustomersPage() {
     setFormPhone(cust.mobile);
     setFormAlternatePhone(cust.alternatePhone || "");
     setFormEmail(cust.email || "");
+    setFormCustomerCategory(cust.customerCategory || "");
+    setFormPropertyType(cust.propertyHouseholdType || "");
+    setFormStatus(cust.status ?? true);
 
-    const cat = cust.customerCategory === "business" ? "business" : "individual_household";
-    setFormCustomerCategory(cat);
-
-    const validProps = ["apartment_flat", "independent_house", "villa", "office_shop", "other"];
-    const propType = validProps.includes(cust.propertyHouseholdType)
-      ? (cust.propertyHouseholdType as any)
-      : "apartment_flat";
-    setFormPropertyType(propType);
-
-    setFormAddressLabel(cust.addressLabel || "Home (Primary)");
+    setFormAddressLabel(cust.addressLabel || "Home");
 
     const validRels = ["self", "family_member", "friend_neighbor", "office_work", "other_person"];
     const rel = validRels.includes(cust.relationshipType)
@@ -270,8 +278,8 @@ export default function CustomersPage() {
       : "self";
     setFormRelationshipType(rel);
 
-    setFormLocalityId(cust.localityId || (localities[0] ? localities[0]._id : ""));
-    setFormPincode(cust.pincode || (localities[0] ? localities[0].pincode : "221002"));
+    setFormLocalityId(cust.localityId || "");
+    setFormPincode(cust.pincode || "");
     setFormServiceAddress(cust.serviceAddress || "");
     setFormLandmark(cust.landmark || "");
     setIsDrawerOpen(true);
@@ -283,6 +291,8 @@ export default function CustomersPage() {
     const found = localities.find((l) => l._id === locId);
     if (found) {
       setFormPincode(found.pincode);
+    } else {
+      setFormPincode("");
     }
   };
 
@@ -300,7 +310,7 @@ export default function CustomersPage() {
       return;
     }
     if (!formLocalityId) {
-      setFormError("Please select a valid Varanasi locality.");
+      setFormError("Please select a locality.");
       return;
     }
     if (!formPincode.trim()) {
@@ -319,8 +329,8 @@ export default function CustomersPage() {
       mobile: formPhone.trim(),
       alternatePhone: formAlternatePhone.trim() || undefined,
       email: formEmail.trim() || undefined,
-      customerCategory: formCustomerCategory,
-      propertyHouseholdType: formPropertyType,
+      customerCategory: formCustomerCategory || undefined,
+      propertyHouseholdType: formPropertyType || undefined,
       address: {
         addressLabel: formAddressLabel.trim() || "Home (Primary)",
         relationshipType: formRelationshipType,
@@ -335,8 +345,17 @@ export default function CustomersPage() {
       let res;
       if (editingCustomer) {
         res = await updateCustomerApi(editingCustomer.id, payload);
+        if (res && res.success !== false && editingCustomer.status !== formStatus) {
+          await updateCustomerStatusApi(editingCustomer.id, formStatus);
+        }
       } else {
         res = await createCustomerApi(payload);
+        if (res && res.success !== false && !formStatus) {
+          const newCustId = res.data?.customer?._id || res.data?._id;
+          if (newCustId) {
+            await updateCustomerStatusApi(newCustId, false);
+          }
+        }
       }
 
       if (res && res.success !== false) {
@@ -374,8 +393,9 @@ export default function CustomersPage() {
   };
 
   // Toggle Customer Status (Active <-> Inactive via PATCH /api/admin/customer/:id/status)
-  const handleToggleCustomerStatus = async (customer: CustomerRow) => {
-    const newStatus = !customer.status;
+  const handleToggleCustomerStatus = async (customer: CustomerRow, targetStatusBool?: boolean) => {
+    const newStatus = typeof targetStatusBool === "boolean" ? targetStatusBool : !customer.status;
+    if (newStatus === customer.status) return;
     const actionText = newStatus ? "activate" : "deactivate";
 
     setTogglingStatusId(customer.id);
@@ -411,17 +431,20 @@ export default function CustomersPage() {
 
   // Client-side filtering over fetched list
   const filteredCustomers = customers.filter((c) => {
-    const matchesLocality = localityFilter === "all" || c.localityId === localityFilter || c.localityName.toLowerCase() === localityFilter.toLowerCase();
+    const matchesLocality =
+      localityFilter === "all" ||
+      c.localityId === localityFilter ||
+      (Boolean(c.localityName) && c.localityName.toLowerCase() === localityFilter.toLowerCase());
     const matchesCategory = categoryFilter === "all" || c.customerCategory === categoryFilter;
-    const matchesStatus = statusFilter === "all" || (statusFilter === "active" ? c.status : !c.status);
-    return matchesLocality && matchesCategory && matchesStatus;
+    return matchesLocality && matchesCategory;
   });
 
-  // Table Columns
   const columns: Column<CustomerRow>[] = [
     {
-      key: "fullName",
+      key: "customerAndCode",
       header: "Customer & Code",
+      locked: true,
+      fixedPosition: "first",
       accessor: (row) => (
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-brand-50 text-brand-600 dark:bg-brand-950 dark:text-brand-400 font-semibold text-xs flex items-center justify-center border border-brand-200 dark:border-brand-800 shrink-0 shadow-xs">
@@ -435,7 +458,7 @@ export default function CustomersPage() {
       ),
     },
     {
-      key: "mobile",
+      key: "contactDetails",
       header: "Contact Details",
       accessor: (row) => (
         <div className="flex flex-col">
@@ -452,31 +475,83 @@ export default function CustomersPage() {
       ),
     },
     {
-      key: "localityName",
+      key: "localityAndAddress",
       header: "Locality & Address",
-      accessor: (row) => (
-        <div className="flex flex-col text-xs max-w-[220px]">
-          <span className="font-semibold text-slate-900 dark:text-white flex items-center gap-1">
-            <MapPin className="w-3.5 h-3.5 text-brand-600 shrink-0" />
-            <span className="truncate">{row.localityName} ({row.pincode})</span>
-          </span>
-          <span className="text-[10px] text-slate-500 truncate mt-0.5">
-            {row.serviceAddress || "Address on record"}
-          </span>
-        </div>
-      ),
+      accessor: (row) => {
+        const addressObj = row.raw?.primaryAddress;
+
+        // If customer has no primary address in backend
+        if (!addressObj) {
+          return (
+            <span className="text-[11px] text-slate-400 italic">
+              No address recorded
+            </span>
+          );
+        }
+
+        let locName = "";
+        let pincode = addressObj.pincode || "";
+        const serviceAddress = addressObj.serviceAddress || "";
+
+        if (addressObj.localityId) {
+          if (typeof addressObj.localityId === "object") {
+            locName = addressObj.localityId.localityName || "";
+            pincode = addressObj.localityId.pincode || pincode;
+          } else {
+            const matched = localities.find((l) => l._id === String(addressObj.localityId));
+            locName = matched?.localityName || "";
+            pincode = matched?.pincode || pincode;
+          }
+        }
+
+        if (!locName && !serviceAddress) {
+          return (
+            <span className="text-[11px] text-slate-400 italic">
+              No address recorded
+            </span>
+          );
+        }
+
+        return (
+          <div className="flex flex-col text-xs max-w-[220px]">
+            {locName ? (
+              <span className="font-semibold text-slate-900 dark:text-white flex items-center gap-1">
+                <MapPin className="w-3.5 h-3.5 text-brand-600 shrink-0" />
+                <span className="truncate">
+                  {locName}
+                  {pincode ? ` (${pincode})` : ""}
+                </span>
+              </span>
+            ) : null}
+            {serviceAddress ? (
+              <span className="text-[10px] text-slate-500 truncate mt-0.5">
+                {serviceAddress}
+              </span>
+            ) : null}
+          </div>
+        );
+      },
     },
     {
-      key: "customerCategory",
+      key: "accountCategory",
       header: "Account Category",
       accessor: (row) => {
+        if (!row.customerCategory) {
+          return (
+            <span className="text-[11px] text-slate-400 italic">
+              Not Specified
+            </span>
+          );
+        }
+
         const isB2B = row.customerCategory === "business";
         const categoryLabel = isB2B ? "Commercial B2B" : "Individual Household";
         
-        let propLabel = "Apartment / Flat";
-        if (row.propertyHouseholdType === "independent_house") propLabel = "Independent House";
+        let propLabel = "";
+        if (row.propertyHouseholdType === "apartment_flat") propLabel = "Apartment / Flat";
+        else if (row.propertyHouseholdType === "independent_house") propLabel = "Independent House";
         else if (row.propertyHouseholdType === "villa") propLabel = "Villa / Bungalow";
-        else if (row.propertyHouseholdType === "office_shop") propLabel = "Office / Shop";
+          else if (row.propertyHouseholdType === "office_shop") propLabel = "Office / Shop";
         else if (row.propertyHouseholdType === "other") propLabel = "Other";
 
         return (
@@ -491,7 +566,7 @@ export default function CustomersPage() {
               {isB2B ? "🏢 " : "🏠 "}
               {categoryLabel}
             </span>
-            <span className="text-[10px] text-slate-500 font-medium">{propLabel}</span>
+            {propLabel && <span className="text-[10px] text-slate-500 font-medium">{propLabel}</span>}
           </div>
         );
       },
@@ -499,61 +574,60 @@ export default function CustomersPage() {
     {
       key: "status",
       header: "Status",
-      accessor: (row) => {
-        const isToggling = togglingStatusId === row.id;
-        return (
-          <button
-            type="button"
-            disabled={isToggling}
-            onClick={(e) => {
-              e.stopPropagation();
-              handleToggleCustomerStatus(row);
-            }}
-            title={`Click to ${row.status ? "deactivate" : "activate"} customer`}
-            className={`px-2.5 py-1 rounded-full text-[10px] font-semibold border inline-flex items-center gap-1.5 transition-all cursor-pointer hover:shadow-xs active:scale-95 disabled:opacity-60 disabled:cursor-wait ${
-              row.status
-                ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900"
-                : "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800 hover:bg-rose-100 dark:hover:bg-rose-900"
-            }`}
-          >
-            {isToggling ? (
-              <Loader2 className="w-2.5 h-2.5 animate-spin" />
-            ) : (
-              <span className={`w-1.5 h-1.5 rounded-full ${row.status ? "bg-emerald-500" : "bg-rose-500"}`} />
-            )}
-            <span>{row.status ? "Active" : "Inactive"}</span>
-          </button>
-        );
-      },
+      accessor: (row) => (
+        <StatusDropdown
+          status={row.status ? "Active" : "Inactive"}
+          isUpdating={togglingStatusId === row.id}
+          disabled={!canEdit("customers")}
+          onChange={(newStatus) =>
+            handleToggleCustomerStatus(row, newStatus === "Active")
+          }
+          title="Click to change customer status"
+        />
+      ),
     },
     {
-      key: "id",
+      key: "actions",
       header: "Actions",
       sticky: "right",
+      locked: true,
+      fixedPosition: "last",
       accessor: (row) => (
         <RowActionMenu
           actions={[
-            {
-              label: "View",
-              icon: Eye,
-              href: `/customers/${row.id}`,
-            },
-            {
-              label: row.status ? "Deactivate" : "Activate",
-              icon: row.status ? Ban : CheckCircle2,
-              onClick: () => handleToggleCustomerStatus(row),
-            },
-            {
-              label: "Edit",
-              icon: Edit2,
-              onClick: () => handleOpenEditDrawer(row),
-            },
-            {
-              label: "Delete",
-              icon: Trash2,
-              onClick: () => setDeleteCustomer(row),
-              danger: true,
-            },
+            ...(canView("customers")
+              ? [
+                  {
+                    label: "View",
+                    icon: Eye,
+                    href: `/customers/${row.id}`,
+                  },
+                ]
+              : []),
+            ...(canEdit("customers")
+              ? [
+                  {
+                    label: row.status ? "Inactive" : "Active",
+                    icon: row.status ? Ban : CheckCircle2,
+                    onClick: () => handleToggleCustomerStatus(row),
+                  },
+                  {
+                    label: "Edit",
+                    icon: Edit2,
+                    onClick: () => handleOpenEditDrawer(row),
+                  },
+                ]
+              : []),
+            ...(canDelete("customers")
+              ? [
+                  {
+                    label: "Delete",
+                    icon: Trash2,
+                    onClick: () => setDeleteCustomer(row),
+                    danger: true,
+                  },
+                ]
+              : []),
           ]}
         />
       ),
@@ -571,14 +645,16 @@ export default function CustomersPage() {
           </h1>
         </div>
 
-        <button
-          type="button"
-          onClick={handleOpenAddDrawer}
-          className="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 w-full sm:w-auto"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Add Customer</span>
-        </button>
+        {canCreate("customers") && (
+          <button 
+            type="button"
+            onClick={handleOpenAddDrawer}
+            className="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 w-full sm:w-auto"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Customer</span>
+          </button>
+        )}
       </div>
 
       {/* ERROR BANNER IF API FAILS */}
@@ -676,11 +752,11 @@ export default function CustomersPage() {
           </div>
           <div className="flex items-baseline gap-2">
             <span className="text-2xl font-black text-slate-900 dark:text-white">
-              {new Set(customers.map((c) => c.localityName)).size} Localities
+              {new Set(customers.map((c) => c.localityName).filter(Boolean)).size} Localities
             </span>
           </div>
           <p className="text-[11px] text-amber-600 dark:text-amber-400 font-semibold">
-            Varanasi Active Coverage
+            Active Coverage
           </p>
         </div>
       </div>
@@ -693,24 +769,16 @@ export default function CustomersPage() {
         onSearchChange={setSearchQuery}
         searchPlaceholder="Search customer by name, phone or code..."
         isLoading={loading}
-        hideStatusFilter={true}
+        enableColumnCustomization={true}
+        tableKey="customer"
+        columnStorageKey="helpmate_customer_columns_view"
+        onRefresh={() => fetchCustomers(true)}
+        isRefreshing={loading}
         extraFilters={
           <div className="flex flex-wrap items-center gap-2.5">
-            <div className="w-40">
-              <CustomSelect
-                value={statusFilter}
-                onChange={(val) => setStatusFilter(val)}
-                options={[
-                  { value: "all", label: "All Statuses" },
-                  { value: "active", label: "Active" },
-                  { value: "inactive", label: "Inactive" },
-                ]}
-                placeholder="Filter Status"
-              />
-            </div>
-
             <div className="w-44">
               <CustomSelect
+                size="sm"
                 value={categoryFilter}
                 onChange={(val) => setCategoryFilter(val)}
                 options={[
@@ -724,6 +792,7 @@ export default function CustomersPage() {
 
             <div className="w-48">
               <CustomSelect
+                size="sm"
                 value={localityFilter}
                 onChange={(val) => setLocalityFilter(val)}
                 options={[
@@ -736,15 +805,6 @@ export default function CustomersPage() {
                 placeholder="Filter Locality"
               />
             </div>
-
-            <button
-              type="button"
-              onClick={() => fetchCustomers(true)}
-              className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5"
-              title="Refresh List"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-brand-600" : ""}`} />
-            </button>
           </div>
         }
       />
@@ -764,11 +824,6 @@ export default function CustomersPage() {
                     <h3 className="font-extrabold text-slate-900 dark:text-white text-lg tracking-tight">
                       {editingCustomer ? "Edit Customer Account" : "Add New Customer"}
                     </h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                      {editingCustomer
-                        ? `Update details for ${editingCustomer.fullName} (${editingCustomer.customerCode})`
-                        : "Register new customer & primary address into Varanasi backend database"}
-                    </p>
                   </div>
                 </div>
                 <button
@@ -860,12 +915,13 @@ export default function CustomersPage() {
                     <span>2. Account Category & Household Type</span>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <CustomSelect
-                      label="Customer Category *"
+                      label="Customer Category"
                       value={formCustomerCategory}
-                      onChange={(val) => setFormCustomerCategory(val as any)}
+                      onChange={(val) => setFormCustomerCategory(val)}
                       options={[
+                        { value: "", label: "Select Category..." },
                         { value: "individual_household", label: "Individual Household" },
                         { value: "business", label: "Commercial Business / B2B" },
                       ]}
@@ -873,10 +929,11 @@ export default function CustomersPage() {
                     />
 
                     <CustomSelect
-                      label="Property Household Type *"
+                      label="Property Household Type"
                       value={formPropertyType}
-                      onChange={(val) => setFormPropertyType(val as any)}
+                      onChange={(val) => setFormPropertyType(val)}
                       options={[
+                        { value: "", label: "Select Property Type..." },
                         { value: "apartment_flat", label: "Apartment / Flat" },
                         { value: "independent_house", label: "Independent House" },
                         { value: "villa", label: "Villa / Bungalow" },
@@ -884,6 +941,17 @@ export default function CustomersPage() {
                         { value: "other", label: "Other" },
                       ]}
                       placeholder="Select Property Type..."
+                    />
+
+                    <CustomSelect
+                      label="Account Status"
+                      value={formStatus ? "active" : "inactive"}
+                      onChange={(val) => setFormStatus(val === "active")}
+                      options={[
+                        { value: "active", label: "Active" },
+                        { value: "inactive", label: "Inactive" },
+                      ]}
+                      placeholder="Select Status..."
                     />
                   </div>
                 </div>
@@ -942,10 +1010,13 @@ export default function CustomersPage() {
                       label="Locality *"
                       value={formLocalityId}
                       onChange={handleLocalityChange}
-                      options={localities.map((loc) => ({
-                        value: loc._id,
-                        label: `${loc.localityName} (${loc.pincode})`,
-                      }))}
+                      options={[
+                        { value: "", label: "Select Locality..." },
+                        ...localities.map((loc) => ({
+                          value: loc._id,
+                          label: `${loc.localityName} (${loc.pincode})`,
+                        })),
+                      ]}
                       placeholder="Select Locality..."
                     />
 
@@ -957,7 +1028,7 @@ export default function CustomersPage() {
                         type="text"
                         value={formPincode}
                         onChange={(e) => setFormPincode(e.target.value)}
-                        placeholder="221002"
+                        placeholder="Enter pincode"
                         className="w-full h-[42px] px-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono font-bold outline-none text-xs focus:border-brand-500 transition-all"
                         required
                       />
@@ -972,7 +1043,7 @@ export default function CustomersPage() {
                       rows={3}
                       value={formServiceAddress}
                       onChange={(e) => setFormServiceAddress(e.target.value)}
-                      placeholder="House No., Building Name, Street Road, Varanasi"
+                      placeholder="House No., Building Name, Street Road, Area"
                       className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-semibold outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all text-xs"
                       required
                     />

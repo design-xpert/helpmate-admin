@@ -12,7 +12,7 @@ export function ComingSoonOverlay({ path, title }: ComingSoonOverlayProps) {
   const displayTitle = title || config?.title || "";
 
   return (
-    <div className="fixed inset-0 lg:left-64 top-16 z-40 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center select-none pointer-events-auto animate-in fade-in duration-300">
+    <div className="fixed inset-0 lg:left-64 top-16 z-40 bg-slate-950/70 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center select-none pointer-events-auto animate-in fade-in duration-300">
       <div className="relative z-10 space-y-4 max-w-lg">
         <span className="text-[11px] font-black uppercase tracking-[0.3em] px-4 py-1.5 rounded-full bg-white/10 text-white/90 border border-white/20">
           Module Status

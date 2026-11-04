@@ -113,8 +113,18 @@ export function CustomerSearchPicker({
     setCreateError("");
 
     try {
-      const selectedLoc = localityOptions.find((l) => l.name.toLowerCase() === newLocality.toLowerCase()) || localityOptions[0];
-      const locId = (selectedLoc && selectedLoc.id && selectedLoc.id.length === 24) ? selectedLoc.id : "65d1a2b3c4d5e6f7a8b9c0d1";
+      const selectedLoc = localityOptions.find((l) => l.name.toLowerCase() === newLocality.toLowerCase()) || localityOptions.find((l) => l.id === newLocality);
+      if (!selectedLoc?.id) {
+        setCreateError("Please select a locality.");
+        setIsCreatingCustomer(false);
+        return;
+      }
+      if (!newAddress.trim()) {
+        setCreateError("Service address is required.");
+        setIsCreatingCustomer(false);
+        return;
+      }
+      const locId = selectedLoc.id;
       const relType =
         recipientType === "Self" ? "self" :
         recipientType === "Family Member" ? "family_member" :
@@ -131,8 +141,8 @@ export function CustomerSearchPicker({
           addressLabel: recipientType === "Self" ? "Home (Primary)" : `${recipientType} Address`,
           relationshipType: relType,
           localityId: locId,
-          pincode: newPincode.trim() || selectedLoc?.pincode || "221002",
-          serviceAddress: newAddress.trim() || `${newLocality}, Varanasi`,
+          pincode: newPincode.trim() || selectedLoc.pincode || "",
+          serviceAddress: newAddress.trim(),
         },
       });
 

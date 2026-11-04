@@ -243,7 +243,7 @@ export default function InvoiceDetailPage() {
             max-height: 100% !important;
             overflow: hidden !important;
             background: #ffffff !important;
-            color: #000000 !important;
+            color: #0f172a !important;
             margin: 0 !important;
             padding: 0 !important;
           }
@@ -515,7 +515,7 @@ export default function InvoiceDetailPage() {
       <Portal>
         <div
           id="printable-tax-invoice-portal"
-          className="hidden print:block p-0 rounded-3xl bg-white text-black space-y-4 w-full"
+          className="hidden print:block p-0 rounded-3xl bg-white text-slate-900 space-y-4 w-full"
         >
           {/* Header */}
           <div className="flex flex-row items-start justify-between gap-2 border-b border-slate-300 pb-3">
@@ -531,10 +531,10 @@ export default function InvoiceDetailPage() {
               </div>
               <div className="space-y-0.5">
                 <div className="flex items-center gap-2">
-                  <h1 className="font-extrabold text-xl text-black tracking-tight leading-none">
+                  <h1 className="font-extrabold text-xl text-slate-900 tracking-tight leading-none">
                     HelpMate
                   </h1>
-                  <span className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded bg-slate-100 text-black border border-slate-300">
+                  <span className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded bg-slate-100 text-slate-900 border border-slate-300">
                     Varanasi HQ
                   </span>
                 </div>
@@ -548,17 +548,17 @@ export default function InvoiceDetailPage() {
             </div>
 
             <div className="flex flex-col items-end text-right space-y-1 shrink-0">
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-slate-100 text-black font-extrabold text-[10px] border border-slate-400">
-                <span className="w-1.5 h-1.5 rounded-full bg-black inline-block" />
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-900 font-extrabold text-[10px] border border-slate-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-slate-900 inline-block" />
                 <span>OFFICIAL GST TAX INVOICE</span>
               </div>
 
-              <div className="font-mono text-xs font-black text-black bg-slate-100 px-2.5 py-0.5 rounded-lg border border-slate-300">
-                Invoice No: <span className="text-black font-extrabold">{invoiceNumber}</span>
+              <div className="font-mono text-xs font-black text-slate-900 bg-slate-100 px-2.5 py-0.5 rounded-lg border border-slate-300">
+                Invoice No: <span className="text-slate-900 font-extrabold">{invoiceNumber}</span>
               </div>
 
               <div className="text-[10px] text-slate-600 font-semibold">
-                Invoice Date: <span className="font-bold text-black">{formattedDate}</span>
+                Invoice Date: <span className="font-bold text-slate-900">{formattedDate}</span>
               </div>
             </div>
           </div>
@@ -569,7 +569,7 @@ export default function InvoiceDetailPage() {
               <span className="font-extrabold text-slate-500 uppercase tracking-wider block text-[9px]">
                 Billed To (Customer Details)
               </span>
-              <div className="font-extrabold text-black text-xs">
+              <div className="font-extrabold text-slate-900 text-xs">
                 {customerName}
               </div>
               <div className="text-slate-800 font-medium text-[10px]">
@@ -584,7 +584,7 @@ export default function InvoiceDetailPage() {
               <span className="font-extrabold text-slate-500 uppercase tracking-wider block text-[9px]">
                 Service & Payment Details
               </span>
-              <div className="font-extrabold text-black text-xs">
+              <div className="font-extrabold text-slate-900 text-xs">
                 Booking Ref: {bookingNumber}
               </div>
               <div className="text-slate-800 font-medium text-[10px]">
@@ -621,7 +621,7 @@ export default function InvoiceDetailPage() {
                   <th className="pb-1.5 text-right">Total (₹)</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200 font-semibold text-black">
+              <tbody className="divide-y divide-slate-200 font-semibold text-slate-900">
                 {items.map((item: any, idx: number) => (
                   <tr key={item.id || idx}>
                     <td className="py-2">
@@ -633,7 +633,7 @@ export default function InvoiceDetailPage() {
                     <td className="py-2 text-right font-mono font-bold text-xs">₹{item.total}</td>
                     <td className="py-2 text-right font-mono text-slate-700 text-xs">₹{item.cgst}</td>
                     <td className="py-2 text-right font-mono text-slate-700 text-xs">₹{item.sgst}</td>
-                    <td className="py-2 text-right font-mono font-extrabold text-black text-xs">
+                    <td className="py-2 text-right font-mono font-extrabold text-slate-900 text-xs">
                       ₹{item.total + item.cgst + item.sgst}
                     </td>
                   </tr>
@@ -657,7 +657,7 @@ export default function InvoiceDetailPage() {
           {/* Tax Summary & Total Box */}
           <div className="flex flex-row justify-between items-start gap-4 border-t border-slate-300 pt-3">
             <div className="text-[10px] text-slate-600 space-y-0.5 max-w-sm">
-              <span className="font-extrabold text-black block text-xs">Terms & Conditions</span>
+              <span className="font-extrabold text-slate-900 block text-xs">Terms & Conditions</span>
               <p>1. Invoice generated under GST Act 2017 for Varanasi Jurisdiction.</p>
               <p>2. SAC Code 998719 applies to Home Maintenance & Repair Services.</p>
             </div>
@@ -675,7 +675,7 @@ export default function InvoiceDetailPage() {
                 <span>SGST (9%)</span>
                 <span className="font-mono font-bold">₹{sgstVal}</span>
               </div>
-              <div className="flex justify-between py-0.5 text-xs font-black text-black">
+              <div className="flex justify-between py-0.5 text-xs font-black text-slate-900">
                 <span>Grand Total</span>
                 <span className="font-mono text-emerald-700 font-bold text-xs">₹{totalAmount}</span>
               </div>

@@ -23,6 +23,7 @@ import {
 import { CustomSelect } from "@/components/CustomSelect";
 import { StatusDropdown } from "@/components/StatusDropdown";
 import { ShimmerRow, ShimmerCardGrid } from "@/components/ShimmerLoader";
+import { useRbac } from "@/context/RbacContext";
 import {
   Sliders,
   Plus,
@@ -57,6 +58,7 @@ import { getCachedModuleData, getStoredModuleData, setCachedModuleData, isModule
 import { preloadImages, storeDataUrl } from "@/lib/imageCache";
 
 export default function CategoriesPage() {
+  const { canView, canCreate, canEdit, canDelete } = useRbac();
   // Tab State: "masterTable" is 1st tab & default active
   const [activeCategoryTab, setActiveCategoryTab] = useState<"masterTable" | "serviceIcons">("masterTable");
 
@@ -545,22 +547,30 @@ export default function CategoriesPage() {
       accessor: (row) => (
         <RowActionMenu
           actions={[
-            {
-              label: row.status === "Active" ? "Set Inactive" : "Set Active",
-              icon: CheckCircle2,
-              onClick: () => handleToggleCategoryStatus(row),
-            },
-            {
-              label: "Edit",
-              icon: Edit,
-              onClick: () => openEditDrawer(row),
-            },
-            // {
-            //   label: "Delete",
-            //   icon: Trash2,
-            //   onClick: () => handleDeleteCategory(row),
-            //   danger: true,
-            // },
+            ...(canEdit("categories")
+              ? [
+                  {
+                    label: row.status === "Active" ? "Set Inactive" : "Set Active",
+                    icon: CheckCircle2,
+                    onClick: () => handleToggleCategoryStatus(row),
+                  },
+                  {
+                    label: "Edit",
+                    icon: Edit,
+                    onClick: () => openEditDrawer(row),
+                  },
+                ]
+              : []),
+            ...(canDelete("categories")
+              ? [
+                  {
+                    label: "Delete",
+                    icon: Trash2,
+                    onClick: () => handleDeleteCategory(row),
+                    danger: true,
+                  },
+                ]
+              : []),
           ]}
         />
       ),
@@ -578,14 +588,16 @@ export default function CategoriesPage() {
           </h1>
         </div>
 
-        <button
-          type="button"
-          onClick={openAddDrawer}
-          className="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 w-full sm:w-auto"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Add Category</span>
-        </button>
+        {canCreate("categories") && (
+          <button
+            type="button"
+            onClick={openAddDrawer}
+            className="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 w-full sm:w-auto"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Category</span>
+          </button>
+        )}
       </div>
 
       {/* TABS BAR: 1st Tab = "Master Category Table", 2nd Tab = "Main Service Icons" */}

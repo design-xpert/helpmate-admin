@@ -5,7 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Booking, Technician, SelectedAddOnItem } from "@/lib/mockData";
-import { mapApiBooking } from "../page";
+import { mapApiBooking } from "@/lib/bookingMapper";
 import { getBookingDetailsApi, getBookingsApi, archiveBookingApi, restoreBookingApi, cancelBookingApi } from "@/lib/api";
 import {
   ArrowLeft,
@@ -542,7 +542,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
             max-height: 100% !important;
             overflow: hidden !important;
             background: #ffffff !important;
-            color: #000000 !important;
+            color: #0f172a !important;
             margin: 0 !important;
             padding: 0 !important;
           }
@@ -1519,7 +1519,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
       <Portal>
         <div
           id="printable-tax-invoice-portal"
-          className="hidden print:block p-0 rounded-3xl bg-white text-black space-y-4 w-full"
+          className="hidden print:block p-0 rounded-3xl bg-white text-slate-900 space-y-4 w-full"
         >
           {/* Invoice Header */}
           <div className="flex flex-row items-start justify-between gap-2 border-b border-slate-300 pb-3">
@@ -1535,7 +1535,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
               </div>
               <div className="space-y-0.5">
                 <div className="flex items-center gap-2">
-                  <h1 className="font-extrabold text-xl text-black tracking-tight leading-none">
+                  <h1 className="font-extrabold text-xl text-slate-900 tracking-tight leading-none">
                     HelpMate
                   </h1>
                 </div>
@@ -1543,18 +1543,18 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
             </div>
 
             <div className="flex flex-col items-end text-right space-y-1 shrink-0">
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-slate-100 text-black font-extrabold text-[10px] border border-slate-400">
-                <span className="w-1.5 h-1.5 rounded-full bg-black inline-block" />
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-900 font-extrabold text-[10px] border border-slate-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-slate-900 inline-block" />
                 <span>OFFICIAL GST TAX INVOICE</span>
               </div>
 
-              <div className="font-mono text-xs font-black text-black bg-slate-100 px-2.5 py-0.5 rounded-lg border border-slate-300">
-                Invoice No: <span className="text-black font-extrabold">{formatInvoiceNumber(currentBooking.bookingNumber || currentBooking.id)}</span>
+              <div className="font-mono text-xs font-black text-slate-900 bg-slate-100 px-2.5 py-0.5 rounded-lg border border-slate-300">
+                Invoice No: <span className="text-slate-900 font-extrabold">{formatInvoiceNumber(currentBooking.bookingNumber || currentBooking.id)}</span>
               </div>
 
               {scheduledDate && (
                 <div className="text-[10px] text-slate-600 font-semibold">
-                  Invoice Date: <span className="font-bold text-black">{scheduledDate}</span>
+                  Invoice Date: <span className="font-bold text-slate-900">{scheduledDate}</span>
                 </div>
               )}
             </div>
@@ -1566,7 +1566,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
               <span className="font-extrabold text-slate-500 uppercase tracking-wider block text-[9px]">
                 Billed To (Customer Details)
               </span>
-              <div className="font-extrabold text-black text-xs">
+              <div className="font-extrabold text-slate-900 text-xs">
                 {customerName}
               </div>
               {fullAddress && (
@@ -1580,7 +1580,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                 </div>
               )}
               {customerGstin && (
-                <div className="font-mono font-bold text-black bg-slate-100 p-0.5 rounded border border-slate-300 text-[9px] w-fit">
+                <div className="font-mono font-bold text-slate-900 bg-slate-100 p-0.5 rounded border border-slate-300 text-[9px] w-fit">
                   B2B GSTIN: {customerGstin}
                 </div>
               )}
@@ -1590,7 +1590,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
               <span className="font-extrabold text-slate-500 uppercase tracking-wider block text-[9px]">
                 Service & Payment Details
               </span>
-              <div className="font-extrabold text-black text-xs">
+              <div className="font-extrabold text-slate-900 text-xs">
                 Service: {currentBooking.serviceTitle}
               </div>
               {currentBooking.category && (
@@ -1620,14 +1620,14 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                   <th className="pb-1.5 text-right">Total (₹)</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200 font-semibold text-black">
+              <tbody className="divide-y divide-slate-200 font-semibold text-slate-900">
                 <tr>
                   <td className="py-2">
                     <div className="font-extrabold text-xs">{currentBooking.serviceTitle}</div>
                   </td>
                   <td className="py-2 text-right font-mono font-bold text-xs">₹{base}</td>
                   {gst > 0 && <td className="py-2 text-right font-mono text-slate-700 text-xs">₹{gst}</td>}
-                  <td className="py-2 text-right font-mono font-extrabold text-black text-xs">
+                  <td className="py-2 text-right font-mono font-extrabold text-slate-900 text-xs">
                     ₹{base + gst}
                   </td>
                 </tr>
@@ -1638,7 +1638,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                     </td>
                     <td className="py-2 text-right font-mono font-bold text-xs">₹{addon.price}</td>
                     {gst > 0 && <td className="py-2 text-right font-mono text-slate-700 text-xs">₹{addon.gstAmount || 0}</td>}
-                    <td className="py-2 text-right font-mono font-extrabold text-black text-xs">₹{addon.totalPrice}</td>
+                    <td className="py-2 text-right font-mono font-extrabold text-slate-900 text-xs">₹{addon.totalPrice}</td>
                   </tr>
                 ))}
                 {convenienceFee > 0 && (
@@ -1668,7 +1668,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                   <span className="font-mono font-bold">₹{gst + (currentBooking.addOnsGstTotal || 0)}</span>
                 </div>
               )}
-              <div className="flex justify-between py-0.5 text-xs font-black text-black">
+              <div className="flex justify-between py-0.5 text-xs font-black text-slate-900">
                 <span>Grand Total</span>
                 <span className="font-mono text-emerald-700 font-bold text-xs">₹{finalTotal}</span>
               </div>

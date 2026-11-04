@@ -79,7 +79,7 @@ export interface CatalogServiceItem {
   isPackage?: boolean;
 }
 
-export const CATEGORY_SUB_TYPES: Record<string, string[]> = {
+const CATEGORY_SUB_TYPES: Record<string, string[]> = {
   "AC Repair & Service": ["Split AC", "Window AC", "Cassette AC", "Tower AC"],
   "Water Purifier (RO)": ["Wall-mounted RO", "Under-sink RO", "UV+UF Purifier"],
   "Electrician & Wiring": ["Switchboard & MCB", "Inverter & Battery", "Decorative Lighting"],
@@ -87,7 +87,7 @@ export const CATEGORY_SUB_TYPES: Record<string, string[]> = {
   "Appliance Repair": ["Front Load Washing Machine", "Top Load Washing Machine", "Double Door Refrigerator", "Single Door Refrigerator"],
 };
 
-export const MASTER_SERVICE_CATALOG: CatalogServiceItem[] = [
+const MASTER_SERVICE_CATALOG: CatalogServiceItem[] = [
   // 1. AC Service & Repair
   {
     id: "ac-srv-1",
@@ -269,7 +269,7 @@ export const MASTER_SERVICE_CATALOG: CatalogServiceItem[] = [
   },
 ];
 
-export const VARANASI_PINCODE_ZONES = [
+const VARANASI_PINCODE_ZONES = [
   { pincode: "221001", area: "Sigra, Luxa & Chetganj" },
   { pincode: "221002", area: "Varanasi Cantt, Nadesar & Mint House" },
   { pincode: "221003", area: "Godowlia, Chowk & Dashashwamedh Old City" },

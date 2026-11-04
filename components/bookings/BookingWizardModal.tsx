@@ -150,10 +150,11 @@ export function BookingWizardModal({
 
   // STEP 2: Address & Location & Recipient Relationship Badges
   const [localityList, setLocalityList] = useState<VaranasiLocality[]>([]);
-  const [city, setCity] = useState("");
+  const [city, setCity] = useState("Varanasi");
   const [locality, setLocality] = useState("");
   const [pincode, setPincode] = useState("");
   const [address, setAddress] = useState("");
+  const [landmark, setLandmark] = useState("");
   const [addressRecipientType, setAddressRecipientType] = useState<AddressRecipientType>("Self");
   const [recipientName, setRecipientName] = useState("");
   const [recipientPhone, setRecipientPhone] = useState("");
@@ -185,6 +186,7 @@ export function BookingWizardModal({
     setLocality(item.locality);
     setPincode(item.pincode);
     setAddress(item.address);
+    setLandmark(item.landmark || "");
     setAddressRecipientType(item.type);
     if (item.type !== "Self") {
       setRecipientName(item.recipientName);
@@ -233,6 +235,7 @@ export function BookingWizardModal({
           localityId: foundLocality?.id || "65f1a2b3c4d5e6f7a8b9c0d1",
           pincode: editingAddressObj.pincode,
           serviceAddress: editingAddressObj.address,
+          landmark: editingAddressObj.landmark ? editingAddressObj.landmark.trim() : undefined,
         });
 
         if (selectedCustomerId) {
@@ -281,6 +284,7 @@ export function BookingWizardModal({
     setLocality(localityList[0]?.name || "");
     setPincode(localityList[0]?.pincode || "");
     setAddress("");
+    setLandmark("");
     setAddressRecipientType("Self");
     setRecipientName("");
     setRecipientPhone("");
@@ -315,6 +319,7 @@ export function BookingWizardModal({
         locality,
         pincode,
         address,
+        landmark: landmark.trim() || undefined,
       };
       setSavedAddresses((prev) => [...prev, newCustomObj]);
       selectSavedAddress(newCustomObj);
@@ -337,6 +342,7 @@ export function BookingWizardModal({
         localityId: foundLocality?.id || "65f1a2b3c4d5e6f7a8b9c0d1",
         pincode,
         serviceAddress: address,
+        landmark: landmark.trim() || undefined,
         isPrimary: savedAddresses.length === 0,
       });
 
@@ -808,6 +814,7 @@ export function BookingWizardModal({
       setLocality(bookingToEdit.locality || "Sigra");
       setPincode(bookingToEdit.pincode || "221002");
       setAddress(bookingToEdit.address || "");
+      setLandmark(bookingToEdit.landmark || "");
       setAddressRecipientType(bookingToEdit.addressRecipientType || "Self");
       setRecipientName(bookingToEdit.recipientName || "");
       setRecipientPhone(bookingToEdit.recipientPhone || "");
@@ -1387,7 +1394,8 @@ export function BookingWizardModal({
           relationshipType: relType as any,
           localityId: foundLocality?.id || "65f1a2b3c4d5e6f7a8b9c0d1",
           pincode: pincode || "221002",
-          serviceAddress: address || `${locality}, ${pincode}, ${city}`,
+          serviceAddress: address || `${locality}, ${pincode}`,
+          landmark: landmark.trim() || undefined,
           isPrimary: savedAddresses.length === 0,
         });
         if (createAddrRes && createAddrRes.success && createAddrRes.data) {
@@ -1449,6 +1457,7 @@ export function BookingWizardModal({
         locality,
         pincode,
         address: address || bookingToEdit.address,
+        landmark: landmark || bookingToEdit.landmark,
         addressRecipientType,
         recipientName: addressRecipientType !== "Self" ? recipientName : undefined,
         recipientPhone: addressRecipientType !== "Self" ? recipientPhone : undefined,
@@ -1501,6 +1510,7 @@ export function BookingWizardModal({
       locality,
       pincode,
       address: address || "",
+      landmark: landmark || undefined,
       addressRecipientType,
       recipientName: addressRecipientType !== "Self" ? recipientName : undefined,
       recipientPhone: addressRecipientType !== "Self" ? recipientPhone : undefined,
@@ -2148,17 +2158,7 @@ export function BookingWizardModal({
                                     )}
                                   </div>
 
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                                    <div>
-                                      <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">City</label>
-                                      <input
-                                        type="text"
-                                        value={city}
-                                        onChange={(e) => setCity(e.target.value)}
-                                        className="w-full h-[42px] px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-semibold outline-none text-xs"
-                                      />
-                                    </div>
-
+                                  <div className="text-xs">
                                     <div>
                                       <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">Pincode</label>
                                       <input
@@ -2171,13 +2171,25 @@ export function BookingWizardModal({
                                   </div>
 
                                   <div className="space-y-1.5 text-xs">
-                                    <label className="font-bold text-slate-700 dark:text-slate-300 block">Full Delivery / Service Address & Landmark *</label>
+                                    <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">Complete Service Address *</label>
                                     <textarea
                                       rows={2.5}
                                       value={editingAddressObj.address}
                                       onChange={(e) => setEditingAddressObj({ ...editingAddressObj, address: e.target.value })}
-                                      className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-semibold outline-none focus:border-purple-500"
+                                      placeholder="House No., Building Name, Street Road, Area"
+                                      className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-semibold outline-none focus:border-purple-500 text-xs"
                                       required
+                                    />
+                                  </div>
+
+                                  <div className="space-y-1.5 text-xs">
+                                    <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">Landmark (Optional)</label>
+                                    <input
+                                      type="text"
+                                      value={editingAddressObj.landmark || ""}
+                                      onChange={(e) => setEditingAddressObj({ ...editingAddressObj, landmark: e.target.value })}
+                                      placeholder="e.g. Near IP Sigra Mall"
+                                      className="w-full h-[40px] px-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-medium outline-none text-xs focus:border-purple-500 transition-all"
                                     />
                                   </div>
 
@@ -2220,18 +2232,16 @@ export function BookingWizardModal({
                         <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                         Selected Saved Address: <strong>{activeSavedAddressObj.label}</strong>
                       </span>
-                      <button
-                        type="button"
-                        onClick={selectAddNewCustomAddress}
-                        className="text-[11px] font-bold text-brand-600 dark:text-brand-400 hover:underline flex items-center gap-1 cursor-pointer"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" /> Edit / Enter Custom Address
-                      </button>
                     </div>
 
                     <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
                       {activeSavedAddressObj.address}
                     </p>
+                    {activeSavedAddressObj.landmark && (
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                        Landmark: <strong>{activeSavedAddressObj.landmark}</strong>
+                      </p>
+                    )}
 
                     <div className="flex items-center gap-3 text-[11px] text-slate-500 font-semibold pt-1">
                       <span>Locality: <strong>{locality} ({pincode})</strong></span>
@@ -2312,17 +2322,7 @@ export function BookingWizardModal({
                       )}
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                      <div>
-                        <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">City</label>
-                        <input
-                          type="text"
-                          value={city}
-                          onChange={(e) => setCity(e.target.value)}
-                          className="w-full h-[42px] px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-semibold outline-none text-xs"
-                        />
-                      </div>
-
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                       <CustomSelect
                         label="Service Locality *"
                         value={locality}
@@ -2356,16 +2356,29 @@ export function BookingWizardModal({
                     </div>
 
                     <div className="space-y-1.5 text-xs">
-                      <label className="font-bold text-slate-700 dark:text-slate-300 block">
-                        Full Delivery / Service Address & Landmark *
+                      <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                        Complete Service Address *
                       </label>
                       <textarea
                         rows={3}
                         value={address}
                         onChange={(e) => setAddress(e.target.value)}
-                        placeholder="Enter House / Flat No., Street Name, Colony & Landmark ..."
-                        className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-semibold outline-none focus:border-brand-500"
+                        placeholder="House No., Building Name, Street Road, Area"
+                        className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-semibold outline-none focus:border-brand-500 text-xs"
                         required
+                      />
+                    </div>
+
+                    <div className="space-y-1.5 text-xs">
+                      <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                        Landmark (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={landmark}
+                        onChange={(e) => setLandmark(e.target.value)}
+                        placeholder="e.g. Near IP Sigra Mall"
+                        className="w-full h-[40px] px-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-medium outline-none text-xs focus:border-brand-500 transition-all"
                       />
                     </div>
 

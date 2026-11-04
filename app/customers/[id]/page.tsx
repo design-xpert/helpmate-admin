@@ -79,10 +79,10 @@ export default function CustomerDetailPage() {
   const [editPhone, setEditPhone] = useState("");
   const [editAlternatePhone, setEditAlternatePhone] = useState("");
   const [editEmail, setEditEmail] = useState("");
-  const [editCustomerCategory, setEditCustomerCategory] = useState("individual_household");
-  const [editPropertyType, setEditPropertyType] = useState("apartment_flat");
+  const [editCustomerCategory, setEditCustomerCategory] = useState("");
+  const [editPropertyType, setEditPropertyType] = useState("");
   const [editLocalityId, setEditLocalityId] = useState("");
-  const [editPincode, setEditPincode] = useState("221002");
+  const [editPincode, setEditPincode] = useState("");
   const [editAddress, setEditAddress] = useState("");
   const [editLandmark, setEditLandmark] = useState("");
   const [editAddressLabel, setEditAddressLabel] = useState("Home (Primary)");
@@ -98,7 +98,7 @@ export default function CustomerDetailPage() {
   const [addrFormRecipientName, setAddrFormRecipientName] = useState("");
   const [addrFormRecipientPhone, setAddrFormRecipientPhone] = useState("");
   const [addrFormLocalityId, setAddrFormLocalityId] = useState("");
-  const [addrFormPincode, setAddrFormPincode] = useState("221002");
+  const [addrFormPincode, setAddrFormPincode] = useState("");
   const [addrFormAddress, setAddrFormAddress] = useState("");
   const [addrFormLandmark, setAddrFormLandmark] = useState("");
   const [addrFormIsPrimary, setAddrFormIsPrimary] = useState(false);
@@ -195,7 +195,7 @@ export default function CustomerDetailPage() {
       if (found) {
         return `${found.localityName} (${found.pincode || pincode || ""})`;
       }
-      return pincode ? `Varanasi (${pincode})` : "Varanasi";
+      return pincode ? `(${pincode})` : "";
     },
     [localities]
   );
@@ -222,14 +222,17 @@ export default function CustomerDetailPage() {
     setEditPhone(customer.mobile || "");
     setEditAlternatePhone(customer.alternatePhone || "");
     setEditEmail(customer.email || "");
+    const validCats = ["individual_household", "business"];
     setEditCustomerCategory(
-      customer.customerCategory === "business" ? "business" : "individual_household"
+      validCats.includes(customer.customerCategory || "")
+        ? (customer.customerCategory as string)
+        : ""
     );
     const validProps = ["apartment_flat", "independent_house", "villa", "office_shop", "other"];
     setEditPropertyType(
       validProps.includes(customer.propertyHouseholdType || "")
         ? (customer.propertyHouseholdType as string)
-        : "apartment_flat"
+        : ""
     );
 
     // Primary address fields fallback from API
@@ -239,16 +242,16 @@ export default function CustomerDetailPage() {
       const locId =
         typeof primaryAddress.localityId === "object"
           ? primaryAddress.localityId?._id
-          : primaryAddress.localityId || (localities[0]?._id || "");
+          : primaryAddress.localityId || "";
       setEditLocalityId(locId);
-      setEditPincode(primaryAddress.pincode || (localities[0]?.pincode || "221002"));
+      setEditPincode(primaryAddress.pincode || "");
       setEditAddress(primaryAddress.serviceAddress || "");
       setEditLandmark(primaryAddress.landmark || "");
     } else {
       setEditAddressLabel("Home (Primary)");
       setEditRelationshipType("self");
-      setEditLocalityId(localities[0]?._id || "");
-      setEditPincode(localities[0]?.pincode || "221002");
+      setEditLocalityId("");
+      setEditPincode("");
       setEditAddress("");
       setEditLandmark("");
     }
@@ -270,7 +273,7 @@ export default function CustomerDetailPage() {
       return;
     }
     if (!editLocalityId) {
-      setProfileError("Please select a valid Varanasi locality.");
+      setProfileError("Please select a locality.");
       return;
     }
     if (!editAddress.trim()) {
@@ -291,7 +294,7 @@ export default function CustomerDetailPage() {
           addressLabel: editAddressLabel.trim() || "Home (Primary)",
           relationshipType: editRelationshipType || "self",
           localityId: editLocalityId,
-          pincode: editPincode.trim() || "221002",
+          pincode: editPincode.trim(),
           serviceAddress: editAddress.trim(),
           landmark: editLandmark.trim(),
         },
@@ -320,9 +323,8 @@ export default function CustomerDetailPage() {
     setAddrFormType("self");
     setAddrFormRecipientName(customer?.fullName || "");
     setAddrFormRecipientPhone(customer?.mobile || "");
-    const defaultLoc = localities[0];
-    setAddrFormLocalityId(defaultLoc?._id || "");
-    setAddrFormPincode(defaultLoc?.pincode || "221002");
+    setAddrFormLocalityId("");
+    setAddrFormPincode("");
     setAddrFormAddress("");
     setAddrFormLandmark("");
     setAddrFormIsPrimary(addresses.length === 0);
@@ -340,9 +342,9 @@ export default function CustomerDetailPage() {
     const locId =
       typeof addr.localityId === "object"
         ? addr.localityId?._id
-        : addr.localityId || (localities[0]?._id || "");
+        : addr.localityId || "";
     setAddrFormLocalityId(locId);
-    setAddrFormPincode(addr.pincode || "221002");
+    setAddrFormPincode(addr.pincode || "");
     setAddrFormAddress(addr.serviceAddress || "");
     setAddrFormLandmark(addr.landmark || "");
     setAddrFormIsPrimary(Boolean(addr.isPrimary));
@@ -359,7 +361,7 @@ export default function CustomerDetailPage() {
       return;
     }
     if (!addrFormLocalityId) {
-      setAddressError("Please select a Varanasi locality.");
+      setAddressError("Please select a locality.");
       return;
     }
     if (!addrFormAddress.trim()) {
@@ -676,7 +678,7 @@ export default function CustomerDetailPage() {
               {title}
             </h4>
             <span className="text-[10px] text-slate-400 font-mono">
-              {row.address?.localityName ? `📍 ${row.address.localityName}` : "Varanasi Service"}
+              {row.address?.localityName ? `📍 ${row.address.localityName}` : ""}
             </span>
           </div>
         );
@@ -1517,7 +1519,7 @@ export default function CustomerDetailPage() {
                 <span>Customer Address Book & Delivery Locations</span>
               </h3>
               <p className="text-xs text-slate-500 font-semibold mt-0.5">
-                Saved delivery locations registered for {customer.fullName} in Varanasi
+                Saved delivery locations registered for {customer.fullName}
               </p>
             </div>
 
@@ -1846,17 +1848,20 @@ export default function CustomerDetailPage() {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <CustomSelect
-                      label="Varanasi Locality *"
+                      label="Locality *"
                       value={editLocalityId}
                       onChange={(val) => {
                         setEditLocalityId(val);
                         const found = localities.find((l) => l._id === val);
                         if (found) setEditPincode(found.pincode);
                       }}
-                      options={localities.map((loc) => ({
-                        value: loc._id,
-                        label: `${loc.localityName} (${loc.pincode})`,
-                      }))}
+                      options={[
+                        { value: "", label: "Select Locality..." },
+                        ...localities.map((loc) => ({
+                          value: loc._id,
+                          label: `${loc.localityName} (${loc.pincode})`,
+                        })),
+                      ]}
                       placeholder="Select Locality..."
                     />
 
@@ -2041,22 +2046,25 @@ export default function CustomerDetailPage() {
                 <div className="p-5 rounded-2xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 space-y-4">
                   <div className="flex items-center gap-2 text-emerald-900 dark:text-emerald-300 font-extrabold text-sm border-b border-emerald-200 dark:border-emerald-800 pb-2">
                     <MapPin className="w-4 h-4 text-emerald-600" />
-                    <span>2. Varanasi Locality & Street Address</span>
+                    <span>2. Locality & Street Address</span>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <CustomSelect
-                      label="Varanasi Zone / Locality *"
+                      label="Locality *"
                       value={addrFormLocalityId}
                       onChange={(val) => {
                         setAddrFormLocalityId(val);
                         const found = localities.find((l) => l._id === val);
                         if (found) setAddrFormPincode(found.pincode);
                       }}
-                      options={localities.map((loc) => ({
-                        value: loc._id,
-                        label: `${loc.localityName} (${loc.pincode})`,
-                      }))}
+                      options={[
+                        { value: "", label: "Select Locality..." },
+                        ...localities.map((loc) => ({
+                          value: loc._id,
+                          label: `${loc.localityName} (${loc.pincode})`,
+                        })),
+                      ]}
                       placeholder="Select Locality..."
                     />
 
@@ -2068,6 +2076,7 @@ export default function CustomerDetailPage() {
                         type="text"
                         value={addrFormPincode}
                         onChange={(e) => setAddrFormPincode(e.target.value)}
+                        placeholder="Enter pincode"
                         className="w-full h-[42px] px-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono font-bold outline-none"
                         required
                       />
@@ -2082,7 +2091,7 @@ export default function CustomerDetailPage() {
                       rows={3}
                       value={addrFormAddress}
                       onChange={(e) => setAddrFormAddress(e.target.value)}
-                      placeholder="House No., Building Name, Road, Varanasi"
+                      placeholder="House No., Building Name, Road, Area"
                       className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-semibold outline-none focus:border-emerald-500"
                       required
                     />

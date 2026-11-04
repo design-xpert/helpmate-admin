@@ -203,6 +203,17 @@ export interface UserPermissions {
   analytics: ModulePermission;
   reports: ModulePermission;
   rbac: ModulePermission;
+  leads?: ModulePermission;
+  settlements?: ModulePermission;
+  wallets?: ModulePermission;
+  membership?: ModulePermission;
+  banners?: ModulePermission;
+  imageSections?: ModulePermission;
+  faq?: ModulePermission;
+  support?: ModulePermission;
+  notifications?: ModulePermission;
+  activityLog?: ModulePermission;
+  settings?: ModulePermission;
 
   // Feature flags (auto-derived)
   canAssignJobs: boolean;
@@ -371,6 +382,7 @@ export interface Booking {
   locality: string;
   pincode: string;
   address: string;
+  landmark?: string;
   serviceTitle: string;
   serviceName?: string;
   scheduledDate?: string;
@@ -438,6 +450,7 @@ export interface Booking {
   technicianId?: string;
   technicianPhone?: string;
   date: string;
+  workingDateRaw?: string;
   timeSlot: string;
   paymentMethod: "UPI" | "Cash on Service" | "Card" | "Helpmate Wallet" | "Online" | "Partial Payment";
   createdAt?: string;
@@ -458,6 +471,7 @@ export interface Customer {
   locality: string;
   pincode?: string;
   address: string;
+  landmark?: string;
   secondaryLocality?: string;
   secondaryAddress?: string;
   tier: "Crown Elite" | "VIP" | "Standard";
@@ -836,6 +850,17 @@ export const initialUsers: UserManagementItem[] = [
       analytics: { view: true, create: true, edit: true, delete: true },
       reports: { view: true, create: true, edit: true, delete: true },
       rbac: { view: true, create: true, edit: true, delete: true },
+      leads: { view: true, create: true, edit: true, delete: true },
+      settlements: { view: true, create: true, edit: true, delete: true },
+      wallets: { view: true, create: true, edit: true, delete: true },
+      membership: { view: true, create: true, edit: true, delete: true },
+      banners: { view: true, create: true, edit: true, delete: true },
+      imageSections: { view: true, create: true, edit: true, delete: true },
+      faq: { view: true, create: true, edit: true, delete: true },
+      support: { view: true, create: true, edit: true, delete: true },
+      notifications: { view: true, create: true, edit: true, delete: true },
+      activityLog: { view: true, create: true, edit: true, delete: true },
+      settings: { view: true, create: true, edit: true, delete: true },
       canAssignJobs: true,
       canEditServices: true,
       canProcessRefunds: true,
@@ -2423,6 +2448,7 @@ export interface LeadCRMItem {
   email: string;
   locality: string;
   address: string;
+  landmark?: string;
   serviceCategory: string;
   serviceRequested: string;
   leadSource: LeadSource;

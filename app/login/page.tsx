@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
@@ -12,11 +12,32 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { useRbac } from "@/context/RbacContext";
-import { adminLoginApi, formatImageUrl } from "@/lib/api";
+import { adminLoginApi, formatImageUrl, isTokenExpired } from "@/lib/api";
+import { computeUserPermissions } from "@/lib/rbacHelper";
+import { saveSidebarCookie } from "@/components/Sidebar";
 
 export default function LoginPage() {
   const router = useRouter();
   const { setRole } = useRbac();
+
+  // Redirect if already logged in with valid token (unless explicitly logged out)
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("logout") === "true") {
+        localStorage.removeItem("helpmate_admin_token");
+        localStorage.removeItem("helpmate_admin_user");
+        localStorage.removeItem("helpmate_admin_session");
+        localStorage.removeItem("helpmate_active_user_id");
+        return;
+      }
+
+      const token = localStorage.getItem("helpmate_admin_token");
+      if (token && !isTokenExpired(token)) {
+        window.location.href = "/";
+      }
+    }
+  }, []);
 
   // Clean empty form state (no prefilled values)
   const [email, setEmail] = useState("");
@@ -45,29 +66,53 @@ export default function LoginPage() {
 
       if (res && res.success && res.token) {
         localStorage.setItem("helpmate_admin_token", res.token);
+        let isSuperAdmin = false;
         if (res.admin) {
           localStorage.setItem("helpmate_admin_user", JSON.stringify(res.admin));
+          if (res.admin._id || res.admin.id || res.admin.adminId) {
+            localStorage.setItem("helpmate_active_user_id", String(res.admin._id || res.admin.id || res.admin.adminId));
+          }
+
+          // Compute user permissions dynamically on login
+          const computed = computeUserPermissions(res.admin);
+          isSuperAdmin = computed.isSuperAdmin;
+          localStorage.setItem("helpmate_sidebar_allowed_modules", JSON.stringify(computed.allowedModules));
+          localStorage.setItem("helpmate_user_permissions", JSON.stringify(computed.permissions));
+          localStorage.removeItem("helpmate_sidebar_pinned_items");
+          saveSidebarCookie({
+            allowedModules: computed.allowedModules,
+            isSuperAdmin,
+            role: res.admin?.role?.name || res.admin?.role || (isSuperAdmin ? "Super Admin" : "Office Admin"),
+            pinnedHrefs: [],
+          });
         }
         localStorage.setItem("helpmate_admin_session", "true");
 
-        const userRole = res.admin?.role?.name || res.admin?.role || "Super Admin";
+        const userRole = res.admin?.role?.name || res.admin?.role || (isSuperAdmin ? "Super Admin" : "Office Admin");
+        let targetPath = "/";
         if (typeof userRole === "string" && (userRole.toLowerCase().includes("partner") || email.toLowerCase().includes("partner"))) {
           setRole("Service Partner");
-          router.push("/partner");
+          targetPath = "/partner";
         } else if (typeof userRole === "string" && (userRole.toLowerCase().includes("office") || email.toLowerCase().includes("office"))) {
           setRole("Office Admin");
-          router.push("/");
-        } else {
+          targetPath = "/";
+        } else if (isSuperAdmin) {
           setRole("Super Admin");
-          router.push("/");
+          targetPath = "/";
+        } else {
+          setRole(userRole as any);
+          targetPath = "/";
         }
+
+        // Hard redirect guarantees clean layout re-initialization and authenticated provider mount
+        window.location.href = targetPath;
       } else {
         setErrorMessage(res?.message || "Invalid credentials. Please check email and password.");
+        setIsLoading(false);
       }
     } catch (err) {
       console.error("Login error:", err);
       setErrorMessage("Failed to connect to authentication server.");
-    } finally {
       setIsLoading(false);
     }
   };

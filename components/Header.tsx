@@ -35,6 +35,7 @@ import {
   ApiSearchItem,
   ApiSearchResults,
   ApiSearchShortcut,
+  handleGlobalLogout,
 } from "@/lib/api";
 
 type SearchCategory = "all" | "bookings" | "customers" | "partners" | "invoices";
@@ -386,7 +387,7 @@ export function Header({ onOpenMobileSidebar }: HeaderProps) {
             <div className="fixed inset-x-3 sm:inset-x-auto sm:absolute sm:right-0 top-16 sm:top-full mt-2 sm:w-96 max-w-sm sm:max-w-none mx-auto sm:mx-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl p-4 z-50 animate-in zoom-in-95 duration-150 space-y-3 max-h-[calc(100vh-5rem)] overflow-y-auto">
               <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
                 <div className="flex items-center gap-2">
-                  <h4 className="text-xs font-black text-slate-900 dark:text-white">Live Operations Alerts</h4>
+                  <h4 className="text-xs font-black text-slate-900 dark:text-white">Notifications</h4>
                   <span className="px-2 py-0.5 rounded-full bg-brand-500 text-white font-extrabold text-[10px]">
                     3 New
                   </span>
@@ -446,7 +447,7 @@ export function Header({ onOpenMobileSidebar }: HeaderProps) {
                   onClick={() => setIsNotificationsOpen(false)}
                   className="w-full py-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-brand-50 dark:hover:bg-brand-950/60 text-brand-600 dark:text-brand-400 font-extrabold text-xs text-center block transition-colors"
                 >
-                  View All System Alerts & Broadcast Logs →
+                  View All Notifications
                 </Link>
               </div>
             </div>
@@ -569,8 +570,7 @@ export function Header({ onOpenMobileSidebar }: HeaderProps) {
                   type="button"
                   onClick={() => {
                     setIsProfileOpen(false);
-                    localStorage.removeItem("helpmate_active_user_id");
-                    router.push("/login");
+                    handleGlobalLogout();
                   }}
                   className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-red-600 hover:bg-red-50 dark:hover:bg-red-950/60 transition-colors font-bold text-left cursor-pointer"
                 >

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { getStoredModuleData, setCachedModuleData, isModuleCacheFresh, clearModuleCache } from "@/lib/moduleCache";
+import { useRbac } from "@/context/RbacContext";
 import {
   Plus,
   Camera,
@@ -55,6 +56,7 @@ import {
 } from "@/lib/api";
 
 export default function ImageSectionsPage() {
+  const { canCreate, canEdit, canDelete } = useRbac();
   const [activeTab, setActiveTab] = useState<TabType>("zones");
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -789,36 +791,38 @@ export default function ImageSectionsPage() {
               className="pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-none focus:border-brand-500 w-full sm:w-56 xl:w-44"
             />
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              if (activeTab === "zones") setIsAddZoneModalOpen(true);
-              else if (activeTab === "spotlight") setIsAddSpotlightModalOpen(true);
-              else if (activeTab === "categorySections") setIsAddCategorySectionModalOpen(true);
-              else setIsCatalogPickerOpen(true);
-            }}
-            disabled={activeTab === "quick" && quickServices.length >= 6}
-            className={`flex items-center gap-1.5 px-3.5 sm:px-4 py-2 rounded-xl font-bold text-xs transition-colors shrink-0 whitespace-nowrap ${
-              activeTab === "quick" && quickServices.length >= 6
-                ? "bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed border border-slate-200 dark:border-slate-700"
-                : "bg-brand-600 hover:bg-brand-700 text-white cursor-pointer shadow-sm"
-            }`}
-          >
-            <Plus className="w-3.5 h-3.5 shrink-0" />
-            <span className="truncate">
-              {activeTab === "zones"
-                ? "Add Zone"
-                : activeTab === "spotlight"
-                ? "Add Spotlight Banner"
-                : activeTab === "categorySections"
-                ? "Add Category Section"
-                : activeTab === "quick"
-                ? quickServices.length >= 6
-                  ? "Max 6 Slots Filled"
-                  : "Select Quick Service"
-                : "Select Service from Catalog"}
-            </span>
-          </button>
+          {canCreate("IMAGE_SECTION") && (
+            <button
+              type="button"
+              onClick={() => {
+                if (activeTab === "zones") setIsAddZoneModalOpen(true);
+                else if (activeTab === "spotlight") setIsAddSpotlightModalOpen(true);
+                else if (activeTab === "categorySections") setIsAddCategorySectionModalOpen(true);
+                else setIsCatalogPickerOpen(true);
+              }}
+              disabled={activeTab === "quick" && quickServices.length >= 6}
+              className={`flex items-center gap-1.5 px-3.5 sm:px-4 py-2 rounded-xl font-bold text-xs transition-colors shrink-0 whitespace-nowrap ${
+                activeTab === "quick" && quickServices.length >= 6
+                  ? "bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed border border-slate-200 dark:border-slate-700"
+                  : "bg-brand-600 hover:bg-brand-700 text-white cursor-pointer shadow-sm"
+              }`}
+            >
+              <Plus className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">
+                {activeTab === "zones"
+                  ? "Add Zone"
+                  : activeTab === "spotlight"
+                  ? "Add Spotlight Banner"
+                  : activeTab === "categorySections"
+                  ? "Add Category Section"
+                  : activeTab === "quick"
+                  ? quickServices.length >= 6
+                    ? "Max 6 Slots Filled"
+                    : "Select Quick Service"
+                  : "Select Service from Catalog"}
+              </span>
+            </button>
+          )}
         </div>
       </div>
 

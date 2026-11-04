@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { CustomSelect } from "@/components/CustomSelect";
 import { DataTable, Column } from "@/components/DataTable";
 import { RowActionMenu } from "@/components/RowActionMenu";
 import { initialUsers, UserManagementItem, UserPermissions, ModulePermission } from "@/lib/mockData";
+import { useRbac } from "@/context/RbacContext";
 import {
   ShieldCheck,
   Plus,
@@ -13,6 +14,8 @@ import {
   Edit,
   Trash2,
   X,
+  Eye,
+  ChevronRight,
   UserCheck,
   ShieldAlert,
   CalendarCheck,
@@ -41,9 +44,21 @@ import {
   Key,
   Check,
   Shield,
+  Gift,
+  Bell,
+  HelpCircle,
+  Image as ImageIcon,
+  Wallet,
+  Receipt,
+  Headphones,
+  Settings,
+  History,
+  Sparkles,
+  Send,
 } from "lucide-react";
 import { Portal } from "@/components/Portal";
 import { PermissionGuard } from "@/components/PermissionGuard";
+import { StatusDropdown } from "@/components/StatusDropdown";
 import {
   getRolesApi,
   createRoleApi,
@@ -63,26 +78,40 @@ type ModuleKey =
   | "bookings" | "inspections" | "customers" | "technicians"
   | "categories" | "cms" | "pricing" | "locations"
   | "payments" | "billing" | "commission" | "coupons"
-  | "reviews" | "media" | "analytics" | "reports" | "rbac";
+  | "reviews" | "media" | "analytics" | "reports" | "rbac"
+  | "leads" | "settlements" | "wallets" | "membership"
+  | "banners" | "imageSections" | "faq" | "support"
+  | "notifications" | "activityLog" | "settings";
 
 const modulesList: { key: ModuleKey; label: string; icon: any; desc: string; defaultSampleId: string }[] = [
-  { key: "bookings",    label: "Bookings & Jobs",          icon: CalendarCheck, desc: "Manage customer requests, live job assignments & schedules", defaultSampleId: "6aba0c2d6110aa2c74212456" },
-  { key: "inspections", label: "Inspections",               icon: Search,        desc: "On-site service inspections and quality verification",      defaultSampleId: "6aba0c2d6110aa2c74212457" },
-  { key: "customers",   label: "Customers CRM",            icon: Users,         desc: "Access client profiles & customer CRM directory",             defaultSampleId: "6aba0c2e6110aa2c74212458" },
-  { key: "technicians", label: "Partner & KYC",            icon: TechIcon,      desc: "Onboard technicians, verify Aadhaar & police clearance",    defaultSampleId: "6aba0c2e6110aa2c74212459" },
-  { key: "categories",  label: "Category Catalog",         icon: Sliders,       desc: "Manage service categories and sub-categories",                defaultSampleId: "6aba0c2e6110aa2c74212460" },
-  { key: "cms",         label: "Services CMS",              icon: Wrench,        desc: "Configure service listings, descriptions & media",           defaultSampleId: "6aba0c2e6110aa2c74212461" },
-  { key: "pricing",     label: "Pricing Engine",            icon: Tag,           desc: "Set base prices, add-ons and rate cards",                     defaultSampleId: "6aba0c2e6110aa2c74212462" },
-  { key: "locations",   label: "Locations & Pincodes",     icon: Building2,     desc: "Manage serviceable areas and pincode zones",                 defaultSampleId: "6aba0c2e6110aa2c74212463" },
-  { key: "payments",    label: "Payments",                 icon: CreditCard,    desc: "Track UPI, card and cash payment transactions",               defaultSampleId: "6aba0c2e6110aa2c74212464" },
-  { key: "billing",     label: "Billing & GST",            icon: FileText,      desc: "Generate GST invoices, process refunds & receipts",          defaultSampleId: "6aba0c2e6110aa2c74212465" },
-  { key: "commission",  label: "Commission & Settlements", icon: DollarSign,    desc: "25% platform commission engine & weekly payouts",             defaultSampleId: "6aba0c2e6110aa2c74212466" },
-  { key: "coupons",     label: "Coupons & Offers",         icon: Tag,           desc: "Discount codes, bank offers and promo campaigns",             defaultSampleId: "6aba0c2e6110aa2c74212467" },
-  { key: "reviews",     label: "Customer Reviews",         icon: Star,          desc: "Moderate ratings and quality feedback",                       defaultSampleId: "6aba0c2e6110aa2c74212468" },
-  { key: "media",       label: "Media Library",            icon: FileImage,     desc: "Upload and manage service images and assets",                 defaultSampleId: "6aba0c2e6110aa2c74212469" },
-  { key: "analytics",   label: "Executive Analytics",      icon: TrendingUp,    desc: "Real-time dashboards and KPI tracking",                       defaultSampleId: "6aba0c2e6110aa2c74212470" },
-  { key: "reports",     label: "Reports & Exports",        icon: BarChart3,     desc: "Export financial statements & audit logs",                    defaultSampleId: "6aba0c2e6110aa2c74212471" },
-  { key: "rbac",        label: "User Management & RBAC",   icon: KeyRound,      desc: "Manage admin accounts and permission matrix",                 defaultSampleId: "6aba0c2e6110aa2c74212472" },
+  { key: "bookings",      label: "Bookings & Jobs",          icon: CalendarCheck, desc: "Manage customer requests, live job assignments & schedules", defaultSampleId: "6aba0c2c6110aa2c74212449" },
+  { key: "inspections",   label: "Inspections",               icon: Search,        desc: "On-site service inspections and quality verification",      defaultSampleId: "6aba0c2d6110aa2c7421244d" },
+  { key: "leads",         label: "Lead Inquiries",           icon: UserCheck,     desc: "Customer inquiries, enterprise leads & quote requests",      defaultSampleId: "6aba0c316110aa2c74212470" },
+  { key: "customers",     label: "Customers CRM",            icon: Users,         desc: "Access client profiles & customer CRM directory",             defaultSampleId: "6aba0c2d6110aa2c74212451" },
+  { key: "technicians",   label: "Partner & KYC",            icon: TechIcon,      desc: "Onboard technicians, verify Aadhaar & police clearance",    defaultSampleId: "6aba0c2d6110aa2c74212456" },
+  { key: "categories",    label: "Category Catalog",         icon: Sliders,       desc: "Manage service categories and sub-categories",                defaultSampleId: "6aba0c2e6110aa2c7421245a" },
+  { key: "cms",           label: "Services CMS",              icon: Wrench,        desc: "Configure service listings, descriptions & media",           defaultSampleId: "6aba0c2e6110aa2c7421245e" },
+  { key: "pricing",       label: "Pricing Engine",            icon: Tag,           desc: "Set base prices, add-ons and rate cards",                     defaultSampleId: "6aba0c2e6110aa2c74212462" },
+  { key: "membership",    label: "Membership & VIP Club",     icon: Sparkles,      desc: "Manage VIP subscription tiers, benefits and members",        defaultSampleId: "6aba0c376110aa2c74212488" },
+  { key: "banners",       label: "Marketing Banners",        icon: ImageIcon,     desc: "Manage promotional carousel banners on customer apps",       defaultSampleId: "6aba0c386110aa2c7421248c" },
+  { key: "imageSections", label: "App Section Images",       icon: FileImage,     desc: "Configure section banners and home page visuals",            defaultSampleId: "6aba0c396110aa2c74212490" },
+  { key: "faq",           label: "FAQ & Help Center",        icon: HelpCircle,    desc: "Create and publish help articles and customer FAQs",         defaultSampleId: "6aba0c3a6110aa2c74212494" },
+  { key: "locations",     label: "Locations & Pincodes",     icon: Building2,     desc: "Manage serviceable areas and pincode zones",                 defaultSampleId: "6aba0c2f6110aa2c74212466" },
+  { key: "media",         label: "Media Library",            icon: FileImage,     desc: "Upload and manage service images and assets",                 defaultSampleId: "6aba0c3d6110aa2c742124a0" },
+  { key: "payments",      label: "Payments",                 icon: CreditCard,    desc: "Track UPI, card and cash payment transactions",               defaultSampleId: "6aba0c326110aa2c74212474" },
+  { key: "billing",       label: "Billing & GST",            icon: FileText,      desc: "Generate GST invoices, process refunds & receipts",          defaultSampleId: "6aba0c336110aa2c74212478" },
+  { key: "settlements",   label: "Partner Settlements",      icon: Receipt,       desc: "Commission payouts, partner disbursements & statements",     defaultSampleId: "6aba0c346110aa2c7421247c" },
+  { key: "commission",    label: "Commission Engine",        icon: DollarSign,    desc: "Platform commission rules & weekly payouts engine",           defaultSampleId: "6aba0c2e6110aa2c74212462" },
+  { key: "wallets",       label: "Wallets & Balances",       icon: Wallet,        desc: "Partner and customer wallet balances & credit logs",          defaultSampleId: "6aba0c356110aa2c74212480" },
+  { key: "coupons",       label: "Coupons & Offers",         icon: Gift,          desc: "Discount codes, bank offers and promo campaigns",             defaultSampleId: "6aba0c366110aa2c74212484" },
+  { key: "reviews",       label: "Customer Reviews",         icon: Star,          desc: "Moderate ratings and quality feedback",                       defaultSampleId: "6aba0c3b6110aa2c74212498" },
+  { key: "support",       label: "Customer Support",         icon: Headphones,    desc: "Helpdesk support tickets & user issue resolution",           defaultSampleId: "6aba0c3c6110aa2c7421249c" },
+  { key: "notifications", label: "Push Notifications",       icon: Bell,          desc: "Send targeted push alerts and broadcast messages",           defaultSampleId: "6aba0c3e6110aa2c742124a4" },
+  { key: "activityLog",   label: "Audit Logs & Security",    icon: History,       desc: "System security logs and administrative action history",      defaultSampleId: "6aba0c3f6110aa2c742124a8" },
+  { key: "analytics",     label: "Executive Analytics",      icon: TrendingUp,    desc: "Real-time dashboards and KPI tracking",                       defaultSampleId: "6aba0c416110aa2c742124b0" },
+  { key: "reports",       label: "Reports & Exports",        icon: BarChart3,     desc: "Export financial statements & audit logs",                    defaultSampleId: "6aba0c406110aa2c742124ac" },
+  { key: "settings",      label: "Platform Settings",        icon: Settings,      desc: "Global system configuration, policies & parameters",          defaultSampleId: "6aba0c426110aa2c742124b4" },
+  { key: "rbac",          label: "User Management & RBAC",   icon: KeyRound,      desc: "Manage admin accounts and permission matrix",                 defaultSampleId: "6aba4bbe6110aa2c74213e5e" },
 ];
 
 const off: ModulePermission = { view: false, create: false, edit: false, delete: false };
@@ -93,6 +122,9 @@ const defaultFullPermissions: UserPermissions = {
   categories: full, cms: full, pricing: full, locations: full,
   payments: full, billing: full, commission: full, coupons: full,
   reviews: full, media: full, analytics: full, reports: full, rbac: full,
+  leads: full, settlements: full, wallets: full, membership: full,
+  banners: full, imageSections: full, faq: full, support: full,
+  notifications: full, activityLog: full, settings: full,
   canAssignJobs: true, canEditServices: true, canProcessRefunds: true,
   canManageFleet: true, canExportReports: true, canManageRbac: true, canViewAuditLogs: true,
 };
@@ -107,11 +139,18 @@ const opsCoordinatorPermissions: UserPermissions = {
   payments: off, billing: off, commission: off, coupons: off,
   reviews: { view: true, create: false, edit: false, delete: false },
   media: off, analytics: off, reports: off, rbac: off,
+  leads: { view: true, create: true, edit: true, delete: false },
+  settlements: off, wallets: off, membership: off,
+  banners: off, imageSections: off, faq: { view: true, create: false, edit: false, delete: false },
+  support: { view: true, create: true, edit: true, delete: false },
+  notifications: { view: true, create: false, edit: false, delete: false },
+  activityLog: { view: true, create: false, edit: false, delete: false },
+  settings: off,
   canAssignJobs: true, canEditServices: false, canProcessRefunds: false,
   canManageFleet: true, canExportReports: false, canManageRbac: false, canViewAuditLogs: true,
 };
 
-export interface PermissionItem {
+interface PermissionItem {
   _id: string;
   id: string;
   name: string;
@@ -121,138 +160,365 @@ export interface PermissionItem {
   status: "active" | "inactive";
 }
 
-export interface ModulePermissionGroup {
+interface ModulePermissionGroup {
   id: string;
   module: string;
   actions: PermissionItem[];
 }
 
-export interface SystemRole {
+interface SystemRole {
   id: string;
   _id?: string;
   name: string;
   code?: string;
   description: string;
   permissions?: any;
+  permissionsObjects?: any[];
   permissionIds: string[];
   userCount?: number;
+  status?: string;
   color?: string;
 }
 
+interface RoleAssignedAction {
+  action: string;
+  code: string;
+  name: string;
+  status: string;
+  _id: string;
+}
+
+interface RoleAssignedModule {
+  module: string;
+  actions: RoleAssignedAction[];
+  status: string;
+}
+
+// Complete 29 System Modules across the HelpmateAdmin Platform
+const MODULE_OPTIONS = [
+  { value: "USER_MANAGEMENT", label: "USER_MANAGEMENT — User Management & RBAC" },
+  { value: "ADMIN", label: "ADMIN — Administrators & Staff" },
+  { value: "ANALYTICS", label: "ANALYTICS — Executive Analytics & Dashboards" },
+  { value: "BANNER", label: "BANNER — Marketing Banners & Carousels" },
+  { value: "BILLING", label: "BILLING — Billing, GST & Invoices" },
+  { value: "BOOKING", label: "BOOKING — Customer Service Bookings" },
+  { value: "CATEGORY", label: "CATEGORY — Service Catalog & Categories" },
+  { value: "COUPON", label: "COUPON — Discount Codes & Offers" },
+  { value: "CUSTOMER", label: "CUSTOMER — End User Profiles & CRM" },
+  { value: "FAQ", label: "FAQ — Help Center & FAQ Articles" },
+  { value: "IMAGE_SECTION", label: "IMAGE_SECTION — App Section Images & Visuals" },
+  { value: "INSPECTION", label: "INSPECTION — Technician Quality Audits" },
+  { value: "LEAD", label: "LEAD — Customer Leads & Inquiries" },
+  { value: "LOCATION", label: "LOCATION — Cities, Zones & Pincodes" },
+  { value: "MEDIA", label: "MEDIA — Media Library & Storage Assets" },
+  { value: "MEMBERSHIP", label: "MEMBERSHIP — VIP Membership & Subscriptions" },
+  { value: "NOTIFICATION", label: "NOTIFICATION — Push Notifications & Alerts" },
+  { value: "PARTNER", label: "PARTNER — Technician Service Providers" },
+  { value: "PAYMENT", label: "PAYMENT — Online Payments & Transactions" },
+  { value: "PERMISSION", label: "PERMISSION — System RBAC Permissions" },
+  { value: "PRICING", label: "PRICING — Dynamic Pricing Engine" },
+  { value: "REPORT", label: "REPORT — Reports & Audit Data Exports" },
+  { value: "REVIEW", label: "REVIEW — Customer Ratings & Reviews" },
+  { value: "ROLE", label: "ROLE — Role Matrix Configurations" },
+  { value: "SERVICE", label: "SERVICE — Service Packages & CMS" },
+  { value: "SETTINGS", label: "SETTINGS — Platform Settings & Policies" },
+  { value: "SETTLEMENT", label: "SETTLEMENT — Partner Settlements & Payouts" },
+  { value: "SUPPORT", label: "SUPPORT — Helpdesk & Customer Tickets" },
+  { value: "WALLET", label: "WALLET — Wallets & Credit Balances" },
+  { value: "ACTIVITY_LOG", label: "ACTIVITY_LOG — Audit Logs & Security History" },
+];
+
+// Complete 116 Permissions Registry across all 29 System Modules (4 Granular Actions each: create, delete, edit, view)
+const DEFAULT_SYSTEM_PERMISSIONS: PermissionItem[] = [
+  // 0. USER_MANAGEMENT
+  { _id: "6aeadbcd253953e31997be28", id: "6aeadbcd253953e31997be28", name: "View User Management", code: "USER_MANAGEMENT_VIEW", module: "USER_MANAGEMENT", action: "view", status: "active" },
+  { _id: "6aeadbcd253953e31997be29", id: "6aeadbcd253953e31997be29", name: "Create User Management", code: "USER_MANAGEMENT_CREATE", module: "USER_MANAGEMENT", action: "create", status: "active" },
+  { _id: "6aeadbcd253953e31997be2a", id: "6aeadbcd253953e31997be2a", name: "Edit User Management", code: "USER_MANAGEMENT_EDIT", module: "USER_MANAGEMENT", action: "edit", status: "active" },
+  { _id: "6aeadbcd253953e31997be2b", id: "6aeadbcd253953e31997be2b", name: "Delete User Management", code: "USER_MANAGEMENT_DELETE", module: "USER_MANAGEMENT", action: "delete", status: "active" },
+
+  // 1. ADMIN (Preserved Original IDs)
+  { _id: "6aba4bbf6110aa2c74213e63", id: "6aba4bbf6110aa2c74213e63", name: "Create Admins", code: "ADMIN_CREATE", module: "ADMIN", action: "create", status: "active" },
+  { _id: "6aba4bbf6110aa2c74213e65", id: "6aba4bbf6110aa2c74213e65", name: "Delete Admins", code: "ADMIN_DELETE", module: "ADMIN", action: "delete", status: "active" },
+  { _id: "6aba4bbf6110aa2c74213e64", id: "6aba4bbf6110aa2c74213e64", name: "Edit Admins", code: "ADMIN_EDIT", module: "ADMIN", action: "edit", status: "active" },
+  { _id: "6aba4bbf6110aa2c74213e62", id: "6aba4bbf6110aa2c74213e62", name: "View Admins", code: "ADMIN_VIEW", module: "ADMIN", action: "view", status: "active" },
+
+  // 2. ANALYTICS
+  { _id: "6aba0c416110aa2c742124b1", id: "6aba0c416110aa2c742124b1", name: "Create Analytics Dashboards", code: "ANALYTICS_CREATE", module: "ANALYTICS", action: "create", status: "active" },
+  { _id: "6aba0c416110aa2c742124b3", id: "6aba0c416110aa2c742124b3", name: "Delete Analytics Dashboards", code: "ANALYTICS_DELETE", module: "ANALYTICS", action: "delete", status: "active" },
+  { _id: "6aba0c416110aa2c742124b2", id: "6aba0c416110aa2c742124b2", name: "Edit Analytics Dashboards", code: "ANALYTICS_EDIT", module: "ANALYTICS", action: "edit", status: "active" },
+  { _id: "6aba0c416110aa2c742124b0", id: "6aba0c416110aa2c742124b0", name: "View Analytics Dashboards", code: "ANALYTICS_VIEW", module: "ANALYTICS", action: "view", status: "active" },
+
+  // 3. BANNER
+  { _id: "6aba0c386110aa2c7421248d", id: "6aba0c386110aa2c7421248d", name: "Create Banners", code: "BANNER_CREATE", module: "BANNER", action: "create", status: "active" },
+  { _id: "6aba0c386110aa2c7421248f", id: "6aba0c386110aa2c7421248f", name: "Delete Banners", code: "BANNER_DELETE", module: "BANNER", action: "delete", status: "active" },
+  { _id: "6aba0c386110aa2c7421248e", id: "6aba0c386110aa2c7421248e", name: "Edit Banners", code: "BANNER_EDIT", module: "BANNER", action: "edit", status: "active" },
+  { _id: "6aba0c386110aa2c7421248c", id: "6aba0c386110aa2c7421248c", name: "View Banners", code: "BANNER_VIEW", module: "BANNER", action: "view", status: "active" },
+
+  // 4. BILLING
+  { _id: "6aba0c336110aa2c74212479", id: "6aba0c336110aa2c74212479", name: "Create Billing & Invoices", code: "BILLING_CREATE", module: "BILLING", action: "create", status: "active" },
+  { _id: "6aba0c336110aa2c7421247b", id: "6aba0c336110aa2c7421247b", name: "Delete Billing & Invoices", code: "BILLING_DELETE", module: "BILLING", action: "delete", status: "active" },
+  { _id: "6aba0c336110aa2c7421247a", id: "6aba0c336110aa2c7421247a", name: "Edit Billing & Invoices", code: "BILLING_EDIT", module: "BILLING", action: "edit", status: "active" },
+  { _id: "6aba0c336110aa2c74212478", id: "6aba0c336110aa2c74212478", name: "View Billing & Invoices", code: "BILLING_VIEW", module: "BILLING", action: "view", status: "active" },
+
+  // 5. BOOKING (Preserved Original IDs)
+  { _id: "6aba0c2c6110aa2c7421244a", id: "6aba0c2c6110aa2c7421244a", name: "Create Bookings", code: "BOOKING_CREATE", module: "BOOKING", action: "create", status: "active" },
+  { _id: "6aba0c2c6110aa2c7421244c", id: "6aba0c2c6110aa2c7421244c", name: "Delete Bookings", code: "BOOKING_DELETE", module: "BOOKING", action: "delete", status: "active" },
+  { _id: "6aba0c2c6110aa2c7421244b", id: "6aba0c2c6110aa2c7421244b", name: "Edit Bookings", code: "BOOKING_EDIT", module: "BOOKING", action: "edit", status: "active" },
+  { _id: "6aba0c2c6110aa2c74212449", id: "6aba0c2c6110aa2c74212449", name: "View Bookings", code: "BOOKING_VIEW", module: "BOOKING", action: "view", status: "active" },
+
+  // 6. CATEGORY (Preserved Original IDs)
+  { _id: "6aba0c2e6110aa2c7421245b", id: "6aba0c2e6110aa2c7421245b", name: "Create Category Catalog", code: "CATEGORY_CREATE", module: "CATEGORY", action: "create", status: "active" },
+  { _id: "6aba0c2e6110aa2c7421245d", id: "6aba0c2e6110aa2c7421245d", name: "Delete Category Catalog", code: "CATEGORY_DELETE", module: "CATEGORY", action: "delete", status: "active" },
+  { _id: "6aba0c2e6110aa2c7421245c", id: "6aba0c2e6110aa2c7421245c", name: "Edit Category Catalog", code: "CATEGORY_EDIT", module: "CATEGORY", action: "edit", status: "active" },
+  { _id: "6aba0c2e6110aa2c7421245a", id: "6aba0c2e6110aa2c7421245a", name: "View Category Catalog", code: "CATEGORY_VIEW", module: "CATEGORY", action: "view", status: "active" },
+
+  // 7. COUPON
+  { _id: "6aba0c366110aa2c74212485", id: "6aba0c366110aa2c74212485", name: "Create Coupons & Offers", code: "COUPON_CREATE", module: "COUPON", action: "create", status: "active" },
+  { _id: "6aba0c366110aa2c74212487", id: "6aba0c366110aa2c74212487", name: "Delete Coupons & Offers", code: "COUPON_DELETE", module: "COUPON", action: "delete", status: "active" },
+  { _id: "6aba0c366110aa2c74212486", id: "6aba0c366110aa2c74212486", name: "Edit Coupons & Offers", code: "COUPON_EDIT", module: "COUPON", action: "edit", status: "active" },
+  { _id: "6aba0c366110aa2c74212484", id: "6aba0c366110aa2c74212484", name: "View Coupons & Offers", code: "COUPON_VIEW", module: "COUPON", action: "view", status: "active" },
+
+  // 8. CUSTOMER (Preserved Original IDs)
+  { _id: "6aba0c2d6110aa2c74212452", id: "6aba0c2d6110aa2c74212452", name: "Create Customers", code: "CUSTOMER_CREATE", module: "CUSTOMER", action: "create", status: "active" },
+  { _id: "6aba0c2d6110aa2c74212454", id: "6aba0c2d6110aa2c74212454", name: "Delete Customers", code: "CUSTOMER_DELETE", module: "CUSTOMER", action: "delete", status: "active" },
+  { _id: "6aba0c2d6110aa2c74212453", id: "6aba0c2d6110aa2c74212453", name: "Edit Customers", code: "CUSTOMER_EDIT", module: "CUSTOMER", action: "edit", status: "active" },
+  { _id: "6aba0c2d6110aa2c74212451", id: "6aba0c2d6110aa2c74212451", name: "View Customers", code: "CUSTOMER_VIEW", module: "CUSTOMER", action: "view", status: "active" },
+
+  // 9. FAQ
+  { _id: "6aba0c3a6110aa2c74212495", id: "6aba0c3a6110aa2c74212495", name: "Create FAQs", code: "FAQ_CREATE", module: "FAQ", action: "create", status: "active" },
+  { _id: "6aba0c3a6110aa2c74212497", id: "6aba0c3a6110aa2c74212497", name: "Delete FAQs", code: "FAQ_DELETE", module: "FAQ", action: "delete", status: "active" },
+  { _id: "6aba0c3a6110aa2c74212496", id: "6aba0c3a6110aa2c74212496", name: "Edit FAQs", code: "FAQ_EDIT", module: "FAQ", action: "edit", status: "active" },
+  { _id: "6aba0c3a6110aa2c74212494", id: "6aba0c3a6110aa2c74212494", name: "View FAQs", code: "FAQ_VIEW", module: "FAQ", action: "view", status: "active" },
+
+  // 10. IMAGE_SECTION
+  { _id: "6aba0c396110aa2c74212491", id: "6aba0c396110aa2c74212491", name: "Create App Section Images", code: "IMAGE_SECTION_CREATE", module: "IMAGE_SECTION", action: "create", status: "active" },
+  { _id: "6aba0c396110aa2c74212493", id: "6aba0c396110aa2c74212493", name: "Delete App Section Images", code: "IMAGE_SECTION_DELETE", module: "IMAGE_SECTION", action: "delete", status: "active" },
+  { _id: "6aba0c396110aa2c74212492", id: "6aba0c396110aa2c74212492", name: "Edit App Section Images", code: "IMAGE_SECTION_EDIT", module: "IMAGE_SECTION", action: "edit", status: "active" },
+  { _id: "6aba0c396110aa2c74212490", id: "6aba0c396110aa2c74212490", name: "View App Section Images", code: "IMAGE_SECTION_VIEW", module: "IMAGE_SECTION", action: "view", status: "active" },
+
+  // 11. INSPECTION (Preserved Original IDs)
+  { _id: "6aba0c2d6110aa2c7421244e", id: "6aba0c2d6110aa2c7421244e", name: "Create Inspections", code: "INSPECTION_CREATE", module: "INSPECTION", action: "create", status: "active" },
+  { _id: "6aba0c2d6110aa2c74212450", id: "6aba0c2d6110aa2c74212450", name: "Delete Inspections", code: "INSPECTION_DELETE", module: "INSPECTION", action: "delete", status: "active" },
+  { _id: "6aba0c2d6110aa2c7421244f", id: "6aba0c2d6110aa2c7421244f", name: "Edit Inspections", code: "INSPECTION_EDIT", module: "INSPECTION", action: "edit", status: "active" },
+  { _id: "6aba0c2d6110aa2c7421244d", id: "6aba0c2d6110aa2c7421244d", name: "View Inspections", code: "INSPECTION_VIEW", module: "INSPECTION", action: "view", status: "active" },
+
+  // 12. LEAD
+  { _id: "6aba0c316110aa2c74212471", id: "6aba0c316110aa2c74212471", name: "Create Leads", code: "LEAD_CREATE", module: "LEAD", action: "create", status: "active" },
+  { _id: "6aba0c316110aa2c74212473", id: "6aba0c316110aa2c74212473", name: "Delete Leads", code: "LEAD_DELETE", module: "LEAD", action: "delete", status: "active" },
+  { _id: "6aba0c316110aa2c74212472", id: "6aba0c316110aa2c74212472", name: "Edit Leads", code: "LEAD_EDIT", module: "LEAD", action: "edit", status: "active" },
+  { _id: "6aba0c316110aa2c74212470", id: "6aba0c316110aa2c74212470", name: "View Leads", code: "LEAD_VIEW", module: "LEAD", action: "view", status: "active" },
+
+  // 13. LOCATION (Preserved Original IDs)
+  { _id: "6aba0c2f6110aa2c74212467", id: "6aba0c2f6110aa2c74212467", name: "Create Locations & Pincodes", code: "LOCATION_CREATE", module: "LOCATION", action: "create", status: "active" },
+  { _id: "6aba0c2f6110aa2c74212469", id: "6aba0c2f6110aa2c74212469", name: "Delete Locations & Pincodes", code: "LOCATION_DELETE", module: "LOCATION", action: "delete", status: "active" },
+  { _id: "6aba0c2f6110aa2c74212468", id: "6aba0c2f6110aa2c74212468", name: "Edit Locations & Pincodes", code: "LOCATION_EDIT", module: "LOCATION", action: "edit", status: "active" },
+  { _id: "6aba0c2f6110aa2c74212466", id: "6aba0c2f6110aa2c74212466", name: "View Locations & Pincodes", code: "LOCATION_VIEW", module: "LOCATION", action: "view", status: "active" },
+
+  // 14. MEDIA
+  { _id: "6aba0c3d6110aa2c742124a1", id: "6aba0c3d6110aa2c742124a1", name: "Create Media Library", code: "MEDIA_CREATE", module: "MEDIA", action: "create", status: "active" },
+  { _id: "6aba0c3d6110aa2c742124a3", id: "6aba0c3d6110aa2c742124a3", name: "Delete Media Library", code: "MEDIA_DELETE", module: "MEDIA", action: "delete", status: "active" },
+  { _id: "6aba0c3d6110aa2c742124a2", id: "6aba0c3d6110aa2c742124a2", name: "Edit Media Library", code: "MEDIA_EDIT", module: "MEDIA", action: "edit", status: "active" },
+  { _id: "6aba0c3d6110aa2c742124a0", id: "6aba0c3d6110aa2c742124a0", name: "View Media Library", code: "MEDIA_VIEW", module: "MEDIA", action: "view", status: "active" },
+
+  // 15. MEMBERSHIP
+  { _id: "6aba0c376110aa2c74212489", id: "6aba0c376110aa2c74212489", name: "Create Memberships", code: "MEMBERSHIP_CREATE", module: "MEMBERSHIP", action: "create", status: "active" },
+  { _id: "6aba0c376110aa2c7421248b", id: "6aba0c376110aa2c7421248b", name: "Delete Memberships", code: "MEMBERSHIP_DELETE", module: "MEMBERSHIP", action: "delete", status: "active" },
+  { _id: "6aba0c376110aa2c7421248a", id: "6aba0c376110aa2c7421248a", name: "Edit Memberships", code: "MEMBERSHIP_EDIT", module: "MEMBERSHIP", action: "edit", status: "active" },
+  { _id: "6aba0c376110aa2c74212488", id: "6aba0c376110aa2c74212488", name: "View Memberships", code: "MEMBERSHIP_VIEW", module: "MEMBERSHIP", action: "view", status: "active" },
+
+  // 16. NOTIFICATION
+  { _id: "6aba0c3e6110aa2c742124a5", id: "6aba0c3e6110aa2c742124a5", name: "Create Notifications", code: "NOTIFICATION_CREATE", module: "NOTIFICATION", action: "create", status: "active" },
+  { _id: "6aba0c3e6110aa2c742124a7", id: "6aba0c3e6110aa2c742124a7", name: "Delete Notifications", code: "NOTIFICATION_DELETE", module: "NOTIFICATION", action: "delete", status: "active" },
+  { _id: "6aba0c3e6110aa2c742124a6", id: "6aba0c3e6110aa2c742124a6", name: "Edit Notifications", code: "NOTIFICATION_EDIT", module: "NOTIFICATION", action: "edit", status: "active" },
+  { _id: "6aba0c3e6110aa2c742124a4", id: "6aba0c3e6110aa2c742124a4", name: "View Notifications", code: "NOTIFICATION_VIEW", module: "NOTIFICATION", action: "view", status: "active" },
+
+  // 17. PARTNER (Preserved Original IDs)
+  { _id: "6aba0c2d6110aa2c74212457", id: "6aba0c2d6110aa2c74212457", name: "Create Partners", code: "PARTNER_CREATE", module: "PARTNER", action: "create", status: "active" },
+  { _id: "6aba0c2e6110aa2c74212459", id: "6aba0c2e6110aa2c74212459", name: "Delete Partners", code: "PARTNER_DELETE", module: "PARTNER", action: "delete", status: "active" },
+  { _id: "6aba0c2e6110aa2c74212458", id: "6aba0c2e6110aa2c74212458", name: "Edit Partners", code: "PARTNER_EDIT", module: "PARTNER", action: "edit", status: "active" },
+  { _id: "6aba0c2d6110aa2c74212456", id: "6aba0c2d6110aa2c74212456", name: "View Partners", code: "PARTNER_VIEW", module: "PARTNER", action: "view", status: "active" },
+
+  // 18. PAYMENT
+  { _id: "6aba0c326110aa2c74212475", id: "6aba0c326110aa2c74212475", name: "Create Payments", code: "PAYMENT_CREATE", module: "PAYMENT", action: "create", status: "active" },
+  { _id: "6aba0c326110aa2c74212477", id: "6aba0c326110aa2c74212477", name: "Delete Payments", code: "PAYMENT_DELETE", module: "PAYMENT", action: "delete", status: "active" },
+  { _id: "6aba0c326110aa2c74212476", id: "6aba0c326110aa2c74212476", name: "Edit Payments", code: "PAYMENT_EDIT", module: "PAYMENT", action: "edit", status: "active" },
+  { _id: "6aba0c326110aa2c74212474", id: "6aba0c326110aa2c74212474", name: "View Payments", code: "PAYMENT_VIEW", module: "PAYMENT", action: "view", status: "active" },
+
+  // 19. PERMISSION (Preserved Original IDs)
+  { _id: "6aba4bbe6110aa2c74213e5f", id: "6aba4bbe6110aa2c74213e5f", name: "Create Permissions", code: "PERMISSION_CREATE", module: "PERMISSION", action: "create", status: "active" },
+  { _id: "6aba4bbe6110aa2c74213e61", id: "6aba4bbe6110aa2c74213e61", name: "Delete Permissions", code: "PERMISSION_DELETE", module: "PERMISSION", action: "delete", status: "active" },
+  { _id: "6aba4bbe6110aa2c74213e60", id: "6aba4bbe6110aa2c74213e60", name: "Edit Permissions", code: "PERMISSION_EDIT", module: "PERMISSION", action: "edit", status: "active" },
+  { _id: "6aba4bbe6110aa2c74213e5e", id: "6aba4bbe6110aa2c74213e5e", name: "View Permissions", code: "PERMISSION_VIEW", module: "PERMISSION", action: "view", status: "active" },
+
+  // 20. PRICING (Preserved Original IDs)
+  { _id: "6aba0c2e6110aa2c74212463", id: "6aba0c2e6110aa2c74212463", name: "Create Pricing Engine", code: "PRICING_CREATE", module: "PRICING", action: "create", status: "active" },
+  { _id: "6aba0c2e6110aa2c74212465", id: "6aba0c2e6110aa2c74212465", name: "Delete Pricing Engine", code: "PRICING_DELETE", module: "PRICING", action: "delete", status: "active" },
+  { _id: "6aba0c2e6110aa2c74212464", id: "6aba0c2e6110aa2c74212464", name: "Edit Pricing Engine", code: "PRICING_EDIT", module: "PRICING", action: "edit", status: "active" },
+  { _id: "6aba0c2e6110aa2c74212462", id: "6aba0c2e6110aa2c74212462", name: "View Pricing Engine", code: "PRICING_VIEW", module: "PRICING", action: "view", status: "active" },
+
+  // 21. REPORT
+  { _id: "6aba0c406110aa2c742124ad", id: "6aba0c406110aa2c742124ad", name: "Create Reports & Exports", code: "REPORT_CREATE", module: "REPORT", action: "create", status: "active" },
+  { _id: "6aba0c406110aa2c742124af", id: "6aba0c406110aa2c742124af", name: "Delete Reports & Exports", code: "REPORT_DELETE", module: "REPORT", action: "delete", status: "active" },
+  { _id: "6aba0c406110aa2c742124ae", id: "6aba0c406110aa2c742124ae", name: "Edit Reports & Exports", code: "REPORT_EDIT", module: "REPORT", action: "edit", status: "active" },
+  { _id: "6aba0c406110aa2c742124ac", id: "6aba0c406110aa2c742124ac", name: "View Reports & Exports", code: "REPORT_VIEW", module: "REPORT", action: "view", status: "active" },
+
+  // 22. REVIEW
+  { _id: "6aba0c3b6110aa2c74212499", id: "6aba0c3b6110aa2c74212499", name: "Create Reviews", code: "REVIEW_CREATE", module: "REVIEW", action: "create", status: "active" },
+  { _id: "6aba0c3b6110aa2c7421249b", id: "6aba0c3b6110aa2c7421249b", name: "Delete Reviews", code: "REVIEW_DELETE", module: "REVIEW", action: "delete", status: "active" },
+  { _id: "6aba0c3b6110aa2c7421249a", id: "6aba0c3b6110aa2c7421249a", name: "Edit Reviews", code: "REVIEW_EDIT", module: "REVIEW", action: "edit", status: "active" },
+  { _id: "6aba0c3b6110aa2c74212498", id: "6aba0c3b6110aa2c74212498", name: "View Reviews", code: "REVIEW_VIEW", module: "REVIEW", action: "view", status: "active" },
+
+  // 23. ROLE (Preserved Original IDs)
+  { _id: "6aba4bbe6110aa2c74213e5b", id: "6aba4bbe6110aa2c74213e5b", name: "Create Roles", code: "ROLE_CREATE", module: "ROLE", action: "create", status: "active" },
+  { _id: "6aba4bbe6110aa2c74213e5d", id: "6aba4bbe6110aa2c74213e5d", name: "Delete Roles", code: "ROLE_DELETE", module: "ROLE", action: "delete", status: "active" },
+  { _id: "6aba4bbe6110aa2c74213e5c", id: "6aba4bbe6110aa2c74213e5c", name: "Edit Roles", code: "ROLE_EDIT", module: "ROLE", action: "edit", status: "active" },
+  { _id: "6aba4bbe6110aa2c74213e5a", id: "6aba4bbe6110aa2c74213e5a", name: "View Roles", code: "ROLE_VIEW", module: "ROLE", action: "view", status: "active" },
+
+  // 24. SERVICE (Preserved Original IDs)
+  { _id: "6aba0c2e6110aa2c7421245f", id: "6aba0c2e6110aa2c7421245f", name: "Create Services CMS", code: "SERVICE_CREATE", module: "SERVICE", action: "create", status: "active" },
+  { _id: "6aba0c2e6110aa2c74212461", id: "6aba0c2e6110aa2c74212461", name: "Delete Services CMS", code: "SERVICE_DELETE", module: "SERVICE", action: "delete", status: "active" },
+  { _id: "6aba0c2e6110aa2c74212460", id: "6aba0c2e6110aa2c74212460", name: "Edit Services CMS", code: "SERVICE_EDIT", module: "SERVICE", action: "edit", status: "active" },
+  { _id: "6aba0c2e6110aa2c7421245e", id: "6aba0c2e6110aa2c7421245e", name: "View Services CMS", code: "SERVICE_VIEW", module: "SERVICE", action: "view", status: "active" },
+
+  // 25. SETTINGS
+  { _id: "6aba0c426110aa2c742124b5", id: "6aba0c426110aa2c742124b5", name: "Create Platform Settings", code: "SETTINGS_CREATE", module: "SETTINGS", action: "create", status: "active" },
+  { _id: "6aba0c426110aa2c742124b7", id: "6aba0c426110aa2c742124b7", name: "Delete Platform Settings", code: "SETTINGS_DELETE", module: "SETTINGS", action: "delete", status: "active" },
+  { _id: "6aba0c426110aa2c742124b6", id: "6aba0c426110aa2c742124b6", name: "Edit Platform Settings", code: "SETTINGS_EDIT", module: "SETTINGS", action: "edit", status: "active" },
+  { _id: "6aba0c426110aa2c742124b4", id: "6aba0c426110aa2c742124b4", name: "View Platform Settings", code: "SETTINGS_VIEW", module: "SETTINGS", action: "view", status: "active" },
+
+  // 26. SETTLEMENT
+  { _id: "6aba0c346110aa2c7421247d", id: "6aba0c346110aa2c7421247d", name: "Create Partner Settlements", code: "SETTLEMENT_CREATE", module: "SETTLEMENT", action: "create", status: "active" },
+  { _id: "6aba0c346110aa2c7421247f", id: "6aba0c346110aa2c7421247f", name: "Delete Partner Settlements", code: "SETTLEMENT_DELETE", module: "SETTLEMENT", action: "delete", status: "active" },
+  { _id: "6aba0c346110aa2c7421247e", id: "6aba0c346110aa2c7421247e", name: "Edit Partner Settlements", code: "SETTLEMENT_EDIT", module: "SETTLEMENT", action: "edit", status: "active" },
+  { _id: "6aba0c346110aa2c7421247c", id: "6aba0c346110aa2c7421247c", name: "View Partner Settlements", code: "SETTLEMENT_VIEW", module: "SETTLEMENT", action: "view", status: "active" },
+
+  // 27. SUPPORT
+  { _id: "6aba0c3c6110aa2c7421249d", id: "6aba0c3c6110aa2c7421249d", name: "Create Support Tickets", code: "SUPPORT_CREATE", module: "SUPPORT", action: "create", status: "active" },
+  { _id: "6aba0c3c6110aa2c7421249f", id: "6aba0c3c6110aa2c7421249f", name: "Delete Support Tickets", code: "SUPPORT_DELETE", module: "SUPPORT", action: "delete", status: "active" },
+  { _id: "6aba0c3c6110aa2c7421249e", id: "6aba0c3c6110aa2c7421249e", name: "Edit Support Tickets", code: "SUPPORT_EDIT", module: "SUPPORT", action: "edit", status: "active" },
+  { _id: "6aba0c3c6110aa2c7421249c", id: "6aba0c3c6110aa2c7421249c", name: "View Support Tickets", code: "SUPPORT_VIEW", module: "SUPPORT", action: "view", status: "active" },
+
+  // 28. WALLET
+  { _id: "6aba0c356110aa2c74212481", id: "6aba0c356110aa2c74212481", name: "Create Wallets & Balances", code: "WALLET_CREATE", module: "WALLET", action: "create", status: "active" },
+  { _id: "6aba0c356110aa2c74212483", id: "6aba0c356110aa2c74212483", name: "Delete Wallets & Balances", code: "WALLET_DELETE", module: "WALLET", action: "delete", status: "active" },
+  { _id: "6aba0c356110aa2c74212482", id: "6aba0c356110aa2c74212482", name: "Edit Wallets & Balances", code: "WALLET_EDIT", module: "WALLET", action: "edit", status: "active" },
+  { _id: "6aba0c356110aa2c74212480", id: "6aba0c356110aa2c74212480", name: "View Wallets & Balances", code: "WALLET_VIEW", module: "WALLET", action: "view", status: "active" },
+
+  // 29. ACTIVITY_LOG
+  { _id: "6aba0c3f6110aa2c742124a9", id: "6aba0c3f6110aa2c742124a9", name: "Create Audit Logs", code: "ACTIVITY_LOG_CREATE", module: "ACTIVITY_LOG", action: "create", status: "active" },
+  { _id: "6aba0c3f6110aa2c742124ab", id: "6aba0c3f6110aa2c742124ab", name: "Delete Audit Logs", code: "ACTIVITY_LOG_DELETE", module: "ACTIVITY_LOG", action: "delete", status: "active" },
+  { _id: "6aba0c3f6110aa2c742124aa", id: "6aba0c3f6110aa2c742124aa", name: "Edit Audit Logs", code: "ACTIVITY_LOG_EDIT", module: "ACTIVITY_LOG", action: "edit", status: "active" },
+  { _id: "6aba0c3f6110aa2c742124a8", id: "6aba0c3f6110aa2c742124a8", name: "View Audit Logs", code: "ACTIVITY_LOG_VIEW", module: "ACTIVITY_LOG", action: "view", status: "active" },
+];
+
 export default function UsersPage() {
+  const { canView, canCreate, canEdit, canDelete } = useRbac();
   const [activeTab, setActiveTab] = useState<"users" | "roles" | "permissions">("users");
 
-  const initialCachedUsers = getStoredModuleData<UserManagementItem[]>("users_admins");
-  const initialCachedRoles = getStoredModuleData<SystemRole[]>("users_roles");
-  const initialCachedPerms = getStoredModuleData<PermissionItem[]>("users_permissions");
+  const initialCachedUsers = useMemo(() => {
+    const data = getStoredModuleData<UserManagementItem[]>("users_admins");
+    if (Array.isArray(data)) {
+      const real = data.filter((u) => !String(u.id).startsWith("usr-"));
+      if (real.length > 0) return real;
+    }
+    return null;
+  }, []);
 
-  const [users, setUsers] = useState<UserManagementItem[]>(() => initialCachedUsers || initialUsers);
+  const initialCachedRoles = useMemo(() => {
+    const data = getStoredModuleData<SystemRole[]>("users_roles");
+    if (Array.isArray(data)) {
+      const real = data.filter((r) => !String(r.id).startsWith("role-ops") && !String(r.id).startsWith("role-varanasi"));
+      if (real.length > 0) return real;
+    }
+    return null;
+  }, []);
 
-  // System Roles Directory
-  const [systemRoles, setSystemRoles] = useState<SystemRole[]>(() => initialCachedRoles || [
-    {
-      id: "role-super-admin",
-      _id: "6aba384336ec417c47fdd2fe",
-      name: "Super Admin",
-      code: "SUPER_ADMIN",
-      description: "Full administrative access to all 17 system modules, pricing & RBAC matrix.",
-      permissions: defaultFullPermissions,
-      permissionIds: ["6aba0c2d6110aa2c74212456", "6aba0c2d6110aa2c74212457", "6aba0c2e6110aa2c74212458"],
-      userCount: 1,
-      color: "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-800",
+  const initialCachedPerms = useMemo(() => {
+    return getStoredModuleData<PermissionItem[]>("users_permissions");
+  }, []);
+
+  // Loading shimmer state until real API calls complete
+  const [isLoadingData, setIsLoadingData] = useState<boolean>(true);
+
+  const [users, setUsers] = useState<UserManagementItem[]>([]);
+  const [systemRoles, setSystemRoles] = useState<SystemRole[]>(() => initialCachedRoles || []);
+
+  // System Permissions Registry
+  const [permissionsList, setPermissionsList] = useState<PermissionItem[]>(() => {
+    if (initialCachedPerms && initialCachedPerms.length > 0) {
+      const cachedCodes = new Set(initialCachedPerms.map((p) => p.code));
+      const missing = DEFAULT_SYSTEM_PERMISSIONS.filter((p) => !cachedCodes.has(p.code));
+      const combined = missing.length > 0 ? [...initialCachedPerms, ...missing] : initialCachedPerms;
+      return combined.filter((p) => (p.module || "").toUpperCase() !== "USER");
+    }
+    return DEFAULT_SYSTEM_PERMISSIONS.filter((p) => (p.module || "").toUpperCase() !== "USER");
+  });
+
+  // Fast memoized lookup map of permissions by ObjectId or Code
+  const permissionsByIdMap = useMemo(() => {
+    const map = new Map<string, PermissionItem>();
+    permissionsList.forEach((p) => {
+      if (p._id) map.set(p._id, p);
+      if (p.id) map.set(p.id, p);
+    });
+    return map;
+  }, [permissionsList]);
+
+  // Resolves assigned modules and actions for any given role
+  const getRoleAssignedModules = useCallback(
+    (row: SystemRole): RoleAssignedModule[] => {
+      const moduleMap: Record<string, RoleAssignedModule> = {};
+
+      let rawPerms: any[] = [];
+      if (Array.isArray((row as any).permissionsObjects) && (row as any).permissionsObjects.length > 0) {
+        rawPerms = (row as any).permissionsObjects
+          .map((p: any) => {
+            if (typeof p === "object" && p !== null) return p;
+            return permissionsByIdMap.get(String(p));
+          })
+          .filter(Boolean);
+      } else if (Array.isArray(row.permissionIds) && row.permissionIds.length > 0) {
+        rawPerms = row.permissionIds
+          .map((pid) => permissionsByIdMap.get(String(pid)))
+          .filter(Boolean);
+      }
+
+      rawPerms.forEach((p: any) => {
+        if (!p) return;
+        const mod = (p.module || "SYSTEM").toUpperCase();
+        if (mod === "USER") return; // Obsolete module replaced by USER_MANAGEMENT
+
+        if (!moduleMap[mod]) {
+          moduleMap[mod] = {
+            module: mod,
+            actions: [],
+            status: p.status || "active",
+          };
+        }
+
+        const actName = (p.action || "view").toLowerCase();
+        if (!moduleMap[mod].actions.some((a) => a.action === actName)) {
+          moduleMap[mod].actions.push({
+            action: actName,
+            code: p.code || `${mod}_${actName.toUpperCase()}`,
+            name: p.name || `${actName.toUpperCase()} ${mod}`,
+            status: p.status || "active",
+            _id: String(p._id || p.id || ""),
+          });
+        }
+      });
+
+      return Object.values(moduleMap);
     },
-    {
-      id: "role-ops-coord",
-      _id: "6aba384336ec417c47fdd2ff",
-      name: "Operations Coordinator",
-      code: "OPERATIONS_COORDINATOR",
-      description: "Live booking pipeline management and technician partner re-assignment.",
-      permissions: opsCoordinatorPermissions,
-      permissionIds: ["6aba0c2d6110aa2c74212456", "6aba0c2d6110aa2c74212457"],
-      userCount: 3,
-      color: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800",
-    },
-  ]);
+    [permissionsByIdMap]
+  );
 
-  // Official 11 Modules from Backend API (GET /api/admin/permissions)
-  const MODULE_OPTIONS = [
-    { value: "ADMIN", label: "ADMIN — Administrators & Staff" },
-    { value: "BOOKING", label: "BOOKING — Customer Service Bookings" },
-    { value: "CATEGORY", label: "CATEGORY — Service Catalog & Categories" },
-    { value: "CUSTOMER", label: "CUSTOMER — End User Profiles" },
-    { value: "INSPECTION", label: "INSPECTION — Technician Quality Audits" },
-    { value: "LOCATION", label: "LOCATION — Cities & Pincodes" },
-    { value: "PARTNER", label: "PARTNER — Technician Service Providers" },
-    { value: "PERMISSION", label: "PERMISSION — System RBAC Permissions" },
-    { value: "PRICING", label: "PRICING — Dynamic Pricing Engine" },
-    { value: "ROLE", label: "ROLE — Role Matrix Configurations" },
-    { value: "SERVICE", label: "SERVICE — Service Packages & CMS" },
-  ];
-
-  // System Permissions Registry (Default 44 Actions across 11 Modules from Backend)
-  const [permissionsList, setPermissionsList] = useState<PermissionItem[]>(() => initialCachedPerms || [
-    // ADMIN
-    { _id: "6aba4bbf6110aa2c74213e63", id: "6aba4bbf6110aa2c74213e63", name: "Create Admins", code: "ADMIN_CREATE", module: "ADMIN", action: "create", status: "active" },
-    { _id: "6aba4bbf6110aa2c74213e65", id: "6aba4bbf6110aa2c74213e65", name: "Delete Admins", code: "ADMIN_DELETE", module: "ADMIN", action: "delete", status: "active" },
-    { _id: "6aba4bbf6110aa2c74213e64", id: "6aba4bbf6110aa2c74213e64", name: "Edit Admins", code: "ADMIN_EDIT", module: "ADMIN", action: "edit", status: "active" },
-    { _id: "6aba4bbf6110aa2c74213e62", id: "6aba4bbf6110aa2c74213e62", name: "View Admins", code: "ADMIN_VIEW", module: "ADMIN", action: "view", status: "active" },
-    // BOOKING
-    { _id: "6aba0c2c6110aa2c7421244a", id: "6aba0c2c6110aa2c7421244a", name: "Create Bookings", code: "BOOKING_CREATE", module: "BOOKING", action: "create", status: "active" },
-    { _id: "6aba0c2c6110aa2c7421244c", id: "6aba0c2c6110aa2c7421244c", name: "Delete Bookings", code: "BOOKING_DELETE", module: "BOOKING", action: "delete", status: "active" },
-    { _id: "6aba0c2c6110aa2c7421244b", id: "6aba0c2c6110aa2c7421244b", name: "Edit Bookings", code: "BOOKING_EDIT", module: "BOOKING", action: "edit", status: "active" },
-    { _id: "6aba0c2c6110aa2c74212449", id: "6aba0c2c6110aa2c74212449", name: "View Bookings", code: "BOOKING_VIEW", module: "BOOKING", action: "view", status: "active" },
-    // CATEGORY
-    { _id: "6aba0c2e6110aa2c7421245b", id: "6aba0c2e6110aa2c7421245b", name: "Create Category Catalog", code: "CATEGORY_CREATE", module: "CATEGORY", action: "create", status: "active" },
-    { _id: "6aba0c2e6110aa2c7421245d", id: "6aba0c2e6110aa2c7421245d", name: "Delete Category Catalog", code: "CATEGORY_DELETE", module: "CATEGORY", action: "delete", status: "active" },
-    { _id: "6aba0c2e6110aa2c7421245c", id: "6aba0c2e6110aa2c7421245c", name: "Edit Category Catalog", code: "CATEGORY_EDIT", module: "CATEGORY", action: "edit", status: "active" },
-    { _id: "6aba0c2e6110aa2c7421245a", id: "6aba0c2e6110aa2c7421245a", name: "View Category Catalog", code: "CATEGORY_VIEW", module: "CATEGORY", action: "view", status: "active" },
-    // CUSTOMER
-    { _id: "6aba0c2d6110aa2c74212452", id: "6aba0c2d6110aa2c74212452", name: "Create Customers", code: "CUSTOMER_CREATE", module: "CUSTOMER", action: "create", status: "active" },
-    { _id: "6aba0c2d6110aa2c74212454", id: "6aba0c2d6110aa2c74212454", name: "Delete Customers", code: "CUSTOMER_DELETE", module: "CUSTOMER", action: "delete", status: "active" },
-    { _id: "6aba0c2d6110aa2c74212453", id: "6aba0c2d6110aa2c74212453", name: "Edit Customers", code: "CUSTOMER_EDIT", module: "CUSTOMER", action: "edit", status: "active" },
-    { _id: "6aba0c2d6110aa2c74212451", id: "6aba0c2d6110aa2c74212451", name: "View Customers", code: "CUSTOMER_VIEW", module: "CUSTOMER", action: "view", status: "active" },
-    // INSPECTION
-    { _id: "6aba0c2d6110aa2c7421244e", id: "6aba0c2d6110aa2c7421244e", name: "Create Inspections", code: "INSPECTION_CREATE", module: "INSPECTION", action: "create", status: "active" },
-    { _id: "6aba0c2d6110aa2c74212450", id: "6aba0c2d6110aa2c74212450", name: "Delete Inspections", code: "INSPECTION_DELETE", module: "INSPECTION", action: "delete", status: "active" },
-    { _id: "6aba0c2d6110aa2c7421244f", id: "6aba0c2d6110aa2c7421244f", name: "Edit Inspections", code: "INSPECTION_EDIT", module: "INSPECTION", action: "edit", status: "active" },
-    { _id: "6aba0c2d6110aa2c7421244d", id: "6aba0c2d6110aa2c7421244d", name: "View Inspections", code: "INSPECTION_VIEW", module: "INSPECTION", action: "view", status: "active" },
-    // LOCATION
-    { _id: "6aba0c2f6110aa2c74212467", id: "6aba0c2f6110aa2c74212467", name: "Create Locations & Pincodes", code: "LOCATION_CREATE", module: "LOCATION", action: "create", status: "active" },
-    { _id: "6aba0c2f6110aa2c74212469", id: "6aba0c2f6110aa2c74212469", name: "Delete Locations & Pincodes", code: "LOCATION_DELETE", module: "LOCATION", action: "delete", status: "active" },
-    { _id: "6aba0c2f6110aa2c74212468", id: "6aba0c2f6110aa2c74212468", name: "Edit Locations & Pincodes", code: "LOCATION_EDIT", module: "LOCATION", action: "edit", status: "active" },
-    { _id: "6aba0c2f6110aa2c74212466", id: "6aba0c2f6110aa2c74212466", name: "View Locations & Pincodes", code: "LOCATION_VIEW", module: "LOCATION", action: "view", status: "active" },
-    // PARTNER
-    { _id: "6aba0c2d6110aa2c74212457", id: "6aba0c2d6110aa2c74212457", name: "Create Partners", code: "PARTNER_CREATE", module: "PARTNER", action: "create", status: "active" },
-    { _id: "6aba0c2e6110aa2c74212459", id: "6aba0c2e6110aa2c74212459", name: "Delete Partners", code: "PARTNER_DELETE", module: "PARTNER", action: "delete", status: "active" },
-    { _id: "6aba0c2e6110aa2c74212458", id: "6aba0c2e6110aa2c74212458", name: "Edit Partners", code: "PARTNER_EDIT", module: "PARTNER", action: "edit", status: "active" },
-    { _id: "6aba0c2d6110aa2c74212456", id: "6aba0c2d6110aa2c74212456", name: "View Partners", code: "PARTNER_VIEW", module: "PARTNER", action: "view", status: "active" },
-    // PERMISSION
-    { _id: "6aba4bbe6110aa2c74213e5f", id: "6aba4bbe6110aa2c74213e5f", name: "Create Permissions", code: "PERMISSION_CREATE", module: "PERMISSION", action: "create", status: "active" },
-    { _id: "6aba4bbe6110aa2c74213e61", id: "6aba4bbe6110aa2c74213e61", name: "Delete Permissions", code: "PERMISSION_DELETE", module: "PERMISSION", action: "delete", status: "active" },
-    { _id: "6aba4bbe6110aa2c74213e60", id: "6aba4bbe6110aa2c74213e60", name: "Edit Permissions", code: "PERMISSION_EDIT", module: "PERMISSION", action: "edit", status: "active" },
-    { _id: "6aba4bbe6110aa2c74213e5e", id: "6aba4bbe6110aa2c74213e5e", name: "View Permissions", code: "PERMISSION_VIEW", module: "PERMISSION", action: "view", status: "active" },
-    // PRICING
-    { _id: "6aba0c2e6110aa2c74212463", id: "6aba0c2e6110aa2c74212463", name: "Create Pricing Engine", code: "PRICING_CREATE", module: "PRICING", action: "create", status: "active" },
-    { _id: "6aba0c2e6110aa2c74212465", id: "6aba0c2e6110aa2c74212465", name: "Delete Pricing Engine", code: "PRICING_DELETE", module: "PRICING", action: "delete", status: "active" },
-    { _id: "6aba0c2e6110aa2c74212464", id: "6aba0c2e6110aa2c74212464", name: "Edit Pricing Engine", code: "PRICING_EDIT", module: "PRICING", action: "edit", status: "active" },
-    { _id: "6aba0c2e6110aa2c74212462", id: "6aba0c2e6110aa2c74212462", name: "View Pricing Engine", code: "PRICING_VIEW", module: "PRICING", action: "view", status: "active" },
-    // ROLE
-    { _id: "6aba4bbe6110aa2c74213e5b", id: "6aba4bbe6110aa2c74213e5b", name: "Create Roles", code: "ROLE_CREATE", module: "ROLE", action: "create", status: "active" },
-    { _id: "6aba4bbe6110aa2c74213e5d", id: "6aba4bbe6110aa2c74213e5d", name: "Delete Roles", code: "ROLE_DELETE", module: "ROLE", action: "delete", status: "active" },
-    { _id: "6aba4bbe6110aa2c74213e5c", id: "6aba4bbe6110aa2c74213e5c", name: "Edit Roles", code: "ROLE_EDIT", module: "ROLE", action: "edit", status: "active" },
-    { _id: "6aba4bbe6110aa2c74213e5a", id: "6aba4bbe6110aa2c74213e5a", name: "View Roles", code: "ROLE_VIEW", module: "ROLE", action: "view", status: "active" },
-    // SERVICE
-    { _id: "6aba0c2e6110aa2c7421245f", id: "6aba0c2e6110aa2c7421245f", name: "Create Services CMS", code: "SERVICE_CREATE", module: "SERVICE", action: "create", status: "active" },
-    { _id: "6aba0c2e6110aa2c74212461", id: "6aba0c2e6110aa2c74212461", name: "Delete Services CMS", code: "SERVICE_DELETE", module: "SERVICE", action: "delete", status: "active" },
-    { _id: "6aba0c2e6110aa2c74212460", id: "6aba0c2e6110aa2c74212460", name: "Edit Services CMS", code: "SERVICE_EDIT", module: "SERVICE", action: "edit", status: "active" },
-    { _id: "6aba0c2e6110aa2c7421245e", id: "6aba0c2e6110aa2c7421245e", name: "View Services CMS", code: "SERVICE_VIEW", module: "SERVICE", action: "view", status: "active" },
-  ]);
-
-  // Group permissions by module name for matrix rendering
+  // Group permissions by module name for matrix rendering (Strictly USER_MANAGEMENT, no obsolete USER module)
   const groupedPermissions = useMemo(() => {
     const map: Record<string, PermissionItem[]> = {};
     permissionsList.forEach((perm) => {
       const mod = (perm.module || "ADMIN").toUpperCase();
+      if (mod === "USER") return; // Obsolete module replaced by USER_MANAGEMENT
       if (!map[mod]) map[mod] = [];
       map[mod].push(perm);
     });
@@ -272,6 +538,10 @@ export default function UsersPage() {
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
   const [isCreateRoleOpen, setIsCreateRoleOpen] = useState(false);
   const [isCreatePermissionOpen, setIsCreatePermissionOpen] = useState(false);
+
+  // View Role Modules Sliding Drawer State
+  const [viewingRole, setViewingRole] = useState<SystemRole | null>(null);
+  const [viewingRoleSearch, setViewingRoleSearch] = useState("");
 
   // Edit User Drawer State
   const [editUser, setEditUser] = useState<UserManagementItem | null>(null);
@@ -377,17 +647,7 @@ export default function UsersPage() {
 
   // Fetch Roles, Permissions & Admin Users from Backend APIs
   const fetchAllData = async (force: boolean = false) => {
-    if (
-      !force &&
-      isModuleCacheFresh("users_admins") &&
-      isModuleCacheFresh("users_roles") &&
-      isModuleCacheFresh("users_permissions") &&
-      initialCachedUsers &&
-      initialCachedRoles &&
-      initialCachedPerms
-    ) {
-      return;
-    }
+    setIsLoadingData(true);
     try {
       const [rolesRes, permsRes, adminsRes] = await Promise.all([
         getRolesApi(true),
@@ -395,19 +655,62 @@ export default function UsersPage() {
         getAdminsApi(true),
       ]);
 
-      if (rolesRes && rolesRes.success && Array.isArray(rolesRes.data)) {
-        const fetchedRoles: SystemRole[] = rolesRes.data.map((r: any) => ({
-          id: r._id || r.id,
-          _id: r._id || r.id,
-          name: r.name,
-          code: r.code,
-          description: r.description || `Configured role with ${r.permissions?.length || 0} permissions`,
-          permissionIds: Array.isArray(r.permissions)
-            ? r.permissions.map((p: any) => (typeof p === "string" ? p : p._id))
-            : [],
-          userCount: 0,
-          color: "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-800",
+      let fetchedAdminsList: UserManagementItem[] = [];
+      if (adminsRes && adminsRes.success && Array.isArray(adminsRes.data)) {
+        fetchedAdminsList = adminsRes.data.map((u: any) => ({
+          id: u._id || u.id,
+          _id: u._id || u.id,
+          name: u.name,
+          email: u.email,
+          phone: u.phone || "+91 98390 00000",
+          locality: u.locality || "Varanasi HQ",
+          role: typeof u.role === "object" ? u.role?.name || "Staff Admin" : (u.role || "Staff Admin"),
+          status: u.status === "inactive" || u.status === "Suspended" ? "Suspended" : "Active",
+          lastLogin: u.updatedAt ? new Date(u.updatedAt).toLocaleDateString() : "Active Now",
+          permissions: defaultFullPermissions,
         }));
+        if (fetchedAdminsList.length > 0) {
+          setUsers(fetchedAdminsList);
+          setCachedModuleData("users_admins", fetchedAdminsList);
+        }
+      }
+
+      if (rolesRes && rolesRes.success && Array.isArray(rolesRes.data)) {
+        const allPermIds = DEFAULT_SYSTEM_PERMISSIONS.map((p) => p._id);
+        const roleUserCountMap: Record<string, number> = {};
+        fetchedAdminsList.forEach((u) => {
+          if (u.role) {
+            roleUserCountMap[u.role] = (roleUserCountMap[u.role] || 0) + 1;
+          }
+        });
+
+        const fetchedRoles: SystemRole[] = rolesRes.data.map((r: any) => {
+          const isSuperAdmin =
+            r.name?.toLowerCase().includes("super") ||
+            r.code === "SUPER_ADMIN";
+          const permIds = Array.isArray(r.permissions)
+            ? r.permissions.map((p: any) => (typeof p === "string" ? p : p._id))
+            : [];
+          return {
+            id: r._id || r.id,
+            _id: r._id || r.id,
+            name: r.name,
+            code: r.code,
+            description:
+              r.description ||
+              (isSuperAdmin
+                ? "Full administrative access to all system modules, pricing & RBAC matrix."
+                : `Configured role with ${permIds.length} permissions`),
+            permissionIds: isSuperAdmin
+              ? Array.from(new Set([...permIds, ...allPermIds]))
+              : permIds,
+            permissionsObjects: Array.isArray(r.permissions) ? r.permissions : undefined,
+            userCount: roleUserCountMap[r.name] || 0,
+            status: r.status || "active",
+            color:
+              "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-800",
+          };
+        });
         if (fetchedRoles.length > 0) {
           setSystemRoles(fetchedRoles);
           setCachedModuleData("users_roles", fetchedRoles);
@@ -417,6 +720,8 @@ export default function UsersPage() {
       if (permsRes && permsRes.success && Array.isArray(permsRes.data)) {
         const flatPerms: PermissionItem[] = [];
         permsRes.data.forEach((item: any) => {
+          const mod = (item.module || "").toUpperCase();
+          if (mod === "USER") return; // Obsolete module replaced by USER_MANAGEMENT
           if (item.actions && Array.isArray(item.actions)) {
             item.actions.forEach((act: any) => {
               flatPerms.push({
@@ -442,36 +747,26 @@ export default function UsersPage() {
           }
         });
         if (flatPerms.length > 0) {
-          setPermissionsList(flatPerms);
-          setCachedModuleData("users_permissions", flatPerms);
-        }
-      }
-
-      if (adminsRes && adminsRes.success && Array.isArray(adminsRes.data)) {
-        const fetchedAdmins: UserManagementItem[] = adminsRes.data.map((u: any) => ({
-          id: u._id || u.id,
-          _id: u._id || u.id,
-          name: u.name,
-          email: u.email,
-          phone: u.phone || "+91 98390 00000",
-          locality: u.locality || "Varanasi HQ",
-          role: typeof u.role === "object" ? u.role?.name || "Operations Coordinator" : (systemRoles.find(r => r._id === u.role || r.id === u.role)?.name || u.role || "Operations Coordinator"),
-          status: u.status === "inactive" || u.status === "Suspended" ? "Suspended" : "Active",
-          lastLogin: u.updatedAt ? new Date(u.updatedAt).toLocaleDateString() : "Active Now",
-          permissions: defaultFullPermissions,
-        }));
-        if (fetchedAdmins.length > 0) {
-          setUsers(fetchedAdmins);
-          setCachedModuleData("users_admins", fetchedAdmins);
+          const existingCodes = new Set(flatPerms.map((p) => p.code));
+          const mergedPerms = [...flatPerms];
+          DEFAULT_SYSTEM_PERMISSIONS.forEach((defPerm) => {
+            if (!existingCodes.has(defPerm.code)) {
+              mergedPerms.push(defPerm);
+            }
+          });
+          setPermissionsList(mergedPerms);
+          setCachedModuleData("users_permissions", mergedPerms);
         }
       }
     } catch (err) {
       console.error("Failed to load permissions, roles and admin users from API:", err);
+    } finally {
+      setIsLoadingData(false);
     }
   };
 
   useEffect(() => {
-    fetchAllData(false);
+    fetchAllData(true);
   }, []);
 
   // Handler: Add New User / Admin (`POST /api/admin/create-admins`)
@@ -582,6 +877,9 @@ export default function UsersPage() {
         setIsCreateRoleOpen(false);
 
         fetchAllData(true);
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("helpmate_permissions_updated"));
+        }
       } else {
         const createdRole: SystemRole = {
           id: `role-${Date.now()}`,
@@ -648,6 +946,9 @@ export default function UsersPage() {
 
         setEditRole(null);
         fetchAllData(true);
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("helpmate_permissions_updated"));
+        }
       } else {
         setSystemRoles((prev) => {
           const updated = prev.map((r) =>
@@ -908,6 +1209,76 @@ export default function UsersPage() {
   };
 
 
+  const [updatingAdminStatusId, setUpdatingAdminStatusId] = useState<string | null>(null);
+  const [updatingRoleStatusId, setUpdatingRoleStatusId] = useState<string | null>(null);
+
+  const handleToggleAdminStatus = async (user: UserManagementItem, targetStatus: "Active" | "Inactive") => {
+    const targetId = (user as any)._id || user.id;
+    setUpdatingAdminStatusId(targetId);
+    const newStatus: "Active" | "Suspended" = targetStatus === "Active" ? "Active" : "Suspended";
+    const apiStatus = targetStatus === "Active" ? "active" : "inactive";
+    
+    setUsers((prev) =>
+      prev.map((u) => ((u as any)._id === targetId || u.id === targetId ? { ...u, status: newStatus } : u))
+    );
+
+    try {
+      const res = await updateAdminApi(targetId, {
+        name: user.name,
+        email: user.email,
+        status: apiStatus,
+      });
+      if (res && res.success !== false) {
+        setToast({ type: "success", message: `Admin ${user.name} is now ${newStatus}.` });
+      } else {
+        setUsers((prev) =>
+          prev.map((u) => ((u as any)._id === targetId || u.id === targetId ? { ...u, status: user.status } : u))
+        );
+        setToast({ type: "error", message: res?.message || `Failed to update status for ${user.name}.` });
+      }
+    } catch (err: any) {
+      setUsers((prev) =>
+        prev.map((u) => ((u as any)._id === targetId || u.id === targetId ? { ...u, status: user.status } : u))
+      );
+      setToast({ type: "error", message: err?.message || `Failed to update status for ${user.name}.` });
+    } finally {
+      setUpdatingAdminStatusId(null);
+    }
+  };
+
+  const handleToggleRoleStatus = async (role: SystemRole, targetStatus: "Active" | "Inactive") => {
+    const targetId = role._id || role.id;
+    setUpdatingRoleStatusId(targetId);
+    const newStatusStr = targetStatus.toLowerCase();
+
+    setSystemRoles((prev) =>
+      prev.map((r) => ((r._id === targetId || r.id === targetId) ? { ...r, status: newStatusStr } : r))
+    );
+
+    try {
+      const res = await updateRoleApi(targetId, {
+        name: role.name,
+        permissions: role.permissions,
+        status: newStatusStr,
+      });
+      if (res && res.success !== false) {
+        setToast({ type: "success", message: `Role "${role.name}" is now ${targetStatus}.` });
+      } else {
+        setSystemRoles((prev) =>
+          prev.map((r) => ((r._id === targetId || r.id === targetId) ? { ...r, status: role.status } : r))
+        );
+        setToast({ type: "error", message: res?.message || `Failed to update role status.` });
+      }
+    } catch (err: any) {
+      setSystemRoles((prev) =>
+        prev.map((r) => ((r._id === targetId || r.id === targetId) ? { ...r, status: role.status } : r))
+      );
+      setToast({ type: "error", message: err?.message || `Failed to update role status.` });
+    } finally {
+      setUpdatingRoleStatusId(null);
+    }
+  };
+
   // User Columns
   const userColumns: Column<UserManagementItem>[] = [
     {
@@ -933,17 +1304,17 @@ export default function UsersPage() {
     },
     {
       key: "status",
-      header: "Account Status",
+      header: "Status",
       accessor: (row) => (
-        <span
-          className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
-            row.status === "Active"
-              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
-              : "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300"
-          }`}
-        >
-          {row.status}
-        </span>
+        <StatusDropdown
+          status={row.status || "Active"}
+          isUpdating={updatingAdminStatusId === ((row as any)._id || row.id)}
+          disabled={!canEdit("users")}
+          onChange={(newStatus) =>
+            handleToggleAdminStatus(row, newStatus)
+          }
+          title="Click to change account status"
+        />
       ),
       sortable: true,
     },
@@ -955,89 +1326,131 @@ export default function UsersPage() {
       accessor: (row) => (
         <RowActionMenu
           actions={[
-            {
-              label: "Edit User Role",
-              icon: Edit,
-              onClick: () => setEditUser(JSON.parse(JSON.stringify(row))),
-            },
-            {
-              label: "Delete Staff Account",
-              icon: Trash2,
-              onClick: () => setDeleteUser(row),
-              danger: true,
-            },
+            ...(canEdit("users")
+              ? [
+                  {
+                    label: "Edit User Role",
+                    icon: Edit,
+                    onClick: () => setEditUser(JSON.parse(JSON.stringify(row))),
+                  },
+                ]
+              : []),
+            ...(canDelete("users")
+              ? [
+                  {
+                    label: "Delete Staff Account",
+                    icon: Trash2,
+                    onClick: () => setDeleteUser(row),
+                    danger: true,
+                  },
+                ]
+              : []),
           ]}
         />
       ),
     },
   ];
 
-  // Role Columns
+  // Role Columns: strictly Role, Assigned Permissions (Modules), Status, Action
   const roleColumns: Column<SystemRole>[] = [
     {
       key: "name",
-      header: "Role Designation",
+      header: "Role",
       accessor: (row) => (
-        <div className="flex flex-col">
-          <span className="font-extrabold text-slate-900 dark:text-white text-xs">{row.name}</span>
-          <span className="text-[10px] text-slate-400 font-mono">{row.code || row._id || row.id}</span>
-        </div>
+        <span className="font-extrabold text-slate-900 dark:text-white text-xs">{row.name}</span>
       ),
       sortable: true,
-    },
-    {
-      key: "description",
-      header: "Operational Scope & Description",
-      accessor: (row) => (
-        <span className="text-xs text-slate-600 dark:text-slate-300 line-clamp-1">
-          {row.description || "No description specified"}
-        </span>
-      ),
     },
     {
       key: "permissionIds",
-      header: "Assigned Permission IDs",
-      accessor: (row) => (
-        <div className="flex flex-wrap gap-1 max-w-xs">
-          {(row.permissionIds && row.permissionIds.length > 0) ? (
-            row.permissionIds.map((pid, idx) => (
-              <span key={idx} className="font-mono text-[9px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 dark:bg-purple-950 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                {typeof pid === "string" ? pid.slice(0, 10) + "..." : "ID"}
+      header: "Assigned Permissions",
+      accessor: (row) => {
+        const assignedModules = getRoleAssignedModules(row);
+        if (assignedModules.length === 0) {
+          return <span className="text-xs text-slate-400 italic">No modules assigned</span>;
+        }
+
+        const previewModules = assignedModules.slice(0, 3);
+        const extraCount = assignedModules.length - previewModules.length;
+
+        return (
+          <div className="flex flex-wrap items-center gap-1.5 py-1">
+            {previewModules.map((m: RoleAssignedModule) => (
+              <span
+                key={m.module}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 text-[11px] font-medium"
+              >
+                <span className="font-extrabold text-purple-700 dark:text-purple-300">{m.module}</span>
+                <span className="text-[10px] text-slate-400">({m.actions.map((a: RoleAssignedAction) => a.action).join(", ")})</span>
               </span>
-            ))
-          ) : (
-            <span className="text-[10px] text-slate-400">None</span>
-          )}
-        </div>
-      ),
+            ))}
+            {extraCount > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setViewingRole(row);
+                  setViewingRoleSearch("");
+                }}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-purple-50 dark:bg-purple-950/60 hover:bg-purple-100 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 text-[11px] font-bold transition-colors cursor-pointer"
+                title={`View all ${assignedModules.length} assigned modules`}
+              >
+                <span>+{extraCount} more</span>
+                <ChevronRight className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+        );
+      },
     },
     {
-      key: "userCount",
-      header: "Assigned Staff",
-      accessor: (row) => (
-        <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 text-[10px] font-bold">
-          {row.userCount || 0} Users
-        </span>
-      ),
+      key: "status",
+      header: "Status",
+      accessor: (row) => {
+        const isAct = (row.status || "active").toLowerCase() === "active";
+        const isSuperAdmin = row.name === "Super Admin";
+        return (
+          <StatusDropdown
+            status={isAct ? "Active" : "Inactive"}
+            isUpdating={updatingRoleStatusId === (row._id || row.id)}
+            disabled={!canEdit("users") || isSuperAdmin}
+            onChange={(newStatus) =>
+              handleToggleRoleStatus(row, newStatus)
+            }
+            title={isSuperAdmin ? "Super Admin status cannot be modified" : "Click to change role status"}
+          />
+        );
+      },
       sortable: true,
     },
     {
-      key: "id",
-      header: "Actions",
+      key: "actions",
+      header: "Action",
       sticky: "right",
       accessor: (row) => (
         <RowActionMenu
           actions={[
             {
-              label: "Edit Role & Matrix",
-              icon: Edit,
+              label: "View All Assigned Modules",
+              icon: Eye,
               onClick: () => {
-                setEditRole(row);
-                setEditRoleName(row.name);
-                setEditRoleDesc(row.description);
-                setEditRolePermissionIds(row.permissionIds || []);
+                setViewingRole(row);
+                setViewingRoleSearch("");
               },
             },
+            ...(canEdit("users")
+              ? [
+                  {
+                    label: "Edit Role & Matrix",
+                    icon: Edit,
+                    onClick: () => {
+                      setEditRole(row);
+                      setEditRoleName(row.name);
+                      setEditRoleDesc(row.description);
+                      setEditRolePermissionIds(row.permissionIds || []);
+                    },
+                  },
+                ]
+              : []),
           ]}
         />
       ),
@@ -1104,24 +1517,32 @@ export default function UsersPage() {
       accessor: (row) => (
         <RowActionMenu
           actions={[
-            {
-              label: `Edit ${row.module} Permissions`,
-              icon: Edit,
-              onClick: () => {
-                setEditPermission(row.actions[0]);
-                setPermName(`${row.module} Permissions`);
-                setPermCode(`${row.module}_ALL`);
-                setPermModule(row.module);
-                setPermActions(row.actions.map((a) => a.action));
-                setPermStatus(row.actions[0]?.status || "active");
-              },
-            },
-            {
-              label: `Delete ${row.module} Permissions`,
-              icon: Trash2,
-              onClick: () => setDeletePermissionGroup(row),
-              danger: true,
-            },
+            ...(canEdit("users")
+              ? [
+                  {
+                    label: `Edit ${row.module} Permissions`,
+                    icon: Edit,
+                    onClick: () => {
+                      setEditPermission(row.actions[0]);
+                      setPermName(`${row.module} Permissions`);
+                      setPermCode(`${row.module}_ALL`);
+                      setPermModule(row.module);
+                      setPermActions(row.actions.map((a) => a.action));
+                      setPermStatus(row.actions[0]?.status || "active");
+                    },
+                  },
+                ]
+              : []),
+            ...(canDelete("users")
+              ? [
+                  {
+                    label: `Delete ${row.module} Permissions`,
+                    icon: Trash2,
+                    onClick: () => setDeletePermissionGroup(row),
+                    danger: true,
+                  },
+                ]
+              : []),
           ]}
         />
       ),
@@ -1153,7 +1574,7 @@ export default function UsersPage() {
             <button
               type="button"
               onClick={() => setToast(null)}
-              className="text-xs font-bold px-2 py-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
+              className="text-xs font-bold px-2 py-1 rounded-lg hover:bg-slate-900/5 dark:hover:bg-white/5 cursor-pointer"
             >
               Dismiss
             </button>
@@ -1171,41 +1592,47 @@ export default function UsersPage() {
 
           <div className="flex items-center gap-2 shrink-0">
             {/* Secondary Action: Create Permission */}
-            <button
-              type="button"
-              onClick={() => {
-                setPermName("");
-                setPermCode("");
-                setPermModule("ADMIN");
-                setPermActions(["create", "delete", "edit", "view"]);
-                setPermStatus("active");
-                setIsCreatePermissionOpen(true);
-              }}
-              className="px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <Key className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-              <span>+ Create Permission</span>
-            </button>
+            {canCreate("users") && (
+              <button
+                type="button"
+                onClick={() => {
+                  setPermName("");
+                  setPermCode("");
+                  setPermModule("USER_MANAGEMENT");
+                  setPermActions(["create", "delete", "edit", "view"]);
+                  setPermStatus("active");
+                  setIsCreatePermissionOpen(true);
+                }}
+                className="px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Key className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <span>Create Permission</span>
+              </button>
+            )}
 
             {/* Secondary Action: Create Role */}
-            <button
-              type="button"
-              onClick={() => setIsCreateRoleOpen(true)}
-              className="px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <FolderPlus className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-              <span>+ Create New Role</span>
-            </button>
+            {canCreate("users") && (
+              <button
+                type="button"
+                onClick={() => setIsCreateRoleOpen(true)}
+                className="px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <FolderPlus className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                <span>Create New Role</span>
+              </button>
+            )}
 
             {/* STRICTLY ONLY ONE PRIMARY BUTTON on Page Header: Add User */}
-            <button
-              type="button"
-              onClick={() => setIsAddUserOpen(true)}
-              className="px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <UserPlus className="w-4 h-4" />
-              <span>Add User</span>
-            </button>
+            {canCreate("users") && (
+              <button
+                type="button"
+                onClick={() => setIsAddUserOpen(true)}
+                className="px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <UserPlus className="w-4 h-4" />
+                <span>Add User</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -1255,50 +1682,70 @@ export default function UsersPage() {
         {activeTab === "users" && (
           <div className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-              {systemRoles.map((r) => (
-                <div
-                  key={r.id || r._id}
-                  className="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-1.5 flex flex-col justify-between"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg border ${r.color || "bg-slate-100 text-slate-700"}`}>
-                      {r.name}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditRole(r);
-                        setEditRoleName(r.name);
-                        setEditRoleDesc(r.description);
-                        setEditRolePermissionIds(r.permissionIds || []);
-                      }}
-                      className="text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 p-1 cursor-pointer"
-                      title="Edit Role Matrix"
-                    >
-                      <Edit className="w-3.5 h-3.5" />
-                    </button>
+              {isLoadingData ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <div
+                    key={`role-shimmer-${i}`}
+                    className="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2.5 animate-pulse"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="h-4 w-20 bg-slate-200 dark:bg-slate-700/60 rounded-md" />
+                      <div className="h-4 w-4 bg-slate-200 dark:bg-slate-700/60 rounded" />
+                    </div>
+                    <div className="h-3 w-full bg-slate-100 dark:bg-slate-800/80 rounded" />
+                    <div className="h-3 w-2/3 bg-slate-100 dark:bg-slate-800/80 rounded" />
+                    <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800">
+                      <div className="h-3 w-12 bg-slate-100 dark:bg-slate-800/80 rounded" />
+                      <div className="h-3 w-12 bg-slate-100 dark:bg-slate-800/80 rounded" />
+                    </div>
                   </div>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 leading-tight">
-                    {r.description}
-                  </p>
-                  <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800 text-[10px]">
-                    <span className="font-semibold text-slate-400">{r.userCount || 0} Staff</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedRole(r.name);
-                        setIsAddUserOpen(true);
-                      }}
-                      className="font-bold text-brand-600 dark:text-brand-400 hover:underline cursor-pointer"
-                    >
-                      Assign →
-                    </button>
+                ))
+              ) : (
+                systemRoles.map((r) => (
+                  <div
+                    key={r.id || r._id}
+                    className="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-1.5 flex flex-col justify-between"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg border ${r.color || "bg-slate-100 text-slate-700"}`}>
+                        {r.name}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditRole(r);
+                          setEditRoleName(r.name);
+                          setEditRoleDesc(r.description);
+                          setEditRolePermissionIds(r.permissionIds || []);
+                        }}
+                        className="text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 p-1 cursor-pointer"
+                        title="Edit Role Matrix"
+                      >
+                        <Edit className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 leading-tight">
+                      {r.description}
+                    </p>
+                    <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800 text-[10px]">
+                      <span className="font-semibold text-slate-400">{r.userCount || 0} Staff</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedRole(r.name);
+                          setIsAddUserOpen(true);
+                        }}
+                        className="font-bold text-brand-600 dark:text-brand-400 hover:underline cursor-pointer"
+                      >
+                        Assign →
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
 
-            <DataTable columns={userColumns} data={users} />
+            <DataTable columns={userColumns} data={users} isLoading={isLoadingData} />
           </div>
         )}
 
@@ -1308,24 +1755,21 @@ export default function UsersPage() {
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="font-extrabold text-slate-900 dark:text-white text-sm">
-                  Configured System Roles & Permission Array
+                  System Roles
                 </h3>
-                <p className="text-xs text-slate-500">
-                  Manage role names and permission arrays connected to backend API (`PUT /api/admin/roles/:id`)
-                </p>
               </div>
 
               <button
                 type="button"
                 onClick={() => setIsCreateRoleOpen(true)}
-                className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-xs flex items-center gap-1.5 cursor-pointer"
+                className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-extrabold text-xs shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
               >
-                <FolderPlus className="w-4 h-4" />
-                <span>+ Create New Role</span>
+                <FolderPlus className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                <span>Create New Role</span>
               </button>
             </div>
 
-            <DataTable columns={roleColumns} data={systemRoles} />
+            <DataTable columns={roleColumns} data={systemRoles} isLoading={isLoadingData} hideActionsColumn={true} />
           </div>
         )}
 
@@ -1335,11 +1779,8 @@ export default function UsersPage() {
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="font-extrabold text-slate-900 dark:text-white text-sm">
-                  Granular System Permissions List
+                  System Permissions
                 </h3>
-                <p className="text-xs text-slate-500">
-                  Manage permissions (`GET /api/admin/permissions`) assigned to Roles
-                </p>
               </div>
 
               <button
@@ -1347,19 +1788,19 @@ export default function UsersPage() {
                 onClick={() => {
                   setPermName("");
                   setPermCode("");
-                  setPermModule("ADMIN");
+                  setPermModule("USER_MANAGEMENT");
                   setPermActions(["create", "delete", "edit", "view"]);
                   setPermStatus("active");
                   setIsCreatePermissionOpen(true);
                 }}
-                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs flex items-center gap-1.5 cursor-pointer"
+                className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-extrabold text-xs shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
               >
-                <Key className="w-4 h-4" />
-                <span>+ Create Permission</span>
+                <Key className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <span>Create Permission</span>
               </button>
             </div>
 
-            <DataTable columns={modulePermissionGroupColumns} data={modulePermissionGroups} />
+            <DataTable columns={modulePermissionGroupColumns} data={modulePermissionGroups} isLoading={isLoadingData} />
           </div>
         )}
 
@@ -1534,11 +1975,8 @@ export default function UsersPage() {
                       </div>
                       <div>
                         <h3 className="font-extrabold text-slate-900 dark:text-white text-base">
-                          Create New System Role
+                          Create New Role
                         </h3>
-                        <p className="text-xs text-slate-500">
-                          POST /api/admin/roles — Configure role name & permission array
-                        </p>
                       </div>
                     </div>
                     <button
@@ -1759,9 +2197,6 @@ export default function UsersPage() {
                         <h3 className="font-extrabold text-slate-900 dark:text-white text-base">
                           Edit Role & Permission Matrix
                         </h3>
-                        <p className="text-xs text-slate-400">
-                          PUT /api/admin/roles/{editRole._id || editRole.id}
-                        </p>
                       </div>
                     </div>
                     <button type="button" onClick={() => setEditRole(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
@@ -1957,6 +2392,181 @@ export default function UsersPage() {
           </Portal>
         )}
 
+        {/* ─── 3.5 VIEW ASSIGNED MODULES SLIDING DRAWER ─── */}
+        {viewingRole && (() => {
+          const roleAssignedMods: RoleAssignedModule[] = getRoleAssignedModules(viewingRole);
+          const filteredMods = viewingRoleSearch.trim()
+            ? roleAssignedMods.filter(
+                (m: RoleAssignedModule) =>
+                  m.module.toLowerCase().includes(viewingRoleSearch.toLowerCase()) ||
+                  m.actions.some(
+                    (a: RoleAssignedAction) =>
+                      a.action.toLowerCase().includes(viewingRoleSearch.toLowerCase()) ||
+                      a.name.toLowerCase().includes(viewingRoleSearch.toLowerCase()) ||
+                      a.code.toLowerCase().includes(viewingRoleSearch.toLowerCase())
+                  )
+              )
+            : roleAssignedMods;
+
+          const totalPermsCount = roleAssignedMods.reduce((acc: number, m: RoleAssignedModule) => acc + m.actions.length, 0);
+
+          return (
+            <Portal>
+              <div className="fixed inset-0 z-[99999] bg-slate-950/60 backdrop-blur-xs flex justify-end outline-none">
+                <div className="absolute inset-0" onClick={() => setViewingRole(null)} />
+                <div className="relative z-10 bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 p-6 max-w-xl w-full h-full flex flex-col justify-between shadow-2xl animate-in slide-in-from-right duration-300 outline-none overflow-hidden">
+                  {/* Header */}
+                  <div className="space-y-4 shrink-0 pb-4 border-b border-slate-200 dark:border-slate-800">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2.5 rounded-2xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-800">
+                          <ShieldCheck className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-extrabold text-slate-900 dark:text-white text-base">
+                              {viewingRole.name}
+                            </h3>
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300 font-bold">
+                              {viewingRole.code || "ROLE"}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setViewingRole(null)}
+                        className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+
+                    {/* Quick stats & Search */}
+                    <div className="flex items-center justify-between gap-2 pt-1">
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-[11px]">
+                          {roleAssignedMods.length} Modules
+                        </span>
+                        <span className="px-2.5 py-1 rounded-lg bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 font-bold text-[11px]">
+                          {totalPermsCount} Permissions
+                        </span>
+                      </div>
+                      <div className="relative w-56">
+                        <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        <input
+                          type="text"
+                          placeholder="Filter modules..."
+                          value={viewingRoleSearch}
+                          onChange={(e) => setViewingRoleSearch(e.target.value)}
+                          className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Module List Body (Scrollable) */}
+                  <div className="flex-1 overflow-y-auto py-4 space-y-3 pr-1">
+                    {filteredMods.length === 0 ? (
+                      <div className="py-12 text-center text-slate-400 space-y-2">
+                        <ShieldAlert className="w-8 h-8 mx-auto text-slate-300 dark:text-slate-600" />
+                        <p className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                          {viewingRoleSearch ? "No modules match your search filter" : "No modules or permissions assigned to this role"}
+                        </p>
+                        {viewingRoleSearch && (
+                          <button
+                            type="button"
+                            onClick={() => setViewingRoleSearch("")}
+                            className="text-xs text-brand-600 hover:underline cursor-pointer font-semibold"
+                          >
+                            Clear Search
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      filteredMods.map((mod: RoleAssignedModule) => (
+                        <div
+                          key={mod.module}
+                          className="p-3.5 rounded-2xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800/80 space-y-2.5 transition-all hover:border-purple-300 dark:hover:border-purple-700"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-purple-500" />
+                              <span className="font-extrabold text-xs text-slate-900 dark:text-white tracking-wider uppercase">
+                                {mod.module}
+                              </span>
+                            </div>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                              {mod.actions.length} {mod.actions.length === 1 ? "action" : "actions"}
+                            </span>
+                          </div>
+
+                          <div className="flex flex-wrap gap-1.5 pt-1">
+                            {mod.actions.map((act: RoleAssignedAction) => {
+                              const aLower = act.action.toLowerCase();
+                              const colorClass =
+                                aLower === "view"
+                                  ? "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800"
+                                  : aLower === "create"
+                                  ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800"
+                                  : aLower === "edit"
+                                  ? "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800"
+                                  : "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800";
+
+                              return (
+                                <div
+                                  key={act._id || act.code}
+                                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-bold ${colorClass}`}
+                                >
+                                  <span className="uppercase">{act.action}</span>
+                                  {act.name && act.name !== act.action && (
+                                    <span className="text-[10px] font-normal opacity-80">
+                                      • {act.name}
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  {/* Footer: Strictly adhere to AGENTS.md button hierarchy */}
+                  <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setViewingRole(null)}
+                      className="px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-extrabold text-xs shadow-xs transition-all cursor-pointer"
+                    >
+                      Close
+                    </button>
+
+                    {canEdit("users") && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const targetRole = viewingRole;
+                          setViewingRole(null);
+                          setEditRole(targetRole);
+                          setEditRoleName(targetRole.name);
+                          setEditRoleDesc(targetRole.description);
+                          setEditRolePermissionIds(targetRole.permissionIds || []);
+                        }}
+                        className="px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-xs transition-all flex items-center gap-2 cursor-pointer"
+                      >
+                        <Edit className="w-3.5 h-3.5" />
+                        <span>Edit Role & Matrix</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </Portal>
+          );
+        })()}
+
         {/* ─── 4. CREATE PERMISSION SLIDING DRAWER ─── */}
         {isCreatePermissionOpen && (
           <Portal>
@@ -1978,22 +2588,39 @@ export default function UsersPage() {
                   </div>
 
                   <div className="space-y-4 text-xs">
+                    {/* Target Module Dropdown */}
+                    <div>
+                      <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                        Select System Module *
+                      </label>
+                      <select
+                        value={permModule}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          handleModuleChange(val);
+                          setPermCode(`${val}_VIEW`);
+                          setPermName(`${val} Module Permissions`);
+                        }}
+                        className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-bold outline-none focus:border-emerald-500"
+                      >
+                        {MODULE_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
                     {/* 1. Module Name / Permission Name */}
                     <div>
                       <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                        Module Name / Permission Name *
+                        Permission / Feature Name *
                       </label>
                       <input
                         type="text"
                         required
                         value={permName}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setPermName(val);
-                          if (val.trim()) {
-                            setPermModule(val.trim().split(" ")[0].toUpperCase());
-                          }
-                        }}
+                        onChange={(e) => setPermName(e.target.value)}
                         placeholder="e.g. Booking Pipeline"
                         className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-bold outline-none focus:border-emerald-500"
                       />
@@ -2007,13 +2634,7 @@ export default function UsersPage() {
                       <input
                         type="text"
                         value={permCode}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setPermCode(val);
-                          if (val.trim()) {
-                            setPermModule(val.trim().split("_")[0].toUpperCase());
-                          }
-                        }}
+                        onChange={(e) => setPermCode(e.target.value)}
                         placeholder="e.g. BOOKING_VIEW"
                         className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-mono uppercase font-bold outline-none focus:border-emerald-500"
                       />
@@ -2121,22 +2742,37 @@ export default function UsersPage() {
                   </div>
 
                   <div className="space-y-4 text-xs">
+                    {/* Target Module Dropdown */}
+                    <div>
+                      <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                        Select System Module *
+                      </label>
+                      <select
+                        value={permModule}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          handleModuleChange(val);
+                        }}
+                        className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-bold outline-none focus:border-purple-500"
+                      >
+                        {MODULE_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
                     {/* 1. Module Name / Permission Name */}
                     <div>
                       <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                        Module Name / Permission Name *
+                        Permission / Feature Name *
                       </label>
                       <input
                         type="text"
                         required
                         value={permName}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setPermName(val);
-                          if (val.trim()) {
-                            setPermModule(val.trim().split(" ")[0].toUpperCase());
-                          }
-                        }}
+                        onChange={(e) => setPermName(e.target.value)}
                         className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-bold"
                       />
                     </div>
@@ -2149,13 +2785,7 @@ export default function UsersPage() {
                       <input
                         type="text"
                         value={permCode}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setPermCode(val);
-                          if (val.trim()) {
-                            setPermModule(val.trim().split("_")[0].toUpperCase());
-                          }
-                        }}
+                        onChange={(e) => setPermCode(e.target.value)}
                         className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-mono uppercase font-bold"
                       />
                     </div>
@@ -2255,7 +2885,6 @@ export default function UsersPage() {
                   </div>
                   <div>
                     <h3 className="font-extrabold text-slate-900 dark:text-white text-base">Delete Permission</h3>
-                    <p className="text-xs text-slate-400">Remove permission from system catalog</p>
                   </div>
                 </div>
 
@@ -2295,7 +2924,6 @@ export default function UsersPage() {
                   </div>
                   <div>
                     <h3 className="font-extrabold text-slate-900 dark:text-white text-base">Delete Module Permissions</h3>
-                    <p className="text-xs text-slate-400">Remove permission module from system catalog</p>
                   </div>
                 </div>
 
@@ -2333,8 +2961,7 @@ export default function UsersPage() {
                 <div className="space-y-4">
                   <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
                     <div>
-                      <h3 className="font-extrabold text-slate-900 dark:text-white text-base">Edit Staff User & Assigned Role</h3>
-                      <p className="text-xs text-slate-400">Update staff details and select assigned role</p>
+                      <h3 className="font-extrabold text-slate-900 dark:text-white text-base">Edit Staff User</h3>
                     </div>
                     <button type="button" onClick={() => setEditUser(null)} className="text-slate-400 hover:text-slate-600">
                       <X className="w-5 h-5" />
@@ -2439,7 +3066,6 @@ export default function UsersPage() {
                   </div>
                   <div>
                     <h3 className="font-extrabold text-slate-900 dark:text-white text-base">Delete Staff Account</h3>
-                    <p className="text-xs text-slate-400">Revoke administrative permissions</p>
                   </div>
                 </div>
 

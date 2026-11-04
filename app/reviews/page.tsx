@@ -48,10 +48,12 @@ import {
 } from "lucide-react";
 import { Portal } from "@/components/Portal";
 import { CustomSelect } from "@/components/CustomSelect";
+import { useRbac } from "@/context/RbacContext";
 
 import { getStoredModuleData, setCachedModuleData, isModuleCacheFresh } from "@/lib/moduleCache";
 
 export default function ReviewsPage() {
+  const { canCreate, canEdit, canDelete, canView } = useRbac();
   const initialCached = getStoredModuleData<ApiAdminReview[]>("reviews");
   const initialCachedSummary = getStoredModuleData<ApiAdminReviewSummary>("reviews_summary");
   const [reviews, setReviews] = useState<ApiAdminReview[]>(() => initialCached || []);
@@ -476,6 +478,30 @@ export default function ReviewsPage() {
         const isPublished = !!row.isPublished;
         const isBusy = isActionLoading === row._id;
 
+        if (!canEdit("REVIEW")) {
+          return (
+            <span
+              className={`px-3 py-1 rounded-full text-[10px] font-black tracking-wide inline-flex items-center gap-1.5 ${
+                isPublished
+                  ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800"
+                  : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-300 dark:border-slate-700"
+              }`}
+            >
+              {isPublished ? (
+                <>
+                  <Globe className="w-3 h-3 text-emerald-600" />
+                  <span>🌐 Live on Web</span>
+                </>
+              ) : (
+                <>
+                  <EyeOff className="w-3 h-3 text-slate-400" />
+                  <span>🚫 Hidden</span>
+                </>
+              )}
+            </span>
+          );
+        }
+
         return (
           <button
             type="button"
@@ -540,17 +566,19 @@ export default function ReviewsPage() {
       header: "Actions",
       accessor: (row) => (
         <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => handleOpenManageModal(row)}
-            className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center gap-1 cursor-pointer transition-colors"
-            title="Inspect & Moderation"
-          >
-            <Eye className="w-3.5 h-3.5" />
-            <span>Manage</span>
-          </button>
+          {canView("REVIEW") && (
+            <button
+              type="button"
+              onClick={() => handleOpenManageModal(row)}
+              className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center gap-1 cursor-pointer transition-colors"
+              title="Inspect & Moderation"
+            >
+              <Eye className="w-3.5 h-3.5" />
+              <span>Manage</span>
+            </button>
+          )}
 
-          {!row.isPublished && (
+          {canEdit("REVIEW") && !row.isPublished && (
             <button
               type="button"
               disabled={isActionLoading === row._id}
@@ -562,7 +590,7 @@ export default function ReviewsPage() {
             </button>
           )}
 
-          {row.isPublished && (
+          {canEdit("REVIEW") && row.isPublished && (
             <button
               type="button"
               disabled={isActionLoading === row._id}
@@ -769,7 +797,7 @@ export default function ReviewsPage() {
                       </div>
 
                       <div className="flex justify-center">
-                        <div className="relative w-56 h-[340px] rounded-2xl overflow-hidden bg-black border-2 border-purple-500 shadow-xl group">
+                        <div className="relative w-56 h-[340px] rounded-2xl overflow-hidden bg-slate-950 border-2 border-purple-500 shadow-xl group">
                           <video
                             src={getVideoUrl(modalDetails?.video || selectedReview.video)}
                             poster={(modalDetails?.video?.thumbnailUrl || selectedReview.video?.thumbnailUrl)}

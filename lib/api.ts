@@ -72,9 +72,16 @@ export function handleGlobalLogout() {
     localStorage.removeItem("helpmate_admin_user");
     localStorage.removeItem("helpmate_admin_session");
     localStorage.removeItem("helpmate_active_user_id");
+    localStorage.removeItem("helpmate_sidebar_allowed_modules");
+    localStorage.removeItem("helpmate_user_permissions");
+    localStorage.removeItem("helpmate_sidebar_pinned_items");
+    try {
+      sessionStorage.clear();
+      document.cookie = "helpmate_sidebar_state=; path=/; max-age=0";
+    } catch {}
     clearApiCache();
     if (window.location.pathname !== "/login") {
-      window.location.href = "/login";
+      window.location.href = "/login?logout=true";
     }
   }
 }
@@ -117,7 +124,7 @@ export async function authFetch(url: string, options: RequestInit = {}): Promise
     headers,
   });
 
-  if (response.status === 401 || response.status === 403) {
+  if (response.status === 401) {
     handleGlobalLogout();
   }
 
@@ -127,7 +134,7 @@ export async function authFetch(url: string, options: RequestInit = {}): Promise
 export async function getAdminMeApi() {
   try {
     const res = await authFetch(`${API_BASE_URL}/api/admin/me`);
-    if (res.status === 401 || res.status === 403) {
+    if (res.status === 401) {
       handleGlobalLogout();
       return { success: false, message: "Token expired", isUnauthorized: true };
     }
@@ -139,9 +146,12 @@ export async function getAdminMeApi() {
 }
 
 export async function safeJsonResponse(res: Response): Promise<any> {
-  if (res.status === 401 || res.status === 403) {
+  if (res.status === 401) {
     handleGlobalLogout();
     return { success: false, message: "Token expired or unauthorized.", isUnauthorized: true };
+  }
+  if (res.status === 403) {
+    return { success: false, message: "Access forbidden.", isForbidden: true };
   }
 
   const contentType = res.headers.get("content-type") || "";
@@ -160,8 +170,6 @@ export async function safeJsonResponse(res: Response): Promise<any> {
         msg.includes("token is expired") ||
         msg.includes("jwt malformed") ||
         msg.includes("invalid token") ||
-        msg.includes("unauthorized") ||
-        msg.includes("authentication required") ||
         msg.includes("jwt signature") ||
         msg.includes("session expired")
       ) {
@@ -2024,10 +2032,35 @@ export async function deletePackageApi(id: string, token?: string) {
       method: "DELETE",
       headers,
     });
+    const data = await safeJsonResponse(res);
+    if (!data || data.success === false) {
+      return await bulkDeletePackagesApi([id], token);
+    }
+    return data;
+  } catch (error) {
+    console.error("deletePackageApi error, trying bulk fallback:", error);
+    return await bulkDeletePackagesApi([id], token);
+  }
+}
+
+export async function bulkDeletePackagesApi(ids: string[], token?: string) {
+  clearApiCache("getPackagesApi");
+  try {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (token) {
+      headers["Authorization"] = token.startsWith("Bearer ") ? token : `Bearer ${token}`;
+    }
+    const res = await authFetch(`${API_BASE_URL}/api/package/bulk`, {
+      method: "DELETE",
+      headers,
+      body: JSON.stringify({ ids }),
+    });
     return await safeJsonResponse(res);
   } catch (error) {
-    console.error("deletePackageApi error:", error);
-    return { success: false, message: "Failed to delete package." };
+    console.error("bulkDeletePackagesApi error:", error);
+    return { success: false, message: "Failed to bulk delete packages." };
   }
 }
 
@@ -2394,14 +2427,14 @@ export async function createCustomerApi(payload: ApiCreateCustomerPayload & { to
         mobile: payload.mobile,
         alternatePhone: payload.alternatePhone || "",
         email: payload.email || "",
-        customerCategory: payload.customerCategory || "individual_household",
-        propertyHouseholdType: payload.propertyHouseholdType || "apartment_flat",
+        customerCategory: payload.customerCategory || "",
+        propertyHouseholdType: payload.propertyHouseholdType || "",
         address: {
-          addressLabel: payload.address.addressLabel || "Home (Primary)",
+          addressLabel: payload.address.addressLabel || "Home",
           relationshipType: payload.address.relationshipType || "self",
           localityId: payload.address.localityId,
-          pincode: payload.address.pincode || "221002",
-          serviceAddress: payload.address.serviceAddress || "Varanasi",
+          pincode: payload.address.pincode || "",
+          serviceAddress: payload.address.serviceAddress || "",
           landmark: payload.address.landmark || "",
         },
       }),
@@ -4622,3 +4655,281 @@ export async function adminSearchApi(params: {
   }
 }
 
+// ==========================================
+// TABLE COLUMN PREFERENCES APIS (BOOKING, CUSTOMER, PACKAGE, PARTNER)
+// ==========================================
+
+export interface AvailableColumnItem {
+  key: string;
+  label: string;
+  locked?: boolean;
+  fixedPosition?: "first" | "last" | null;
+}
+
+export interface ColumnPreferenceItem {
+  key: string;
+  label?: string;
+  position?: number;
+  visible?: boolean;
+  locked?: boolean;
+  fixedPosition?: "first" | "last" | null;
+}
+
+export interface TableColumnPreferencesData {
+  tableKey: string;
+  columnOrder: string[];
+  columns: {
+    key: string;
+    label: string;
+    position: number;
+    visible: boolean;
+    locked?: boolean;
+    fixedPosition?: "first" | "last" | null;
+    _id?: string;
+  }[];
+}
+
+export interface TableColumnPreferencesPayload {
+  availableColumns?: AvailableColumnItem[];
+  columns?: ColumnPreferenceItem[];
+  columnOrder?: string[];
+  preferences?: ColumnPreferenceItem[];
+}
+
+export type TablePreferenceType = "booking" | "customer" | "package" | "partner";
+
+// Booking Table Preferences
+export async function getBookingColumnPreferencesApi(): Promise<{
+  success: boolean;
+  message?: string;
+  data?: TableColumnPreferencesData;
+}> {
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/booking/column-preferences`, {
+      method: "GET",
+    });
+    return await safeJsonResponse(res);
+  } catch (error) {
+    console.error("getBookingColumnPreferencesApi error:", error);
+    return { success: false, message: "Failed to fetch booking column preferences." };
+  }
+}
+
+export async function updateBookingColumnPreferencesApi(payload: TableColumnPreferencesPayload): Promise<{
+  success: boolean;
+  message?: string;
+  data?: TableColumnPreferencesData;
+}> {
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/booking/column-preferences`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+    return await safeJsonResponse(res);
+  } catch (error) {
+    console.error("updateBookingColumnPreferencesApi error:", error);
+    return { success: false, message: "Failed to save booking column preferences." };
+  }
+}
+
+// Customer Table Preferences
+export async function getCustomerColumnPreferencesApi(): Promise<{
+  success: boolean;
+  message?: string;
+  data?: TableColumnPreferencesData;
+}> {
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/admin/customer/column-preferences`, {
+      method: "GET",
+    });
+    return await safeJsonResponse(res);
+  } catch (error) {
+    console.error("getCustomerColumnPreferencesApi error:", error);
+    return { success: false, message: "Failed to fetch customer column preferences." };
+  }
+}
+
+export async function updateCustomerColumnPreferencesApi(payload: TableColumnPreferencesPayload): Promise<{
+  success: boolean;
+  message?: string;
+  data?: TableColumnPreferencesData;
+}> {
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/admin/customer/column-preferences`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+    return await safeJsonResponse(res);
+  } catch (error) {
+    console.error("updateCustomerColumnPreferencesApi error:", error);
+    return { success: false, message: "Failed to save customer column preferences." };
+  }
+}
+
+// Package Table Preferences
+export async function getPackageColumnPreferencesApi(): Promise<{
+  success: boolean;
+  message?: string;
+  data?: TableColumnPreferencesData;
+}> {
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/package/column-preferences`, {
+      method: "GET",
+    });
+    return await safeJsonResponse(res);
+  } catch (error) {
+    console.error("getPackageColumnPreferencesApi error:", error);
+    return { success: false, message: "Failed to fetch package column preferences." };
+  }
+}
+
+export async function updatePackageColumnPreferencesApi(payload: TableColumnPreferencesPayload): Promise<{
+  success: boolean;
+  message?: string;
+  data?: TableColumnPreferencesData;
+}> {
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/package/column-preferences`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+    return await safeJsonResponse(res);
+  } catch (error) {
+    console.error("updatePackageColumnPreferencesApi error:", error);
+    return { success: false, message: "Failed to save package column preferences." };
+  }
+}
+
+// Partner Table Preferences
+export async function getPartnerColumnPreferencesApi(): Promise<{
+  success: boolean;
+  message?: string;
+  data?: TableColumnPreferencesData;
+}> {
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/partner/column-preferences`, {
+      method: "GET",
+    });
+    return await safeJsonResponse(res);
+  } catch (error) {
+    console.error("getPartnerColumnPreferencesApi error:", error);
+    return { success: false, message: "Failed to fetch partner column preferences." };
+  }
+}
+
+export async function updatePartnerColumnPreferencesApi(payload: TableColumnPreferencesPayload): Promise<{
+  success: boolean;
+  message?: string;
+  data?: TableColumnPreferencesData;
+}> {
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/partner/column-preferences`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+    return await safeJsonResponse(res);
+  } catch (error) {
+    console.error("updatePartnerColumnPreferencesApi error:", error);
+    return { success: false, message: "Failed to save partner column preferences." };
+  }
+}
+
+// Generic Dispatchers
+export async function getTableColumnPreferencesApi(
+  tableKey: TablePreferenceType
+): Promise<{
+  success: boolean;
+  message?: string;
+  data?: TableColumnPreferencesData;
+}> {
+  if (tableKey === "booking") return getBookingColumnPreferencesApi();
+  if (tableKey === "customer") return getCustomerColumnPreferencesApi();
+  if (tableKey === "package") return getPackageColumnPreferencesApi();
+  if (tableKey === "partner") return getPartnerColumnPreferencesApi();
+  return { success: false, message: `Unsupported tableKey: ${tableKey}` };
+}
+
+export async function updateTableColumnPreferencesApi(
+  tableKey: TablePreferenceType,
+  payload: TableColumnPreferencesPayload
+): Promise<{
+  success: boolean;
+  message?: string;
+  data?: TableColumnPreferencesData;
+}> {
+  if (tableKey === "booking") return updateBookingColumnPreferencesApi(payload);
+  if (tableKey === "customer") return updateCustomerColumnPreferencesApi(payload);
+  if (tableKey === "package") return updatePackageColumnPreferencesApi(payload);
+  if (tableKey === "partner") return updatePartnerColumnPreferencesApi(payload);
+  return { success: false, message: `Unsupported tableKey: ${tableKey}` };
+}
+
+// ---------------------------------------------------------------------------
+// Pinned Sidebar Modules API
+// ---------------------------------------------------------------------------
+
+export interface PinnedModuleItem {
+  _id: string;
+  name: string;
+  code: string;
+  status: string;
+  position: number;
+}
+
+export interface PinnedModulesData {
+  maxPinnedModules: number;
+  modules: PinnedModuleItem[];
+}
+
+export interface PinnedModulesResponse {
+  success: boolean;
+  message?: string;
+  data?: PinnedModulesData;
+}
+
+export interface UpdatePinnedModulesPayload {
+  pinnedModules?: string[];
+  pinnedModuleCodes?: string[];
+  moduleCodes?: string[];
+  moduleIds?: string[];
+  modules?: any[];
+}
+
+export async function getPinnedModulesApi(): Promise<PinnedModulesResponse> {
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/admin/modules/pinned`);
+    return await safeJsonResponse(res);
+  } catch (error) {
+    console.error("getPinnedModulesApi error:", error);
+    return { success: false, message: "Failed to fetch pinned modules." };
+  }
+}
+
+export async function updatePinnedModulesApi(
+  payload: string[] | UpdatePinnedModulesPayload
+): Promise<PinnedModulesResponse> {
+  try {
+    const codes = Array.isArray(payload)
+      ? payload
+      : payload.pinnedModules ||
+        payload.pinnedModuleCodes ||
+        payload.moduleCodes ||
+        payload.modules ||
+        [];
+
+    const bodyObj = {
+      pinnedModules: codes,
+      pinnedModuleCodes: codes,
+      moduleCodes: codes,
+    };
+
+    const res = await authFetch(`${API_BASE_URL}/api/admin/modules/pinned`, {
+      method: "PUT",
+      body: JSON.stringify(bodyObj),
+    });
+    return await safeJsonResponse(res);
+  } catch (error) {
+    console.error("updatePinnedModulesApi error:", error);
+    return { success: false, message: "Failed to update pinned modules." };
+  }
+}

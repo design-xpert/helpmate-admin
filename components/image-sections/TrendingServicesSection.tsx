@@ -121,7 +121,7 @@ export function TrendingServicesSection({
                     badgeSize="w-12 h-12 text-xl"
                     fallback="TS"
                   />
-                  <div className="absolute top-2 left-2 bg-black/60 text-white text-[9px] font-black px-2 py-0.5 rounded-full">
+                  <div className="absolute top-2 left-2 bg-slate-950/70 text-white text-[9px] font-black px-2 py-0.5 rounded-full">
                     {item.discountPercentage}
                   </div>
                   <div
@@ -209,7 +209,7 @@ export function TrendingServicesSection({
       {/* TRENDING SERVICE ADD/EDIT MODAL */}
       {trendingModal.open && (
         <Portal>
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm">
             <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-200 dark:border-slate-800">
               <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-800">
                 <h2 className="font-black text-slate-900 dark:text-white text-base">

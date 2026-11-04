@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import { DataTable, Column } from "@/components/DataTable";
 import { RowActionMenu } from "@/components/RowActionMenu";
+import { StatusDropdown } from "@/components/StatusDropdown";
 import {
   initialCityPricing,
   CityPricingItem,
@@ -44,6 +45,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { Portal } from "@/components/Portal";
+import { useRbac } from "@/context/RbacContext";
 
 interface CalcLayoutItem {
   id: string;
@@ -73,6 +75,7 @@ interface GuaranteeItem {
 }
 
 export default function PricingPage() {
+  const { canCreate, canEdit, canDelete } = useRbac();
   // Default active tab is "calculatorCms" for immediate access to Interactive Pricing Calculator CMS!
   const [activeTab, setActiveTab] = useState<"calculatorCms" | "fixed" | "inspection" | "city">("calculatorCms");
 
@@ -390,10 +393,10 @@ export default function PricingPage() {
     });
   };
 
-  const handleToggleRateStatus = (id: string) => {
+  const handleToggleRateStatus = (id: string, targetStatus?: "Active" | "Inactive") => {
     setRateCards(
       rateCards.map((rc) =>
-        rc.id === id ? { ...rc, status: rc.status === "Active" ? "Inactive" : "Active" } : rc
+        rc.id === id ? { ...rc, status: targetStatus || (rc.status === "Active" ? "Inactive" : "Active") } : rc
       )
     );
   };
@@ -459,17 +462,15 @@ export default function PricingPage() {
       key: "status",
       header: "Status",
       accessor: (row) => (
-        <button
-          type="button"
-          onClick={() => handleToggleRateStatus(row.id)}
-          className={`px-2.5 py-1 rounded-full text-[10px] font-black cursor-pointer transition-all ${row.status === "Active"
-              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
-              : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
-            }`}
-        >
-          {row.status}
-        </button>
+        <StatusDropdown
+          status={row.status === "Active" ? "Active" : "Inactive"}
+          onChange={(newStatus) =>
+            handleToggleRateStatus(row.id, newStatus)
+          }
+          title="Click to change rate card status"
+        />
       ),
+      sortable: true,
     },
     {
       key: "id",
@@ -522,14 +523,16 @@ export default function PricingPage() {
           </h1>
         </div>
 
-        <button
-          type="button"
-          onClick={handleSaveCalculatorSettings}
-          className="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 w-full sm:w-auto"
-        >
-          <Save className="w-4 h-4" />
-          <span>Save Calculator Settings</span>
-        </button>
+        {canEdit("PRICING") && (
+          <button
+            type="button"
+            onClick={handleSaveCalculatorSettings}
+            className="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 w-full sm:w-auto"
+          >
+            <Save className="w-4 h-4" />
+            <span>Save Calculator Settings</span>
+          </button>
+        )}
       </div>
 
       {/* TABS BAR: "Interactive Pricing Calculator CMS", "Fixed Rate Cards", "Inspection Engine Rules", "City Surge Matrix" */}
@@ -1210,27 +1213,29 @@ export default function PricingPage() {
               ))}
             </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                setEditingRate(null);
-                setRateForm({
-                  serviceTitle: "",
-                  category: "AC Servicing",
-                  basePrice: 599,
-                  memberPrice: 499,
-                  convenienceFee: 49,
-                  gstPercentage: 18,
-                  commissionPercentage: 25,
-                  surgeMultiplier: 1.0,
-                });
-                setIsAddRateOpen(true);
-              }}
-              className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-xs transition-all flex items-center gap-1.5 shrink-0 cursor-pointer self-start sm:self-auto"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Add Rate Card</span>
-            </button>
+            {canCreate("PRICING") && (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingRate(null);
+                  setRateForm({
+                    serviceTitle: "",
+                    category: "AC Servicing",
+                    basePrice: 599,
+                    memberPrice: 499,
+                    convenienceFee: 49,
+                    gstPercentage: 18,
+                    commissionPercentage: 25,
+                    surgeMultiplier: 1.0,
+                  });
+                  setIsAddRateOpen(true);
+                }}
+                className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-xs transition-all flex items-center gap-1.5 shrink-0 cursor-pointer self-start sm:self-auto"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Add Rate Card</span>
+              </button>
+            )}
           </div>
 
           <DataTable columns={catColumns} data={filteredRateCards} />

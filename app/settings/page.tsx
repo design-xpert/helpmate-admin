@@ -218,7 +218,7 @@ export default function SettingsPage() {
           <button
             type="button"
             onClick={() => setToast(null)}
-            className="text-xs font-bold px-2 py-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
+            className="text-xs font-bold px-2 py-1 rounded-lg hover:bg-slate-900/5 dark:hover:bg-white/5 cursor-pointer"
           >
             Dismiss
           </button>

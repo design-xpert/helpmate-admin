@@ -19,6 +19,7 @@ import {
   FileText,
 } from "lucide-react";
 import { Portal } from "@/components/Portal";
+import { useRbac } from "@/context/RbacContext";
 
 interface FaqItem {
   id: string;
@@ -59,6 +60,7 @@ const initialFaqs: FaqItem[] = [
 ];
 
 export default function FaqPage() {
+  const { canCreate, canEdit, canDelete } = useRbac();
   const [faqs, setFaqs] = useState<FaqItem[]>(initialFaqs);
   const [header, setHeader] = useState<FaqSectionHeader>(initialHeader);
   const [searchQuery, setSearchQuery] = useState("");
@@ -163,10 +165,12 @@ export default function FaqPage() {
                 <span className="text-[10px] text-slate-400 hidden sm:inline">— controls heading shown above FAQs</span>
               </div>
               {!editingHeader ? (
-                <button type="button" onClick={() => { setHeaderDraft(header); setEditingHeader(true); }}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-brand-600 cursor-pointer transition-colors">
-                  <Edit2 className="w-3 h-3" /> Edit
-                </button>
+                canEdit("FAQ") && (
+                  <button type="button" onClick={() => { setHeaderDraft(header); setEditingHeader(true); }}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-brand-600 cursor-pointer transition-colors">
+                    <Edit2 className="w-3 h-3" /> Edit
+                  </button>
+                )
               ) : (
                 <div className="flex items-center gap-2">
                   <button type="button" onClick={() => setEditingHeader(false)}
@@ -235,11 +239,13 @@ export default function FaqPage() {
                 <input type="text" placeholder="Search FAQs..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-none focus:border-brand-500 w-44" />
               </div>
-              <button type="button"
-                onClick={() => setFaqModal({ open: true, mode: "add", data: { question: "", answer: "", category: "General", isActive: true, sortOrder: faqs.length + 1 } })}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs cursor-pointer shadow-sm transition-colors shrink-0">
-                <Plus className="w-3.5 h-3.5" /> Add FAQ
-              </button>
+              {canCreate("FAQ") && (
+                <button type="button"
+                  onClick={() => setFaqModal({ open: true, mode: "add", data: { question: "", answer: "", category: "General", isActive: true, sortOrder: faqs.length + 1 } })}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs cursor-pointer shadow-sm transition-colors shrink-0">
+                  <Plus className="w-3.5 h-3.5" /> Add FAQ
+                </button>
+              )}
             </div>
           </div>
 
@@ -289,18 +295,24 @@ export default function FaqPage() {
 
                   {/* Actions */}
                   <div className="flex items-center gap-1 shrink-0">
-                    <button type="button" onClick={() => setFaqModal({ open: true, mode: "edit", data: { ...faq } })}
-                      className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-brand-600 transition-colors cursor-pointer" title="Edit">
-                      <Edit2 className="w-3.5 h-3.5" />
-                    </button>
-                    <button type="button" onClick={() => toggleActive(faq.id)}
-                      className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-purple-600 transition-colors cursor-pointer" title={faq.isActive ? "Hide" : "Show"}>
-                      {faq.isActive ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-                    </button>
-                    <button type="button" onClick={() => setDeleteModal({ open: true, id: faq.id, question: faq.question })}
-                      className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-red-600 transition-colors cursor-pointer" title="Delete">
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    {canEdit("FAQ") && (
+                      <button type="button" onClick={() => setFaqModal({ open: true, mode: "edit", data: { ...faq } })}
+                        className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-brand-600 transition-colors cursor-pointer" title="Edit">
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    {canEdit("FAQ") && (
+                      <button type="button" onClick={() => toggleActive(faq.id)}
+                        className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-purple-600 transition-colors cursor-pointer" title={faq.isActive ? "Hide" : "Show"}>
+                        {faq.isActive ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                      </button>
+                    )}
+                    {canDelete("FAQ") && (
+                      <button type="button" onClick={() => setDeleteModal({ open: true, id: faq.id, question: faq.question })}
+                        className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-red-600 transition-colors cursor-pointer" title="Delete">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -376,7 +388,7 @@ export default function FaqPage() {
       {/* ADD / EDIT MODAL */}
       {faqModal.open && (
         <Portal>
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm">
             <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-200 dark:border-slate-800">
               <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-800">
                 <h2 className="font-black text-slate-900 dark:text-white text-base">
@@ -438,7 +450,7 @@ export default function FaqPage() {
       {/* DELETE MODAL */}
       {deleteModal?.open && (
         <Portal>
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm">
             <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-sm p-6 space-y-4 border border-slate-200 dark:border-slate-800">
               <div className="w-12 h-12 rounded-2xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center mx-auto">
                 <Trash2 className="w-6 h-6 text-red-600" />

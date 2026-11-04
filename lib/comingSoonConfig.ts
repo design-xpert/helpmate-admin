@@ -4,10 +4,10 @@ export interface ComingSoonModuleConfig {
 }
 
 export const COMING_SOON_CONFIGS: Record<string, ComingSoonModuleConfig> = {
-  "/": {
-    path: "/",
-    title: "Dashboard",
-  },
+  // "/": {
+  //   path: "/",
+  //   title: "Dashboard",
+  // },
   "/partner": {
     path: "/partner",
     title: "My Dashboard",

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { DataTable, Column } from "@/components/DataTable";
 import { RowActionMenu } from "@/components/RowActionMenu";
+import { StatusDropdown } from "@/components/StatusDropdown";
 import { initialCoupons, CouponItem } from "@/lib/mockData";
 import {
   Tag,
@@ -26,8 +27,10 @@ import {
 } from "lucide-react";
 import { Portal } from "@/components/Portal";
 import { CustomSelect } from "@/components/CustomSelect";
+import { useRbac } from "@/context/RbacContext";
 
 export default function CouponsPage() {
+  const { canView, canCreate, canEdit, canDelete } = useRbac();
   const [coupons, setCoupons] = useState<CouponItem[]>(initialCoupons);
 
   // Drawer / Modal state
@@ -239,16 +242,22 @@ export default function CouponsPage() {
       key: "status",
       header: "Status",
       accessor: (row) => (
-        <span
-          className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-            row.status === "Active"
-              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200"
-              : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200"
-          }`}
-        >
-          {row.status}
-        </span>
+        <StatusDropdown
+          status={row.status === "Active" ? "Active" : "Inactive"}
+          disabled={!canEdit("coupons")}
+          onChange={(newStatus) =>
+            setCoupons((prev) =>
+              prev.map((c) =>
+                c.id === row.id
+                  ? { ...c, status: newStatus === "Active" ? "Active" : "Disabled" }
+                  : c
+              )
+            )
+          }
+          title="Click to change coupon status"
+        />
       ),
+      sortable: true,
     },
     {
       key: "actions",
@@ -257,17 +266,25 @@ export default function CouponsPage() {
       accessor: (row) => (
         <RowActionMenu
           actions={[
-            {
-              label: "Edit",
-              icon: Edit2,
-              onClick: () => handleOpenEditModal(row),
-            },
-            {
-              label: "Delete",
-              icon: Trash2,
-              onClick: () => handleDeleteCoupon(row.id),
-              danger: true,
-            },
+            ...(canEdit("coupons")
+              ? [
+                  {
+                    label: "Edit",
+                    icon: Edit2,
+                    onClick: () => handleOpenEditModal(row),
+                  },
+                ]
+              : []),
+            ...(canDelete("coupons")
+              ? [
+                  {
+                    label: "Delete",
+                    icon: Trash2,
+                    onClick: () => handleDeleteCoupon(row.id),
+                    danger: true,
+                  },
+                ]
+              : []),
           ]}
         />
       ),
@@ -285,14 +302,16 @@ export default function CouponsPage() {
           </h1>
         </div>
 
-        <button
-          type="button"
-          onClick={handleOpenAddModal}
-          className="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 w-full sm:w-auto"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Add Coupon</span>
-        </button>
+        {canCreate("coupons") && (
+          <button
+            type="button"
+            onClick={handleOpenAddModal}
+            className="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 w-full sm:w-auto"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Coupon</span>
+          </button>
+        )}
       </div>
 
       {/* 4 Executive KPI Quick Cards */}

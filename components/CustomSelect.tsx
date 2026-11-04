@@ -78,6 +78,7 @@ export function CustomSelect({
   const selectedOption = options.find(
     (opt) =>
       opt.value === value ||
+      (Boolean(value) && opt.value?.toLowerCase() === value?.toLowerCase()) ||
       (Boolean(value) && opt.label?.toLowerCase().trim() === value?.toLowerCase().trim())
   );
 
@@ -123,9 +124,15 @@ export function CustomSelect({
               : "border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 cursor-pointer shadow-xs"
         }`}
       >
-        <span className="truncate text-slate-900 dark:text-white flex items-center gap-1.5">
+        <span
+          className={`truncate flex items-center gap-1.5 ${
+            selectedOption && selectedOption.value !== ""
+              ? "text-slate-900 dark:text-white"
+              : "text-slate-400 dark:text-slate-500 font-normal"
+          }`}
+        >
           {selectedOption?.icon}
-          {selectedOption ? selectedOption.label : value || placeholder}
+          {selectedOption && selectedOption.value !== "" ? selectedOption.label : placeholder}
         </span>
         <ChevronDown
           className={`${

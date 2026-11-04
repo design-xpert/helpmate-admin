@@ -51,6 +51,7 @@ import {
 import { DataTable, Column } from "@/components/DataTable";
 import { CustomSelect } from "@/components/CustomSelect";
 import { Portal } from "@/components/Portal";
+import { useRbac } from "@/context/RbacContext";
 
 const AVAILABLE_SERVICE_CATEGORIES = [
   "AC & Appliance Servicing",
@@ -91,6 +92,7 @@ const PRESET_MEMBERSHIP_BANNERS = [
 ];
 
 export default function MembershipManagementPage() {
+  const { canCreate, canEdit, canDelete } = useRbac();
   const [plans, setPlans] = useState<MembershipPlan[]>(initialMembershipPlans);
   const [freeOffers, setFreeOffers] = useState<FreeServiceOffer[]>(initialFreeServiceOffers);
   const [subscribers, setSubscribers] = useState<MemberSubscriber[]>(initialMemberSubscribers);
@@ -702,14 +704,16 @@ export default function MembershipManagementPage() {
 
         <div className="flex items-center gap-2">
           {/* RULE: Strictly ONLY ONE Primary Button per page/view */}
-          <button
-            type="button"
-            onClick={() => handleOpenPlanDrawer()}
-            className="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-lux cursor-pointer transition-all flex items-center gap-1.5"
-          >
-            <Plus className="w-4 h-4 stroke-[3]" />
-            <span>Create Membership Plan</span>
-          </button>
+          {canCreate("MEMBERSHIP") && (
+            <button
+              type="button"
+              onClick={() => handleOpenPlanDrawer()}
+              className="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-lux cursor-pointer transition-all flex items-center gap-1.5"
+            >
+              <Plus className="w-4 h-4 stroke-[3]" />
+              <span>Create Membership Plan</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -1204,7 +1208,7 @@ export default function MembershipManagementPage() {
                       </div>
 
                       <div className="absolute bottom-3 left-3 z-10">
-                        <span className="px-2.5 py-1 rounded-lg bg-black/75 text-white backdrop-blur-md text-[10px] font-mono font-bold shadow-md">
+                        <span className="px-2.5 py-1 rounded-lg bg-slate-950/80 text-white backdrop-blur-md text-[10px] font-mono font-bold shadow-md">
                           📐 {banner.dimensions}
                         </span>
                       </div>

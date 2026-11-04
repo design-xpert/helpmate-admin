@@ -36,8 +36,10 @@ import { DataTable, Column } from "@/components/DataTable";
 import { RowActionMenu } from "@/components/RowActionMenu";
 import { initialBookings, Booking } from "@/lib/mockData";
 import { Portal } from "@/components/Portal";
+import { useRbac } from "@/context/RbacContext";
 
 export default function InspectionsPage() {
+  const { canCreate, canEdit, canDelete, canView } = useRbac();
   const [bookings, setBookings] = useState<Booking[]>(
     initialBookings.filter((b) => b.isInspectionBased || b.updatedInspectionQuote || b.initialInspectionQuote)
   );
@@ -288,16 +290,16 @@ export default function InspectionsPage() {
       accessor: (row) => (
         <RowActionMenu
           actions={[
-            {
+            ...(canView("INSPECTION") ? [{
               label: "View Inspection Details",
               icon: Eye,
               onClick: () => setSelectedInspection(row),
-            },
-            {
+            }] : []),
+            ...(canEdit("INSPECTION") ? [{
               label: "Validate Diagnostic Quote",
               icon: Wrench,
               onClick: () => openValidateModal(row),
-            },
+            }] : []),
           ]}
         />
       ),
@@ -352,15 +354,17 @@ export default function InspectionsPage() {
           </div>
 
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0 w-full lg:w-auto">
-            <button
-              type="button"
-              onClick={() => openValidateModal(selectedInspection)}
-              className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-lux transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-            >
-              <Wrench className="w-4 h-4" />
-              <span>Validate & Update Quote</span>
-            </button>
-            {!selectedInspection.isOtpVerified && (
+            {canEdit("INSPECTION") && (
+              <button
+                type="button"
+                onClick={() => openValidateModal(selectedInspection)}
+                className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-lux transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Wrench className="w-4 h-4" />
+                <span>Validate & Update Quote</span>
+              </button>
+            )}
+            {canEdit("INSPECTION") && !selectedInspection.isOtpVerified && (
               <button
                 type="button"
                 onClick={() => {

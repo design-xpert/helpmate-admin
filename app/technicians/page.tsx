@@ -41,6 +41,7 @@ import { Portal } from "@/components/Portal";
 import { ToastContainer, ToastMessage } from "@/components/Toast";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { PartnerMapView } from "@/components/PartnerMapView";
+import { useRbac } from "@/context/RbacContext";
 
 function parseFlexibleDate(dateStr: string): Date | null {
   if (!dateStr) return null;
@@ -257,6 +258,7 @@ export default function TechniciansPage() {
     }
   };
 
+  const { canView, canCreate, canEdit, canDelete } = useRbac();
   const [viewTech, setViewTech] = useState<Technician | null>(null);
   const [detailTab, setDetailTab] = useState<"overview" | "kyc" | "jobs" | "earnings">("overview");
   const [editTech, setEditTech] = useState<Technician | null>(null);
@@ -298,8 +300,10 @@ export default function TechniciansPage() {
 
   const partnerColumns: Column<Technician>[] = [
     {
-      key: "name",
+      key: "partnerAndRole",
       header: "Partner & Role",
+      locked: true,
+      fixedPosition: "first",
       accessor: (row) => (
         <div className="flex items-center gap-3">
           <div className="relative w-8 h-8 shrink-0 rounded-xl overflow-hidden border border-slate-200 shadow-xs">
@@ -321,7 +325,7 @@ export default function TechniciansPage() {
       ),
     },
     {
-      key: "category",
+      key: "categoryAndZone",
       header: "Category & Zone",
       accessor: (row) => (
         <div className="flex flex-col">
@@ -342,7 +346,7 @@ export default function TechniciansPage() {
       ),
     },
     {
-      key: "kyc",
+      key: "biometricKycCheck",
       header: "Biometric KYC Check",
       accessor: (row) => (
         <div className="flex items-center gap-1.5">
@@ -373,7 +377,7 @@ export default function TechniciansPage() {
       ),
     },
     {
-      key: "totalJobs",
+      key: "jobs",
       header: "Jobs",
       accessor: (row) => (
         <span className="font-semibold text-slate-900 dark:text-white text-xs font-mono">
@@ -382,7 +386,7 @@ export default function TechniciansPage() {
       ),
     },
     {
-      key: "status",
+      key: "dutyStatus",
       header: "Duty Status",
       accessor: (row) => {
         let badgeClass = "bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700";
@@ -410,33 +414,47 @@ export default function TechniciansPage() {
       },
     },
     {
-      key: "id",
+      key: "actions",
       header: "Actions",
       sticky: "right",
+      locked: true,
+      fixedPosition: "last",
       accessor: (row) => (
         <RowActionMenu
           actions={[
-            {
-              label: "View Profile",
-              icon: Eye,
-              href: `/technicians/${row.id}`,
-            },
+            ...(canView("technicians")
+              ? [
+                  {
+                    label: "View Profile",
+                    icon: Eye,
+                    href: `/technicians/${row.id}`,
+                  },
+                ]
+              : []),
             {
               label: "Open in Maps",
               icon: MapPin,
               onClick: () => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(row.locality + ", " + row.pincode + ", Varanasi")}`, '_blank'),
             },
-            {
-              label: "Edit",
-              icon: Edit,
-              href: `/technicians/new?id=${row.id}`,
-            },
-            {
-              label: "Delete",
-              icon: Trash2,
-              onClick: () => setDeleteTech(row),
-              danger: true,
-            },
+            ...(canEdit("technicians")
+              ? [
+                  {
+                    label: "Edit",
+                    icon: Edit,
+                    href: `/technicians/new?id=${row.id}`,
+                  },
+                ]
+              : []),
+            ...(canDelete("technicians")
+              ? [
+                  {
+                    label: "Delete",
+                    icon: Trash2,
+                    onClick: () => setDeleteTech(row),
+                    danger: true,
+                  },
+                ]
+              : []),
           ]}
         />
       ),
@@ -968,13 +986,15 @@ export default function TechniciansPage() {
           </h1>
         </div>
 
-        <Link
-          href="/technicians/new"
-          className="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 w-full sm:w-auto"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Add Partner</span>
-        </Link>
+        {canCreate("technicians") && (
+          <Link
+            href="/technicians/new"
+            className="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 w-full sm:w-auto"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Partner</span>
+          </Link>
+        )}
       </div>
 
       {/* Tabs and Settlement Date Filter Button */}
@@ -1037,6 +1057,9 @@ export default function TechniciansPage() {
           data={techs}
           searchPlaceholder="Search partner name, locality, or phone..."
           isLoading={isLoadingApi}
+          enableColumnCustomization={true}
+          tableKey="partner"
+          columnStorageKey="helpmate_partner_columns_view"
         />
       ) : (
         <DataTable

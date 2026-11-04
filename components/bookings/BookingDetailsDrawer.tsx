@@ -212,7 +212,7 @@ export function BookingDetailsDrawer({
                       </div>
                       <div className="flex items-start gap-2 text-slate-600 dark:text-slate-300 pt-1">
                         <MapPin className="w-3.5 h-3.5 text-brand-500 shrink-0 mt-0.5" />
-                        <span>{booking.address}, {booking.locality}, {booking.city || "Varanasi"} - {booking.pincode || "221002"}</span>
+                        <span>{booking.address}{booking.landmark ? ` (Landmark: ${booking.landmark})` : ""}, {booking.locality}, {booking.city || "Varanasi"} - {booking.pincode || "221002"}</span>
                       </div>
                     </div>
                   );

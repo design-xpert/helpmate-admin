@@ -728,7 +728,7 @@ export function CategoryServiceSections({
             <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-black/60 text-white">
+                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-slate-950/70 text-white">
                     #{section.sortOrder || secIdx + 1}
                   </span>
                   <h3 className="font-black text-base text-slate-900 dark:text-white">
@@ -869,7 +869,7 @@ export function CategoryServiceSections({
                         badgeSize="w-11 h-11 text-lg"
                         fallback="S"
                       />
-                      <div className="absolute top-2 left-2 bg-black/60 text-white text-[9px] font-mono font-bold px-1.5 py-0.5 rounded">
+                      <div className="absolute top-2 left-2 bg-slate-950/70 text-white text-[9px] font-mono font-bold px-1.5 py-0.5 rounded">
                         #{svcIdx + 1}
                       </div>
                     </div>

@@ -44,9 +44,48 @@ import {
   Tag,
   Star,
   Globe,
+  Lock,
+  Unlock,
+  Loader2,
 } from "lucide-react";
 import { Portal } from "@/components/Portal";
 import { RowActionMenu } from "@/components/RowActionMenu";
+import {
+  getTableColumnPreferencesApi,
+  updateTableColumnPreferencesApi,
+  type TablePreferenceType,
+  type AvailableColumnItem,
+} from "@/lib/api";
+
+// Helper: Checks if a column is in the top two or last position (the only positions allowed to be locked or sticky)
+export function isColumnLockable<T>(col: Column<T>, idx: number, total: number): { isTopTwo: boolean; isLast: boolean; canLock: boolean } {
+  const isTopTwo = idx === 0 || idx === 1 || col.fixedPosition === "first";
+  const isLast = idx === total - 1 || col.fixedPosition === "last" || col.key.toLowerCase().includes("action") || col.sticky === "right";
+  return { isTopTwo, isLast, canLock: isTopTwo || isLast };
+}
+
+function buildAvailableColumnsPayload<T extends Record<string, any>>(
+  columns: Column<T>[],
+  lockedKeys?: Set<string>
+): AvailableColumnItem[] {
+  const total = columns.length;
+  return columns.map((c, idx) => {
+    const { isTopTwo, isLast, canLock } = isColumnLockable(c, idx, total);
+    const isLocked = canLock && (lockedKeys ? lockedKeys.has(c.key) : c.locked === true);
+
+    const item: AvailableColumnItem = {
+      key: c.key,
+      label: c.header,
+      locked: isLocked,
+    };
+    if (isLocked && isTopTwo) {
+      item.fixedPosition = "first";
+    } else if (isLocked && isLast) {
+      item.fixedPosition = "last";
+    }
+    return item;
+  });
+}
 
 // Intelligently deduce contextual Lucide icon for any column if not explicitly supplied
 export function getColumnIcon(col: Column<any>): React.ComponentType<{ className?: string }> {
@@ -83,6 +122,8 @@ export interface Column<T> {
   defaultHidden?: boolean;
   canHide?: boolean;
   canReorder?: boolean;
+  locked?: boolean;
+  fixedPosition?: "first" | "last";
 }
 
 export interface DataTableProps<T extends Record<string, any>> {
@@ -96,10 +137,14 @@ export interface DataTableProps<T extends Record<string, any>> {
   onRowView?: (row: T) => void;
   onRowEdit?: (row: T) => void;
   onRowDelete?: (row: T) => void;
+  onBulkDelete?: (ids: string[], selectedRows: T[]) => void | Promise<void>;
   statusField?: string;
   idField?: string;
   hideActionsColumn?: boolean;
   hideStatusFilter?: boolean;
+  statusOptions?: { value: string; label: string }[];
+  statusFilterValue?: string;
+  onStatusFilterChange?: (val: string) => void;
   extraFilters?: React.ReactNode;
   disableDelete?: boolean;
   currentPage?: number;
@@ -115,6 +160,7 @@ export interface DataTableProps<T extends Record<string, any>> {
   isLoading?: boolean;
   enableColumnCustomization?: boolean;
   columnStorageKey?: string;
+  tableKey?: TablePreferenceType;
   onRefresh?: () => void;
   isRefreshing?: boolean;
   pinnedColumnsNotice?: string;
@@ -131,10 +177,14 @@ export function DataTable<T extends Record<string, any>>({
   onRowView,
   onRowEdit,
   onRowDelete,
+  onBulkDelete,
   statusField = "status",
   idField = "id",
   hideActionsColumn = false,
   hideStatusFilter = false,
+  statusOptions,
+  statusFilterValue,
+  onStatusFilterChange,
   extraFilters,
   disableDelete = false,
   currentPage: currentPageProp,
@@ -150,15 +200,18 @@ export function DataTable<T extends Record<string, any>>({
   isLoading = false,
   enableColumnCustomization = true,
   columnStorageKey,
+  tableKey,
   onRefresh,
   isRefreshing = false,
   pinnedColumnsNotice,
 }: DataTableProps<T>) {
   const hasDefaultActionsColumn =
     !hideActionsColumn &&
-    !columns.some(
-      (col) => col.header.toLowerCase() === "actions" || col.key.toLowerCase() === "actions"
-    );
+    !columns.some((col) => {
+      const h = col.header.toLowerCase();
+      const k = col.key.toLowerCase();
+      return h === "actions" || h === "action" || k === "actions" || k === "action";
+    });
   const [data, setData] = useState<T[]>(initialData);
   const [prevInitialData, setPrevInitialData] = useState<T[]>(initialData);
 
@@ -230,6 +283,7 @@ export function DataTable<T extends Record<string, any>>({
   const [deletingRow, setDeletingRow] = useState<T | null>(null);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [isBulkStatusModalOpen, setIsBulkStatusModalOpen] = useState(false);
   const [isTrashOpen, setIsTrashOpen] = useState(false);
   const [isAdvancedFilterOpen, setIsAdvancedFilterOpen] = useState(false);
@@ -239,6 +293,17 @@ export function DataTable<T extends Record<string, any>>({
   const [columnOrder, setColumnOrder] = useState<string[]>(() => columns.map((c) => c.key));
   const [hiddenColumnKeys, setHiddenColumnKeys] = useState<Set<string>>(() => {
     return new Set(columns.filter((c) => c.defaultHidden).map((c) => c.key));
+  });
+  const [lockedColumnKeys, setLockedColumnKeys] = useState<Set<string>>(() => {
+    const initialLocked = new Set<string>();
+    const total = columns.length;
+    columns.forEach((c, idx) => {
+      const { isTopTwo, isLast, canLock } = isColumnLockable(c, idx, total);
+      if (canLock && (c.locked === true || idx === 0 || isLast)) {
+        initialLocked.add(c.key);
+      }
+    });
+    return initialLocked;
   });
   const [isCustomiseOpen, setIsCustomiseOpen] = useState(false);
   const [customiseSearch, setCustomiseSearch] = useState("");
@@ -305,8 +370,26 @@ export function DataTable<T extends Record<string, any>>({
   }, [columnStorageKey, title, colKeysSignature]);
 
   const loadedStorageKeyRef = useRef<string | null>(null);
+  const loadedBackendTableKeyRef = useRef<string | null>(null);
+  const putDebounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastSavedPayloadSignatureRef = useRef<string>("");
 
-  // Sync columnOrder if incoming columns prop changes
+  // Track if backend column preferences are currently being fetched
+  const [isPreferencesLoading, setIsPreferencesLoading] = useState<boolean>(false);
+
+  // Effective loading state for the table header (user refresh or column preferences fetching)
+  const isHeaderLoading = Boolean(isRefreshing || isPreferencesLoading);
+
+  // Clean up any pending debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (putDebounceTimerRef.current) {
+        clearTimeout(putDebounceTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Sync columnOrder and lockedColumnKeys if incoming columns prop changes
   useEffect(() => {
     setColumnOrder((prevOrder) => {
       const validKeys = new Set(columns.map((c) => c.key));
@@ -316,9 +399,22 @@ export function DataTable<T extends Record<string, any>>({
       });
       return nextOrder;
     });
-  }, [colKeysSignature]);
 
-  // Load saved column preferences from localStorage
+    setLockedColumnKeys((prevLocked) => {
+      if (prevLocked.size > 0) return prevLocked;
+      const initialLocked = new Set<string>();
+      const total = columns.length;
+      columns.forEach((c, idx) => {
+        const { isTopTwo, isLast, canLock } = isColumnLockable(c, idx, total);
+        if (canLock && (c.locked === true || idx === 0 || isLast)) {
+          initialLocked.add(c.key);
+        }
+      });
+      return initialLocked;
+    });
+  }, [colKeysSignature, columns]);
+
+  // Load saved column preferences from localStorage (fast instant initial render)
   useEffect(() => {
     if (!enableColumnCustomization || !effectiveStorageKey || typeof window === "undefined") return;
     if (loadedStorageKeyRef.current === effectiveStorageKey) return;
@@ -327,19 +423,36 @@ export function DataTable<T extends Record<string, any>>({
       const stored = localStorage.getItem(effectiveStorageKey);
       if (stored) {
         const parsed = JSON.parse(stored);
+        const validColKeys = new Set(columns.map((c) => c.key));
+
         if (Array.isArray(parsed.order) && parsed.order.length > 0) {
-          const validColKeys = new Set(columns.map((c) => c.key));
           const loadedOrder = parsed.order.filter((k: string) => validColKeys.has(k));
           columns.forEach((c) => {
             if (!loadedOrder.includes(c.key)) loadedOrder.push(c.key);
           });
           setColumnOrder(loadedOrder);
         }
+
+        if (Array.isArray(parsed.locked)) {
+          const loadedLocked = new Set<string>();
+          const total = columns.length;
+          parsed.locked.forEach((k: string) => {
+            const colIdx = columns.findIndex((c) => c.key === k);
+            if (colIdx !== -1) {
+              const { canLock } = isColumnLockable(columns[colIdx], colIdx, total);
+              if (canLock && validColKeys.has(k)) loadedLocked.add(k);
+            }
+          });
+          setLockedColumnKeys(loadedLocked);
+        }
+
         if (Array.isArray(parsed.hidden)) {
-          const validColKeys = new Set(columns.map((c) => c.key));
           const validHidden = parsed.hidden.filter((k: string) => {
             const col = columns.find((c) => c.key === k);
-            return validColKeys.has(k) && col?.sticky !== "left" && col?.sticky !== "right" && col?.canHide !== false;
+            return (
+              validColKeys.has(k) &&
+              col?.canHide !== false
+            );
           });
           setHiddenColumnKeys(new Set(validHidden));
         }
@@ -347,7 +460,98 @@ export function DataTable<T extends Record<string, any>>({
     } catch (e) {
       console.warn("Failed to load column preferences from localStorage", e);
     }
-  }, [enableColumnCustomization, effectiveStorageKey, colKeysSignature]);
+  }, [enableColumnCustomization, effectiveStorageKey, colKeysSignature, columns]);
+
+  // Synchronize column preferences with backend API if tableKey is provided
+  useEffect(() => {
+    if (!enableColumnCustomization || !tableKey) return;
+    if (loadedBackendTableKeyRef.current === tableKey) return;
+    loadedBackendTableKeyRef.current = tableKey;
+
+    let isMounted = true;
+    const fetchBackendPreferences = async () => {
+      try {
+        setIsPreferencesLoading(true);
+        const res = await getTableColumnPreferencesApi(tableKey);
+        if (!isMounted) return;
+
+        if (res.success && res.data) {
+          const { columnOrder: backendOrder, columns: backendCols } = res.data;
+          const validColKeys = new Set(columns.map((c) => c.key));
+
+          if (Array.isArray(backendOrder) && backendOrder.length > 0) {
+            const loadedOrder = backendOrder.filter((k: string) => validColKeys.has(k));
+            columns.forEach((c) => {
+              if (!loadedOrder.includes(c.key)) loadedOrder.push(c.key);
+            });
+            setColumnOrder(loadedOrder);
+          }
+
+          if (Array.isArray(backendCols) && backendCols.length > 0) {
+            const loadedLocked = new Set<string>();
+            const total = columns.length;
+            backendCols.forEach((c) => {
+              const colIdx = columns.findIndex((col) => col.key === c.key);
+              if (colIdx !== -1) {
+                const { canLock } = isColumnLockable(columns[colIdx], colIdx, total);
+                if (canLock && c.locked === true && validColKeys.has(c.key)) {
+                  loadedLocked.add(c.key);
+                }
+              }
+            });
+            setLockedColumnKeys(loadedLocked);
+
+            const hiddenKeys = backendCols
+              .filter((c) => c.visible === false && validColKeys.has(c.key))
+              .map((c) => c.key)
+              .filter((k) => {
+                const col = columns.find((c) => c.key === k);
+                return (
+                  col?.canHide !== false &&
+                  !loadedLocked.has(k)
+                );
+              });
+            setHiddenColumnKeys(new Set(hiddenKeys));
+
+            // Prime the signature ref with current backend state to prevent any redundant PUT on mount
+            lastSavedPayloadSignatureRef.current = JSON.stringify({
+              tableKey,
+              order: backendOrder || [],
+              hidden: hiddenKeys.sort(),
+              locked: Array.from(loadedLocked).sort(),
+            });
+          }
+
+          // Cache in localStorage for subsequent fast loads
+          if (effectiveStorageKey && typeof window !== "undefined") {
+            try {
+              const hiddenKeys = (backendCols || [])
+                .filter((c) => c.visible === false && validColKeys.has(c.key))
+                .map((c) => c.key);
+              const lockedKeys = (backendCols || [])
+                .filter((c) => c.locked === true && validColKeys.has(c.key))
+                .map((c) => c.key);
+              localStorage.setItem(
+                effectiveStorageKey,
+                JSON.stringify({ order: backendOrder, hidden: hiddenKeys, locked: lockedKeys })
+              );
+            } catch {}
+          }
+        }
+      } catch (err) {
+        console.warn(`Failed to load ${tableKey} column preferences from API:`, err);
+      } finally {
+        setIsPreferencesLoading(false);
+      }
+    };
+
+    fetchBackendPreferences();
+
+    return () => {
+      isMounted = false;
+      setIsPreferencesLoading(false);
+    };
+  }, [enableColumnCustomization, tableKey, colKeysSignature, effectiveStorageKey]);
 
   // Close Customise Dropdown on Outside Click or Window Scroll/Resize
   useEffect(() => {
@@ -381,20 +585,84 @@ export function DataTable<T extends Record<string, any>>({
     };
   }, [isCustomiseOpen, updateCustomiseCoords]);
 
-  // Save Column Preferences Helper
-  const saveColumnPrefs = (newOrder: string[], newHidden: string[]) => {
-    if (!enableColumnCustomization || !effectiveStorageKey || typeof window === "undefined") return;
-    try {
-      localStorage.setItem(
-        effectiveStorageKey,
-        JSON.stringify({ order: newOrder, hidden: newHidden })
-      );
-    } catch (e) {
-      console.warn("Failed to save column preferences", e);
+  // Save Column Preferences Helper (Local Storage + Debounced Backend API)
+  const saveColumnPrefs = (
+    newOrder: string[],
+    newHidden: string[],
+    currentLockedKeys: Set<string> = lockedColumnKeys
+  ) => {
+    if (!enableColumnCustomization) return;
+
+    // 1. Instant local persistence
+    if (effectiveStorageKey && typeof window !== "undefined") {
+      try {
+        localStorage.setItem(
+          effectiveStorageKey,
+          JSON.stringify({
+            order: newOrder,
+            hidden: newHidden,
+            locked: Array.from(currentLockedKeys),
+          })
+        );
+      } catch (e) {
+        console.warn("Failed to save column preferences to localStorage", e);
+      }
+    }
+
+    // 2. Persist to Backend API if tableKey is specified (debounced & deduplicated to ensure strictly ONE call)
+    if (tableKey) {
+      const fullOrder = [...newOrder];
+      columns.forEach((c) => {
+        if (!fullOrder.includes(c.key)) fullOrder.push(c.key);
+      });
+
+      const total = columns.length;
+      const columnsPayload = fullOrder.map((key, position) => {
+        const col = columns.find((c) => c.key === key);
+        const colIdx = columns.findIndex((c) => c.key === key);
+        const { isTopTwo, isLast, canLock } = col ? isColumnLockable(col, colIdx, total) : { isTopTwo: false, isLast: false, canLock: false };
+        const isLocked = canLock && currentLockedKeys.has(key);
+
+        return {
+          key,
+          label: col?.header || key,
+          position,
+          visible: !newHidden.includes(key),
+          locked: isLocked,
+          fixedPosition: isLocked && isTopTwo ? ("first" as const) : isLocked && isLast ? ("last" as const) : null,
+        };
+      });
+
+      const currentSignature = JSON.stringify({
+        tableKey,
+        order: fullOrder,
+        hidden: [...newHidden].sort(),
+        locked: Array.from(currentLockedKeys).sort(),
+      });
+
+      // Avoid redundant PUT if preferences have not actually changed
+      if (currentSignature === lastSavedPayloadSignatureRef.current) {
+        return;
+      }
+
+      // Clear any pending debounce timer to avoid multi-calls
+      if (putDebounceTimerRef.current) {
+        clearTimeout(putDebounceTimerRef.current);
+      }
+
+      putDebounceTimerRef.current = setTimeout(() => {
+        lastSavedPayloadSignatureRef.current = currentSignature;
+        updateTableColumnPreferencesApi(tableKey, {
+          columns: columnsPayload,
+          columnOrder: fullOrder,
+        }).catch((err) => {
+          console.error(`Failed to update ${tableKey} column preferences via API:`, err);
+        });
+      }, 350);
     }
   };
 
-  // Reset Columns to Default Order & Visibility
+  // Reset Columns to Default Order & Visibility (Local Storage + Backend API)
   const handleResetColumns = () => {
     if (effectiveStorageKey && typeof window !== "undefined") {
       try {
@@ -403,141 +671,229 @@ export function DataTable<T extends Record<string, any>>({
     }
     const defaultOrder = columns.map((c) => c.key);
     const defaultHidden = new Set(columns.filter((c) => c.defaultHidden).map((c) => c.key));
+    const defaultLocked = new Set<string>();
+    const total = columns.length;
+    columns.forEach((c, idx) => {
+      const { canLock } = isColumnLockable(c, idx, total);
+      if (canLock && (c.locked === true || idx === 0 || idx === total - 1)) {
+        defaultLocked.add(c.key);
+      }
+    });
+
     setColumnOrder(defaultOrder);
     setHiddenColumnKeys(defaultHidden);
+    setLockedColumnKeys(defaultLocked);
+    saveColumnPrefs(defaultOrder, Array.from(defaultHidden), defaultLocked);
+  };
+
+  // Toggle Lock State of a Column
+  const toggleColumnLock = (key: string) => {
+    const total = columns.length;
+    const colIdx = columns.findIndex((c) => c.key === key);
+    if (colIdx === -1) return;
+    const { canLock } = isColumnLockable(columns[colIdx], colIdx, total);
+    // Only top two columns and last column can be locked / unlocked
+    if (!canLock) return;
+
+    const nextLocked = new Set(lockedColumnKeys);
+    const nextHidden = new Set(hiddenColumnKeys);
+
+    if (nextLocked.has(key)) {
+      nextLocked.delete(key);
+    } else {
+      nextLocked.add(key);
+      // A locked column must always be visible
+      nextHidden.delete(key);
+    }
+
+    setLockedColumnKeys(nextLocked);
+    setHiddenColumnKeys(nextHidden);
+    saveColumnPrefs(columnOrder, Array.from(nextHidden), nextLocked);
   };
 
   // Toggle Visibility of a Column
   const toggleColumnVisibility = (key: string) => {
-    setHiddenColumnKeys((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        // Prevent hiding every customizable column
-        const currentVisibleNonPinned = columns.filter(
-          (c) => !c.sticky && c.canHide !== false && !next.has(c.key)
-        );
-        if (currentVisibleNonPinned.length <= 1 && currentVisibleNonPinned.some((c) => c.key === key)) {
-          return prev;
-        }
-        next.add(key);
+    const isLocked = lockedColumnKeys.has(key);
+    if (isLocked) return;
+
+    const nextHidden = new Set(hiddenColumnKeys);
+    if (nextHidden.has(key)) {
+      nextHidden.delete(key);
+    } else {
+      // Prevent hiding every customizable column
+      const currentVisibleNonPinned = columns.filter(
+        (c) => !lockedColumnKeys.has(c.key) && !nextHidden.has(c.key)
+      );
+      if (currentVisibleNonPinned.length <= 1 && currentVisibleNonPinned.some((c) => c.key === key)) {
+        return;
       }
-      saveColumnPrefs(columnOrder, Array.from(next));
-      return next;
-    });
+      nextHidden.add(key);
+    }
+
+    setHiddenColumnKeys(nextHidden);
+    saveColumnPrefs(columnOrder, Array.from(nextHidden), lockedColumnKeys);
   };
 
   // Reorder Columns in Column Order Array
   const handleReorderColumns = (sourceKey: string, targetKey: string) => {
     if (sourceKey === targetKey) return;
-    setColumnOrder((prevOrder) => {
-      const fullOrder = [...prevOrder];
-      columns.forEach((c) => {
-        if (!fullOrder.includes(c.key)) fullOrder.push(c.key);
-      });
+    if (lockedColumnKeys.has(sourceKey)) return;
 
-      const sourceIdx = fullOrder.indexOf(sourceKey);
-      const targetIdx = fullOrder.indexOf(targetKey);
-      if (sourceIdx === -1 || targetIdx === -1) return prevOrder;
-
-      const newOrder = [...fullOrder];
-      const [moved] = newOrder.splice(sourceIdx, 1);
-      newOrder.splice(targetIdx, 0, moved);
-
-      saveColumnPrefs(newOrder, Array.from(hiddenColumnKeys));
-      return newOrder;
+    // Movable columns are columns not currently locked
+    const movableCols = columnOrder.filter((k) => !lockedColumnKeys.has(k));
+    columns.forEach((c) => {
+      if (!lockedColumnKeys.has(c.key) && !movableCols.includes(c.key)) {
+        movableCols.push(c.key);
+      }
     });
+
+    const srcIdx = movableCols.indexOf(sourceKey);
+    if (srcIdx === -1) return;
+
+    const targetCol = columns.find((c) => c.key === targetKey);
+    const isTargetFirst = (columns[0]?.key === targetKey || targetCol?.fixedPosition === "first") && lockedColumnKeys.has(targetKey);
+    const isTargetLast = (targetKey === "actions" || targetCol?.fixedPosition === "last" || columns[columns.length - 1]?.key === targetKey) && lockedColumnKeys.has(targetKey);
+
+    const newMovable = [...movableCols];
+    newMovable.splice(srcIdx, 1);
+
+    if (isTargetFirst) {
+      newMovable.unshift(sourceKey);
+    } else if (isTargetLast) {
+      newMovable.push(sourceKey);
+    } else {
+      const destIdx = newMovable.indexOf(targetKey);
+      if (destIdx !== -1) {
+        newMovable.splice(destIdx, 0, sourceKey);
+      } else {
+        newMovable.push(sourceKey);
+      }
+    }
+
+    const total = columns.length;
+    const firstLockedKeys = columns
+      .filter((c, i) => lockedColumnKeys.has(c.key) && isColumnLockable(c, i, total).isTopTwo)
+      .map((c) => c.key);
+    const lastLockedKeys = columns
+      .filter((c, i) => lockedColumnKeys.has(c.key) && isColumnLockable(c, i, total).isLast)
+      .map((c) => c.key);
+
+    const newFullOrder = [...firstLockedKeys, ...newMovable, ...lastLockedKeys];
+    setColumnOrder(newFullOrder);
+    saveColumnPrefs(newFullOrder, Array.from(hiddenColumnKeys), lockedColumnKeys);
   };
 
   // Move Column Up or Down by One Position
   const handleMoveColumn = (colKey: string, direction: "up" | "down") => {
-    setColumnOrder((prevOrder) => {
-      const fullOrder = [...prevOrder];
-      columns.forEach((c) => {
-        if (!fullOrder.includes(c.key)) fullOrder.push(c.key);
-      });
+    if (lockedColumnKeys.has(colKey)) return;
 
-      const currentIdx = fullOrder.indexOf(colKey);
-      if (currentIdx === -1) return prevOrder;
-
-      if (direction === "up") {
-        let targetIdx = -1;
-        for (let i = currentIdx - 1; i >= 0; i--) {
-          const c = columns.find((col) => col.key === fullOrder[i]);
-          if (!c?.sticky && c?.canReorder !== false) {
-            targetIdx = i;
-            break;
-          }
-        }
-        if (targetIdx === -1) return prevOrder;
-
-        const newOrder = [...fullOrder];
-        const [moved] = newOrder.splice(currentIdx, 1);
-        newOrder.splice(targetIdx, 0, moved);
-        saveColumnPrefs(newOrder, Array.from(hiddenColumnKeys));
-        return newOrder;
-      } else {
-        let targetIdx = -1;
-        for (let i = currentIdx + 1; i < fullOrder.length; i++) {
-          const c = columns.find((col) => col.key === fullOrder[i]);
-          if (!c?.sticky && c?.canReorder !== false) {
-            targetIdx = i;
-            break;
-          }
-        }
-        if (targetIdx === -1) return prevOrder;
-
-        const newOrder = [...fullOrder];
-        const [moved] = newOrder.splice(currentIdx, 1);
-        newOrder.splice(targetIdx, 0, moved);
-        saveColumnPrefs(newOrder, Array.from(hiddenColumnKeys));
-        return newOrder;
+    const movableCols = columnOrder.filter((k) => !lockedColumnKeys.has(k));
+    columns.forEach((c) => {
+      if (!lockedColumnKeys.has(c.key) && !movableCols.includes(c.key)) {
+        movableCols.push(c.key);
       }
     });
+
+    const idx = movableCols.indexOf(colKey);
+    if (idx === -1) return;
+
+    const total = columns.length;
+    if (direction === "up" && idx > 0) {
+      const newMovable = [...movableCols];
+      const temp = newMovable[idx - 1];
+      newMovable[idx - 1] = newMovable[idx];
+      newMovable[idx] = temp;
+
+      const firstLockedKeys = columns
+        .filter((c, i) => lockedColumnKeys.has(c.key) && isColumnLockable(c, i, total).isTopTwo)
+        .map((c) => c.key);
+      const lastLockedKeys = columns
+        .filter((c, i) => lockedColumnKeys.has(c.key) && isColumnLockable(c, i, total).isLast)
+        .map((c) => c.key);
+
+      const newFullOrder = [...firstLockedKeys, ...newMovable, ...lastLockedKeys];
+      setColumnOrder(newFullOrder);
+      saveColumnPrefs(newFullOrder, Array.from(hiddenColumnKeys), lockedColumnKeys);
+    } else if (direction === "down" && idx < movableCols.length - 1) {
+      const newMovable = [...movableCols];
+      const temp = newMovable[idx + 1];
+      newMovable[idx + 1] = newMovable[idx];
+      newMovable[idx] = temp;
+
+      const firstLockedKeys = columns
+        .filter((c, i) => lockedColumnKeys.has(c.key) && isColumnLockable(c, i, total).isTopTwo)
+        .map((c) => c.key);
+      const lastLockedKeys = columns
+        .filter((c, i) => lockedColumnKeys.has(c.key) && isColumnLockable(c, i, total).isLast)
+        .map((c) => c.key);
+
+      const newFullOrder = [...firstLockedKeys, ...newMovable, ...lastLockedKeys];
+      setColumnOrder(newFullOrder);
+      saveColumnPrefs(newFullOrder, Array.from(hiddenColumnKeys), lockedColumnKeys);
+    }
   };
 
-  // Construct Effective Columns (all ordered & visible)
+  // Construct Effective Columns (all ordered & visible with first and last columns locked)
   const { visibleColumns, allOrderedColumns } = useMemo(() => {
     const colMap = new Map<string, Column<T>>();
     columns.forEach((c) => colMap.set(c.key, c));
 
-    const ordered: Column<T>[] = [];
+    const firstCols: Column<T>[] = [];
+    const lastCols: Column<T>[] = [];
+    const middleCols: Column<T>[] = [];
+
+    const total = columns.length;
+    columns.forEach((c, idx) => {
+      const { isTopTwo, isLast } = isColumnLockable(c, idx, total);
+      const isLocked = lockedColumnKeys.has(c.key);
+
+      if (isTopTwo && isLocked) {
+        firstCols.push(c);
+        colMap.delete(c.key);
+      } else if (isLast && isLocked) {
+        lastCols.push(c);
+        colMap.delete(c.key);
+      }
+    });
+
     columnOrder.forEach((k) => {
       const col = colMap.get(k);
       if (col) {
-        ordered.push(col);
+        middleCols.push(col);
         colMap.delete(k);
       }
     });
     // Append any columns not in saved order
     colMap.forEach((col) => {
-      ordered.push(col);
+      middleCols.push(col);
     });
 
+    const ordered: Column<T>[] = [...firstCols, ...middleCols, ...lastCols];
+
     if (!enableColumnCustomization) {
-      return { visibleColumns: columns, allOrderedColumns: columns };
+      return { visibleColumns: ordered, allOrderedColumns: ordered };
     }
 
     const visible = ordered.filter((c) => {
-      if (c.sticky || c.canHide === false) return true;
+      const isLocked = lockedColumnKeys.has(c.key);
+      if (isLocked) return true;
       return !hiddenColumnKeys.has(c.key);
     });
 
     return { visibleColumns: visible, allOrderedColumns: ordered };
-  }, [columns, columnOrder, hiddenColumnKeys, enableColumnCustomization]);
+  }, [columns, columnOrder, hiddenColumnKeys, lockedColumnKeys, enableColumnCustomization]);
 
-  // Movable column keys (excluding left and right pinned columns)
+  // Movable column keys (all columns that are currently unlocked)
   const movableColKeys = useMemo(() => {
     return allOrderedColumns
-      .filter((c) => !c.sticky && c.canReorder !== false)
+      .filter((c) => !lockedColumnKeys.has(c.key))
       .map((c) => c.key);
-  }, [allOrderedColumns]);
+  }, [allOrderedColumns, lockedColumnKeys]);
 
-  // Counts for the "Customise view" pill
+  // Counts for the "Customise view" pill (columns that can be customized/hidden)
   const customizableCols = useMemo(() => {
-    return allOrderedColumns.filter((c) => !c.sticky && c.canHide !== false);
-  }, [allOrderedColumns]);
+    return allOrderedColumns.filter((c) => !lockedColumnKeys.has(c.key));
+  }, [allOrderedColumns, lockedColumnKeys]);
 
   const visibleCustomCount = useMemo(() => {
     return customizableCols.filter((c) => !hiddenColumnKeys.has(c.key)).length;
@@ -551,18 +907,16 @@ export function DataTable<T extends Record<string, any>>({
     (customizableCols.length > 0 || movableColKeys.length > 0);
 
   const defaultPinnedNotice = useMemo(() => {
-    const pinned = columns.filter(
-      (c) => c.sticky === "left" || c.sticky === "right" || c.canHide === false || c.canReorder === false
-    );
-    if (pinned.length > 0) {
-      const names = pinned.map((c) => c.header).filter(Boolean);
-      return `${names.slice(0, 2).join(" & ")}${names.length > 2 ? ` (+${names.length - 2})` : ""} are pinned`;
+    const lockedCount = lockedColumnKeys.size;
+    if (lockedCount > 0) {
+      const lockedNames = columns
+        .filter((c) => lockedColumnKeys.has(c.key))
+        .map((c) => c.header)
+        .filter(Boolean);
+      return `${lockedNames.slice(0, 2).join(" & ")}${lockedNames.length > 2 ? ` (+${lockedNames.length - 2})` : ""} locked`;
     }
-    if (hasDefaultActionsColumn) {
-      return "Actions are pinned";
-    }
-    return "Drag or use arrows to reorder";
-  }, [columns, hasDefaultActionsColumn]);
+    return "All columns unlocked";
+  }, [columns, lockedColumnKeys]);
 
   // Filtered customizable columns for search in the popup dropdown
   const filteredCustomiseCols = useMemo(() => {
@@ -622,26 +976,56 @@ export function DataTable<T extends Record<string, any>>({
     setPrevInitialData(initialData);
   }, [initialData]);
 
-  // Compute sticky offsets for left columns based on visibleColumns
+  // Helper to extract column width in px
+  const getColWidth = useCallback((col: Column<T>): number => {
+    if (col.className) {
+      const match = col.className.match(/(?:min-)?w-\[(\d+)px\]/);
+      if (match && match[1]) {
+        return parseInt(match[1], 10);
+      }
+    }
+    const k = col.key.toLowerCase();
+    if (k.includes("id") || k.includes("code") || k.includes("booking")) return 140;
+    if (k.includes("origin")) return 120;
+    if (k.includes("customer") || k.includes("name") || k.includes("partner")) return 170;
+    if (k.includes("date") || k.includes("time") || k.includes("slot")) return 140;
+    if (k.includes("status")) return 130;
+    return 140;
+  }, []);
+
+  // Compute sticky offsets for left columns based on visibleColumns and lockedColumnKeys
   const calculatedLeftOffsets = useMemo(() => {
     let accumulator = 44; // starting after checkbox (44px)
     const offsets: Record<string, number> = {};
+    const total = columns.length;
+
     visibleColumns.forEach((col) => {
-      if (col.sticky === "left") {
-        if (col.stickyLeftOffset !== undefined) {
+      const origIdx = columns.findIndex((c) => c.key === col.key);
+      const isTopTwo = origIdx !== -1 ? isColumnLockable(col, origIdx, total).isTopTwo : false;
+      const isStickyLeft = lockedColumnKeys.has(col.key) && isTopTwo;
+
+      if (isStickyLeft) {
+        if (origIdx === 0 && col.stickyLeftOffset !== undefined) {
           offsets[col.key] = col.stickyLeftOffset;
-          accumulator = col.stickyLeftOffset + (col.key === "id" ? 130 : 170);
+          accumulator = col.stickyLeftOffset + getColWidth(col);
         } else {
           offsets[col.key] = accumulator;
-          const estWidth = col.key === "id" ? 130 : col.key === "customerName" ? 170 : 130;
-          accumulator += estWidth;
+          accumulator += getColWidth(col);
         }
       }
     });
     return offsets;
-  }, [visibleColumns]);
+  }, [visibleColumns, lockedColumnKeys, columns, getColWidth]);
 
-  const leftStickyCols = useMemo(() => visibleColumns.filter((c) => c.sticky === "left"), [visibleColumns]);
+  const leftStickyCols = useMemo(() => {
+    const total = columns.length;
+    return visibleColumns.filter((c) => {
+      const origIdx = columns.findIndex((col) => col.key === c.key);
+      const isTopTwo = origIdx !== -1 ? isColumnLockable(c, origIdx, total).isTopTwo : false;
+      return lockedColumnKeys.has(c.key) && isTopTwo;
+    });
+  }, [visibleColumns, lockedColumnKeys, columns]);
+
   const lastLeftStickyKey = leftStickyCols.length > 0 ? leftStickyCols[leftStickyCols.length - 1].key : null;
 
   const hasLeftSticky = leftStickyCols.length > 0;
@@ -652,9 +1036,20 @@ export function DataTable<T extends Record<string, any>>({
     if (serverPagination) {
       return dataSource;
     }
+    const activeStatus = statusFilterValue !== undefined ? statusFilterValue : selectedStatusFilter;
     return dataSource.filter((row) => {
-      if (selectedStatusFilter !== "All" && row[statusField]) {
-        if (String(row[statusField]).toLowerCase() !== selectedStatusFilter.toLowerCase()) return false;
+      if (activeStatus !== "All" && activeStatus !== "all") {
+        const val = row[statusField];
+        const filterLower = activeStatus.toLowerCase();
+        if (typeof val === "boolean") {
+          if (filterLower === "active" && !val) return false;
+          if (filterLower === "inactive" && val) return false;
+        } else if (val !== undefined && val !== null) {
+          const strVal = String(val).toLowerCase();
+          if (strVal !== filterLower) return false;
+        } else {
+          return false;
+        }
       }
       if (!effectiveSearchQuery.trim()) return true;
       const q = effectiveSearchQuery.toLowerCase();
@@ -663,16 +1058,85 @@ export function DataTable<T extends Record<string, any>>({
         return String(val).toLowerCase().includes(q);
       });
     });
-  }, [dataSource, effectiveSearchQuery, selectedStatusFilter, statusField, serverPagination]);
+  }, [dataSource, effectiveSearchQuery, selectedStatusFilter, statusFilterValue, statusField, serverPagination]);
 
   const sortedData = useMemo(() => {
     if (!sortKey) return filteredData;
     return [...filteredData].sort((a, b) => {
       let valA = a[sortKey];
       let valB = b[sortKey];
-      if (sortKey === "id") {
+      if (sortKey === "id" || sortKey === "bookingId") {
         valA = a.bookingNumber || a.jobId || a.id;
         valB = b.bookingNumber || b.jobId || b.id;
+      } else if (sortKey === "origin") {
+        valA = a.originChannel || a.origin;
+        valB = b.originChannel || b.origin;
+      } else if (sortKey === "assignPartner") {
+        valA = a.technicianName || a.assignPartner;
+        valB = b.technicianName || b.assignPartner;
+      } else if (sortKey === "workingDate") {
+        valA = a.date || a.workingDate;
+        valB = b.date || b.workingDate;
+      } else if (sortKey === "time") {
+        valA = a.timeSlot || a.time;
+        valB = b.timeSlot || b.time;
+      } else if (sortKey === "contactNo") {
+        valA = a.customerPhone || a.contactNo;
+        valB = b.customerPhone || b.contactNo;
+      } else if (sortKey === "serviceAddressLocation") {
+        valA = a.address || a.locality || a.serviceAddressLocation;
+        valB = b.address || b.locality || b.serviceAddressLocation;
+      } else if (sortKey === "multipleServicesItemCodes") {
+        valA = a.serviceTitle || a.multipleServicesItemCodes;
+        valB = b.serviceTitle || b.multipleServicesItemCodes;
+      } else if (sortKey === "amount") {
+        valA = a.totalAmount ?? a.amount;
+        valB = b.totalAmount ?? b.amount;
+      } else if (sortKey === "remark") {
+        valA = a.notes || a.inspectionRemarks || a.remark;
+        valB = b.notes || b.inspectionRemarks || b.remark;
+      } else if (sortKey === "bookingStatus") {
+        valA = a.status || a.bookingStatus;
+        valB = b.status || b.bookingStatus;
+      } else if (sortKey === "handleBy") {
+        valA = a.handledBy || a.handleBy;
+        valB = b.handledBy || b.handleBy;
+      } else if (sortKey === "customerAndCode") {
+        valA = a.fullName || a.customerAndCode;
+        valB = b.fullName || b.customerAndCode;
+      } else if (sortKey === "contactDetails") {
+        valA = a.mobile || a.contactDetails;
+        valB = b.mobile || b.contactDetails;
+      } else if (sortKey === "localityAndAddress") {
+        valA = a.localityName || a.localityAndAddress;
+        valB = b.localityName || b.localityAndAddress;
+      } else if (sortKey === "accountCategory") {
+        valA = a.customerCategory || a.accountCategory;
+        valB = b.customerCategory || b.accountCategory;
+      } else if (sortKey === "servicePackageTitle") {
+        valA = a.title || a.servicePackageTitle;
+        valB = b.title || b.servicePackageTitle;
+      } else if (sortKey === "categorySubcategory") {
+        valA = a.category || a.categorySubcategory;
+        valB = b.category || b.categorySubcategory;
+      } else if (sortKey === "addOns") {
+        valA = a.addons?.length ?? a.addOns;
+        valB = b.addons?.length ?? b.addOns;
+      } else if (sortKey === "partnerAndRole") {
+        valA = a.name || a.partnerAndRole;
+        valB = b.name || b.partnerAndRole;
+      } else if (sortKey === "categoryAndZone") {
+        valA = a.category || a.locality || a.categoryAndZone;
+        valB = b.category || b.locality || b.categoryAndZone;
+      } else if (sortKey === "biometricKycCheck") {
+        valA = a.aadhaarVerified || a.biometricKycCheck;
+        valB = b.aadhaarVerified || b.biometricKycCheck;
+      } else if (sortKey === "jobs") {
+        valA = a.totalJobs ?? a.jobs;
+        valB = b.totalJobs ?? b.jobs;
+      } else if (sortKey === "dutyStatus") {
+        valA = a.status || a.dutyStatus;
+        valB = b.status || b.dutyStatus;
       }
       if (valA === valB) return 0;
       if (valA === null || valA === undefined) return 1;
@@ -772,12 +1236,23 @@ export function DataTable<T extends Record<string, any>>({
     setData([row, ...data]);
   };
 
-  const handleBulkSoftDelete = () => {
+  const handleBulkSoftDelete = async () => {
+    const ids = Array.from(selectedIds);
     const toDelete = data.filter((row) => selectedIds.has(getRowId(row)));
-    setDeletedTrash([...toDelete, ...deletedTrash]);
-    setData(data.filter((row) => !selectedIds.has(getRowId(row))));
-    setSelectedIds(new Set());
-    setIsBulkDeleteModalOpen(false);
+    try {
+      setIsBulkDeleting(true);
+      if (onBulkDelete) {
+        await onBulkDelete(ids, toDelete);
+      }
+      setDeletedTrash([...toDelete, ...deletedTrash]);
+      setData(data.filter((row) => !selectedIds.has(getRowId(row))));
+      setSelectedIds(new Set());
+      setIsBulkDeleteModalOpen(false);
+    } catch (err) {
+      console.error("handleBulkSoftDelete error:", err);
+    } finally {
+      setIsBulkDeleting(false);
+    }
   };
 
   const handleBulkStatusChange = (newStatus: string) => {
@@ -905,26 +1380,31 @@ export function DataTable<T extends Record<string, any>>({
           <div className="flex items-center gap-3 flex-wrap">
             {extraFilters}
 
+            {/* Status Filter Dropdown commented out
             {!hideStatusFilter && (
               <div className="w-36">
                 <CustomSelect
                   size="sm"
-                  value={selectedStatusFilter}
+                  value={statusFilterValue !== undefined ? statusFilterValue : selectedStatusFilter}
                   onChange={(val) => {
-                    setSelectedStatusFilter(val);
+                    if (onStatusFilterChange) {
+                      onStatusFilterChange(val);
+                    } else {
+                      setSelectedStatusFilter(val);
+                    }
                     handlePageChange(1);
                   }}
-                  options={[
-                    { value: "All", label: "All Statuses" },
-                    { value: "Active", label: "Active" },
-                    { value: "Approved", label: "Approved" },
-                    { value: "Pending", label: "Pending" },
-                    { value: "Completed", label: "Completed" },
-                    { value: "Cancelled", label: "Cancelled" },
-                  ]}
+                  options={
+                    statusOptions || [
+                      { value: "All", label: "All Statuses" },
+                      { value: "Active", label: "Active" },
+                      { value: "Inactive", label: "Inactive" },
+                    ]
+                  }
                 />
               </div>
             )}
+            */}
 
             {onRefresh && (
               <button
@@ -944,15 +1424,18 @@ export function DataTable<T extends Record<string, any>>({
                 <button
                   ref={customiseButtonRef}
                   type="button"
+                  disabled={isHeaderLoading}
                   onClick={toggleCustomise}
-                  className={`h-9 px-3.5 rounded-xl border text-xs font-semibold flex items-center gap-2 cursor-pointer shadow-xs transition-all ${
+                  className={`h-9 px-3.5 rounded-xl border text-xs font-semibold flex items-center gap-2 shadow-xs transition-all ${
+                    isHeaderLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
+                  } ${
                     isCustomiseOpen
                       ? "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-600 text-slate-900 dark:text-white"
                       : "bg-white hover:bg-slate-50 dark:bg-slate-900 dark:hover:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300"
                   }`}
                   title="Customize visible table columns and arrangement"
                 >
-                  <SlidersHorizontal className="w-3.5 h-3.5 text-slate-500" />
+                  <SlidersHorizontal className={`w-3.5 h-3.5 text-slate-500 ${isHeaderLoading ? "animate-pulse" : ""}`} />
                   <span>Customise view</span>
                   <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
                     {visibleCustomCount}/{totalCustomCount}
@@ -1032,27 +1515,33 @@ export function DataTable<T extends Record<string, any>>({
                       {/* Draggable List */}
                       <div className="flex-1 overflow-y-auto px-2 py-1.5 space-y-0.5 custom-scrollbar min-h-0">
                         {filteredCustomiseCols.map((col) => {
-                          const isPinned = col.sticky === "left" || col.sticky === "right" || col.canHide === false;
-                          const isVisible = isPinned || !hiddenColumnKeys.has(col.key);
+                          const colIdx = columns.findIndex((c) => c.key === col.key);
+                          const { isTopTwo, isLast, canLock } = colIdx !== -1
+                            ? isColumnLockable(col, colIdx, columns.length)
+                            : { isTopTwo: false, isLast: false, canLock: false };
+
+                          const isLocked = canLock && lockedColumnKeys.has(col.key);
+                          const isVisible = isLocked || !hiddenColumnKeys.has(col.key);
                           const ColIcon = getColumnIcon(col);
                           const isDragging = dropdownDragKey === col.key;
                           const isDragOver = dropdownDragOverKey === col.key && !isDragging;
+                          const isMovable = !isLocked;
                           const movableIdx = movableColKeys.indexOf(col.key);
-                          const canMoveUp = movableIdx > 0;
-                          const canMoveDown = movableIdx >= 0 && movableIdx < movableColKeys.length - 1;
+                          const canMoveUp = isMovable && movableIdx > 0;
+                          const canMoveDown = isMovable && movableIdx >= 0 && movableIdx < movableColKeys.length - 1;
 
                           return (
                             <div
                               key={col.key}
-                              draggable={!isPinned}
+                              draggable={isMovable}
                               onDragStart={(e) => {
-                                if (isPinned) return;
+                                if (!isMovable) return;
                                 e.dataTransfer.setData("text/plain", col.key);
                                 e.dataTransfer.effectAllowed = "move";
                                 setDropdownDragKey(col.key);
                               }}
                               onDragOver={(e) => {
-                                if (isPinned || !dropdownDragKey || dropdownDragKey === col.key) return;
+                                if (!dropdownDragKey || dropdownDragKey === col.key) return;
                                 e.preventDefault();
                                 e.dataTransfer.dropEffect = "move";
                                 if (dropdownDragOverKey !== col.key) {
@@ -1064,7 +1553,7 @@ export function DataTable<T extends Record<string, any>>({
                               }}
                               onDrop={(e) => {
                                 e.preventDefault();
-                                if (isPinned || !dropdownDragKey || dropdownDragKey === col.key) return;
+                                if (!dropdownDragKey || dropdownDragKey === col.key) return;
                                 handleReorderColumns(dropdownDragKey, col.key);
                                 setDropdownDragKey(null);
                                 setDropdownDragOverKey(null);
@@ -1085,11 +1574,15 @@ export function DataTable<T extends Record<string, any>>({
                                 {/* Drag Handle */}
                                 <div
                                   className={`p-0.5 shrink-0 ${
-                                    isPinned
-                                      ? "text-slate-300 dark:text-slate-700 cursor-not-allowed"
-                                      : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 cursor-grab active:cursor-grabbing"
+                                    isMovable
+                                      ? "text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 cursor-grab active:cursor-grabbing"
+                                      : "text-slate-300 dark:text-slate-700 cursor-not-allowed opacity-50"
                                   }`}
-                                  title={isPinned ? "Pinned column cannot be moved" : "Drag to reorder"}
+                                  title={
+                                    isLocked
+                                      ? "Locked column cannot be moved (unlock to rearrange)"
+                                      : "Drag to reorder"
+                                  }
                                   onClick={(e) => e.stopPropagation()}
                                 >
                                   <GripVertical className="w-3.5 h-3.5" />
@@ -1098,12 +1591,12 @@ export function DataTable<T extends Record<string, any>>({
                                 {/* Whole Data Area: Checkbox, Icon & Title wrapped in full-width clickable label */}
                                 <label
                                   className={`flex items-center gap-2 min-w-0 flex-1 py-1 px-1 rounded-lg select-none ${
-                                    isPinned
+                                    isLocked
                                       ? "cursor-default opacity-85"
                                       : "cursor-pointer hover:bg-slate-100/60 dark:hover:bg-slate-800/80 active:bg-slate-200/50"
                                   }`}
                                   onClick={(e) => {
-                                    if (isPinned) {
+                                    if (isLocked) {
                                       e.preventDefault();
                                     }
                                   }}
@@ -1112,9 +1605,10 @@ export function DataTable<T extends Record<string, any>>({
                                   <input
                                     type="checkbox"
                                     checked={isVisible}
-                                    disabled={isPinned}
+                                    disabled={isLocked}
                                     onChange={() => toggleColumnVisibility(col.key)}
                                     className="w-4 h-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500 cursor-pointer disabled:cursor-not-allowed accent-brand-600 shrink-0"
+                                    title={isLocked ? "Locked columns must remain visible (unlock to hide)" : isVisible ? "Hide column" : "Show column"}
                                   />
 
                                   {/* Icon */}
@@ -1129,41 +1623,77 @@ export function DataTable<T extends Record<string, any>>({
                                 </label>
                               </div>
 
-                              {/* Actions on the right: Pinned badge OR Up & Down arrows */}
-                              {isPinned ? (
-                                <span className="text-[10px] font-medium text-slate-400 dark:text-slate-500 shrink-0">
-                                  Pinned
-                                </span>
-                              ) : (
-                                <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover/col:opacity-100 focus-within:opacity-100 transition-opacity duration-150">
+                              {/* Actions on the right: Lock/Unlock Button (ONLY for top two and last column) & Up/Down Arrows */}
+                              <div className="flex items-center gap-1 shrink-0">
+                                {canLock && (
                                   <button
                                     type="button"
-                                    disabled={!canMoveUp}
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      handleMoveColumn(col.key, "up");
+                                      toggleColumnLock(col.key);
                                     }}
-                                    className="p-1 rounded-md text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-700/60 disabled:opacity-20 disabled:cursor-not-allowed cursor-pointer transition-colors"
-                                    title="Move column up"
-                                    aria-label={`Move ${col.header} up`}
+                                    className={`px-1.5 py-1 rounded-md text-[10px] font-semibold transition-colors cursor-pointer flex items-center gap-1 ${
+                                      isLocked
+                                        ? "text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 hover:bg-amber-100 dark:hover:bg-amber-900/60 border border-amber-200 dark:border-amber-800"
+                                        : "text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent"
+                                    }`}
+                                    title={
+                                      isLocked
+                                        ? isTopTwo
+                                          ? "Locked to left • Click to unlock"
+                                          : "Locked to right • Click to unlock"
+                                        : isTopTwo
+                                        ? "Unlocked (left) • Click to lock"
+                                        : "Unlocked (right) • Click to lock"
+                                    }
+                                    aria-label={isLocked ? `Unlock ${col.header}` : `Lock ${col.header}`}
                                   >
-                                    <ChevronUp className="w-3.5 h-3.5" />
+                                    {isLocked ? (
+                                      <>
+                                        <Lock className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                                        <span>{isTopTwo ? "Left" : "Right"}</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Unlock className="w-3 h-3 text-slate-400" />
+                                        <span className="text-slate-400 font-normal">{isTopTwo ? "Left" : "Right"}</span>
+                                      </>
+                                    )}
                                   </button>
-                                  <button
-                                    type="button"
-                                    disabled={!canMoveDown}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleMoveColumn(col.key, "down");
-                                    }}
-                                    className="p-1 rounded-md text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-700/60 disabled:opacity-20 disabled:cursor-not-allowed cursor-pointer transition-colors"
-                                    title="Move column down"
-                                    aria-label={`Move ${col.header} down`}
-                                  >
-                                    <ChevronDown className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              )}
+                                )}
+
+                                {/* Up & Down arrows for movable columns */}
+                                {isMovable && (
+                                  <div className="flex items-center gap-0.5 shrink-0 opacity-70 hover:opacity-100 group-hover/col:opacity-100 transition-opacity">
+                                    <button
+                                      type="button"
+                                      disabled={!canMoveUp}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleMoveColumn(col.key, "up");
+                                      }}
+                                      className="p-1 rounded-md text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-700/60 disabled:opacity-20 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                                      title="Move column up"
+                                      aria-label={`Move ${col.header} up`}
+                                    >
+                                      <ChevronUp className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={!canMoveDown}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleMoveColumn(col.key, "down");
+                                      }}
+                                      className="p-1 rounded-md text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-700/60 disabled:opacity-20 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                                      title="Move column down"
+                                      aria-label={`Move ${col.header} down`}
+                                    >
+                                      <ChevronDown className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           );
                         })}
@@ -1197,6 +1727,7 @@ export function DataTable<T extends Record<string, any>>({
               <span>Export CSV</span>
             </button>
 
+            {/* Audit Metadata Button commented out
             <button
               type="button"
               onClick={() => setShowMetadata(!showMetadata)}
@@ -1209,6 +1740,7 @@ export function DataTable<T extends Record<string, any>>({
               <Clock className="w-3.5 h-3.5" />
               <span>Audit Metadata</span>
             </button>
+            */}
 
             {selectedIds.size > 0 && (
               <div className="flex items-center gap-2">
@@ -1413,16 +1945,21 @@ export function DataTable<T extends Record<string, any>>({
                     className="w-4 h-4 rounded border-slate-300 text-brand-500 cursor-pointer align-middle"
                   />
                 </th>
-                {visibleColumns.map((col) => {
+                {visibleColumns.map((col, colIndex) => {
                   const isActionsCol =
                     col.header.toLowerCase().includes("action") ||
                     col.key.toLowerCase().includes("action") ||
-                    col.sticky === "right";
+                    col.sticky === "right" ||
+                    col.fixedPosition === "last";
 
-                  const isLeftSticky = col.sticky === "left";
-                  const isRightSticky = col.sticky === "right" || isActionsCol;
+                  const isLocked = lockedColumnKeys.has(col.key);
+                  const isMovable = !isLocked;
+
+                  const origIdx = columns.findIndex((c) => c.key === col.key);
+                  const isTopTwo = origIdx !== -1 ? isColumnLockable(col, origIdx, columns.length).isTopTwo : false;
+                  const isLeftSticky = isLocked && isTopTwo;
+                  const isRightSticky = isLocked && (col.sticky === "right" || col.fixedPosition === "last" || isActionsCol);
                   const isLastLeft = col.key === lastLeftStickyKey;
-                  const isPinned = isLeftSticky || isRightSticky || col.canReorder === false;
 
                   const stickyStyle: React.CSSProperties = isLeftSticky
                     ? { position: "sticky", left: `${calculatedLeftOffsets[col.key] || 0}px`, zIndex: 35 }
@@ -1445,16 +1982,16 @@ export function DataTable<T extends Record<string, any>>({
                     <th
                       key={col.key}
                       style={stickyStyle}
-                      draggable={canCustomizeColumns && !isPinned}
+                      draggable={!isHeaderLoading && canCustomizeColumns && isMovable}
                       onDragStart={(e) => {
-                        if (isPinned) return;
+                        if (isHeaderLoading || !isMovable) return;
                         isDraggingColRef.current = true;
                         e.dataTransfer.setData("text/plain", col.key);
                         e.dataTransfer.effectAllowed = "move";
                         setTableDragColKey(col.key);
                       }}
                       onDragOver={(e) => {
-                        if (isPinned || !tableDragColKey || tableDragColKey === col.key) return;
+                        if (isHeaderLoading || !tableDragColKey || tableDragColKey === col.key) return;
                         e.preventDefault();
                         e.dataTransfer.dropEffect = "move";
                         if (tableDropTargetKey !== col.key) {
@@ -1468,7 +2005,7 @@ export function DataTable<T extends Record<string, any>>({
                       }}
                       onDrop={(e) => {
                         e.preventDefault();
-                        if (isPinned || !tableDragColKey || tableDragColKey === col.key) {
+                        if (isHeaderLoading || !tableDragColKey || tableDragColKey === col.key) {
                           setTableDragColKey(null);
                           setTableDropTargetKey(null);
                           return;
@@ -1488,22 +2025,41 @@ export function DataTable<T extends Record<string, any>>({
                         }, 150);
                       }}
                       onClick={() => {
-                        if (isDraggingColRef.current) return;
+                        if (isHeaderLoading || isDraggingColRef.current) return;
                         if (col.sortable !== false) handleSort(col.key);
                       }}
                       className={`py-3.5 px-4 align-middle select-none whitespace-nowrap transition-all group/th ${
                         isActionsCol ? "text-right" : ""
                       } ${stickyClass} ${col.className || ""} ${
-                        isPinned ? "cursor-pointer" : "cursor-grab active:cursor-grabbing hover:bg-slate-200/70 dark:hover:bg-slate-700/70"
+                        isHeaderLoading
+                          ? "cursor-default"
+                          : !isMovable
+                          ? "cursor-pointer"
+                          : "cursor-grab active:cursor-grabbing hover:bg-slate-200/70 dark:hover:bg-slate-700/70"
                       } ${
                         isTableDragging ? "opacity-30 bg-slate-200/80 dark:bg-slate-700/80 scale-[0.98]" : ""
                       } ${
                         isTableDropTarget ? "border-l-4 border-brand-500 bg-brand-50/80 dark:bg-brand-950/60" : ""
                       }`}
-                      title={isPinned ? undefined : "Click to sort • Drag to rearrange column"}
+                      title={
+                        isHeaderLoading
+                          ? undefined
+                          : !isMovable
+                          ? (col.sortable !== false ? "Click to sort" : undefined)
+                          : "Click to sort • Drag to rearrange column"
+                      }
                     >
                       <div className={`flex items-center gap-1.5 ${isActionsCol ? "justify-end" : ""}`}>
-                        {!isPinned && canCustomizeColumns && (
+                        {isLocked && (
+                          <span
+                            className="inline-flex items-center justify-center p-0.5 rounded text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 shrink-0 select-none"
+                            title="Locked column"
+                            aria-label={`${col.header} is locked`}
+                          >
+                            <Lock className="w-3 h-3" />
+                          </span>
+                        )}
+                        {isMovable && canCustomizeColumns && (
                           <GripVertical className="w-3 h-3 text-slate-400 dark:text-slate-500 opacity-0 group-hover/th:opacity-100 transition-opacity shrink-0" />
                         )}
                         <span>{col.header}</span>
@@ -1514,13 +2070,22 @@ export function DataTable<T extends Record<string, any>>({
                 })}
                 {showMetadata && (
                   <>
-                    <th className="py-3.5 px-4 align-middle whitespace-nowrap">Created By / Date</th>
-                    <th className="py-3.5 px-4 align-middle whitespace-nowrap">Updated By / Date</th>
+                    <th className="py-3.5 px-4 align-middle whitespace-nowrap">
+                      Created By / Date
+                    </th>
+                    <th className="py-3.5 px-4 align-middle whitespace-nowrap">
+                      Updated By / Date
+                    </th>
                   </>
                 )}
                 {hasDefaultActionsColumn && (
                   <th className="py-3.5 px-4 text-right align-middle whitespace-nowrap sticky right-0 z-35 bg-slate-100 dark:bg-slate-800 shadow-[-4px_0_8px_-2px_rgba(0,0,0,0.1)]">
-                    Actions
+                    <div className="flex items-center justify-end gap-1.5">
+                      <span className="inline-flex items-center justify-center p-0.5 rounded text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 shrink-0" title="Locked column">
+                        <Lock className="w-3 h-3" />
+                      </span>
+                      <span>Actions</span>
+                    </div>
                   </th>
                 )}
               </tr>
@@ -1542,9 +2107,13 @@ export function DataTable<T extends Record<string, any>>({
                       const isActionsCol =
                         col.header.toLowerCase().includes("action") ||
                         col.key.toLowerCase().includes("action") ||
-                        col.sticky === "right";
-                      const isLeftSticky = col.sticky === "left";
-                      const isRightSticky = col.sticky === "right" || isActionsCol;
+                        col.sticky === "right" ||
+                        col.fixedPosition === "last";
+                      const isLocked = lockedColumnKeys.has(col.key);
+                      const origIdx = columns.findIndex((c) => c.key === col.key);
+                      const isTopTwo = origIdx !== -1 ? isColumnLockable(col, origIdx, columns.length).isTopTwo : false;
+                      const isLeftSticky = isLocked && isTopTwo;
+                      const isRightSticky = isLocked && (col.sticky === "right" || col.fixedPosition === "last" || isActionsCol);
                       const isLastLeft = col.key === lastLeftStickyKey;
 
                       const stickyStyle: React.CSSProperties = isLeftSticky
@@ -1626,10 +2195,14 @@ export function DataTable<T extends Record<string, any>>({
                         const isActionsCol =
                           col.header.toLowerCase().includes("action") ||
                           col.key.toLowerCase().includes("action") ||
-                          col.sticky === "right";
+                          col.sticky === "right" ||
+                          col.fixedPosition === "last";
 
-                        const isLeftSticky = col.sticky === "left";
-                        const isRightSticky = col.sticky === "right" || isActionsCol;
+                        const isLocked = lockedColumnKeys.has(col.key);
+                        const origIdx = columns.findIndex((c) => c.key === col.key);
+                        const isTopTwo = origIdx !== -1 ? isColumnLockable(col, origIdx, columns.length).isTopTwo : false;
+                        const isLeftSticky = isLocked && isTopTwo;
+                        const isRightSticky = isLocked && (col.sticky === "right" || col.fixedPosition === "last" || isActionsCol);
                         const isLastLeft = col.key === lastLeftStickyKey;
 
                         const stickyStyle: React.CSSProperties = isLeftSticky
@@ -1863,7 +2436,7 @@ export function DataTable<T extends Record<string, any>>({
             <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-3">
               <h3 className="font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
                 <RotateCcw className="w-4 h-4 text-amber-500" />
-                Soft-Deleted Trash Bin
+                Deleted Trash Bin
               </h3>
               <button type="button" onClick={() => setIsTrashOpen(false)}><X className="w-5 h-5 text-slate-400" /></button>
             </div>
@@ -1896,11 +2469,11 @@ export function DataTable<T extends Record<string, any>>({
           <div className="fixed inset-0 z-[99999] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 outline-none">
             <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl max-w-sm w-full space-y-4 text-center ring-1 ring-slate-900/10 dark:ring-slate-800 shadow-2xl outline-none">
               <AlertTriangle className="w-10 h-10 text-red-600 mx-auto" />
-              <h3 className="font-extrabold text-slate-900 dark:text-white">Confirm Soft Delete</h3>
-              <p className="text-xs text-slate-500">Soft delete {String(deletingRow[idField])}? Item will move to Trash Bin for recovery.</p>
+              <h3 className="font-extrabold text-slate-900 dark:text-white">Confirm Delete</h3>
+              <p className="text-xs text-slate-500">Delete {String(deletingRow[idField])}? Item will move to Trash Bin for recovery.</p>
               <div className="flex gap-2">
                 <button type="button" onClick={() => setDeletingRow(null)} className="flex-1 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl font-bold text-xs text-slate-700 dark:text-slate-300">Cancel</button>
-                <button type="button" onClick={() => handleSoftDeleteRow(deletingRow)} className="flex-1 py-2 bg-red-600 text-white rounded-xl font-bold text-xs">Soft Delete</button>
+                <button type="button" onClick={() => handleSoftDeleteRow(deletingRow)} className="flex-1 py-2 bg-red-600 text-white rounded-xl font-bold text-xs">Delete</button>
               </div>
             </div>
           </div>
@@ -1914,10 +2487,31 @@ export function DataTable<T extends Record<string, any>>({
             <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl max-w-sm w-full space-y-4 text-center ring-1 ring-slate-900/10 dark:ring-slate-800 shadow-2xl outline-none">
               <AlertTriangle className="w-10 h-10 text-red-600 mx-auto" />
               <h3 className="font-extrabold text-slate-900 dark:text-white">Delete Selected Records</h3>
-              <p className="text-xs text-slate-500">Soft delete {selectedIds.size} selected records?</p>
+              <p className="text-xs text-slate-500">Are you sure you want to delete {selectedIds.size} selected record{selectedIds.size === 1 ? "" : "s"}?</p>
               <div className="flex gap-2">
-                <button type="button" onClick={() => setIsBulkDeleteModalOpen(false)} className="flex-1 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl font-bold text-xs text-slate-700 dark:text-slate-300">Cancel</button>
-                <button type="button" onClick={handleBulkSoftDelete} className="flex-1 py-2 bg-red-600 text-white rounded-xl font-bold text-xs">Soft Delete Selected</button>
+                <button
+                  type="button"
+                  disabled={isBulkDeleting}
+                  onClick={() => setIsBulkDeleteModalOpen(false)}
+                  className="flex-1 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl font-bold text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-200 transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isBulkDeleting}
+                  onClick={handleBulkSoftDelete}
+                  className="flex-1 py-2 bg-red-600 text-white rounded-xl font-bold text-xs hover:bg-red-700 transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50"
+                >
+                  {isBulkDeleting ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Deleting...</span>
+                    </>
+                  ) : (
+                    <span>Delete Selected</span>
+                  )}
+                </button>
               </div>
             </div>
           </div>
