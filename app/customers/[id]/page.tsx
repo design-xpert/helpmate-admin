@@ -632,15 +632,20 @@ export default function CustomerDetailPage() {
     {
       key: "actions",
       header: "Actions",
-      accessor: (row) => (
-        <Link
-          href={`/bookings/${row._id}`}
-          className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-extrabold text-[11px] transition-colors inline-flex items-center gap-1 cursor-pointer"
-        >
-          <span>View</span>
-          <ExternalLink className="w-3 h-3" />
-        </Link>
-      ),
+      accessor: (row) => {
+        const fromCustomerUrl = typeof window !== "undefined"
+          ? window.location.pathname + window.location.search
+          : `/customers/${custId}`;
+        return (
+          <Link
+            href={`/bookings/${row._id}?from=${encodeURIComponent(fromCustomerUrl)}`}
+            className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-extrabold text-[11px] transition-colors inline-flex items-center gap-1 cursor-pointer"
+          >
+            <span>View</span>
+            <ExternalLink className="w-3 h-3" />
+          </Link>
+        );
+      },
     },
   ];
 

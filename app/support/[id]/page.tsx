@@ -306,7 +306,7 @@ export default function SupportTicketDetailPage({ params }: { params: Promise<{ 
               <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Related Booking</span>
               {ticket.bookingId ? (
                 <Link
-                  href={`/bookings/${ticket.bookingId}`}
+                  href={`/bookings/${ticket.bookingId}?from=${encodeURIComponent(`/support/${ticket.id}`)}`}
                   className="font-mono font-extrabold text-purple-700 dark:text-purple-300 hover:underline flex items-center gap-1 mt-1 text-xs"
                 >
                   <span>{ticket.bookingId}</span>

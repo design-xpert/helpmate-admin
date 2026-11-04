@@ -69,7 +69,7 @@ import { ArchiveBookingModal } from "@/components/bookings/ArchiveBookingModal";
 import { CancelBookingModal } from "@/components/bookings/CancelBookingModal";
 import { BookingCalendarView } from "@/components/bookings/BookingCalendarView";
 import { useRbac } from "@/context/RbacContext";
-import { getBookingCategoriesApi, getBookingsApi, completeBookingApi, getBookingDashboardStatsApi, ApiBookingCategoryStat, archiveBookingApi, restoreBookingApi, cancelBookingApi, pinCategoryApi, formatImageUrl, getCategoriesApi } from "@/lib/api";
+import { getBookingCategoriesApi, getBookingsApi, completeBookingApi, ApiBookingCategoryStat, archiveBookingApi, restoreBookingApi, cancelBookingApi, pinCategoryApi, formatImageUrl, getCategoriesApi } from "@/lib/api";
 import { isImagePreloaded, preloadImage, preloadImages, storeDataUrl, getStoredDataUrl, cacheImageDataUrl } from "@/lib/imageCache";
 import { mapApiBooking } from "@/lib/bookingMapper";
 
@@ -253,13 +253,92 @@ function BookingCategoryIcon({
   );
 }
 
+function areBookingsEqual(a: Booking[], b: Booking[]): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const itemA = a[i];
+    const itemB = b[i];
+    if (!itemA || !itemB) return false;
+    if (
+      itemA.id !== itemB.id ||
+      itemA.status !== itemB.status ||
+      itemA.technicianId !== itemB.technicianId ||
+      itemA.technicianName !== itemB.technicianName ||
+      itemA.date !== itemB.date ||
+      itemA.timeSlot !== itemB.timeSlot ||
+      Boolean(itemA.isArchived) !== Boolean(itemB.isArchived) ||
+      itemA.totalAmount !== itemB.totalAmount ||
+      itemA.category !== itemB.category
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function areCategoryStatsEqual(a: ApiBookingCategoryStat[], b: ApiBookingCategoryStat[]): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const catA = a[i];
+    const catB = b[i];
+    if (!catA || !catB) return false;
+    if (
+      (catA._id || "") !== (catB._id || "") ||
+      (catA.categoryName || (catA as any).name || "") !== (catB.categoryName || (catB as any).name || "") ||
+      Boolean(catA.isPinned) !== Boolean(catB.isPinned) ||
+      Number(catA.totalBookings ?? 0) !== Number(catB.totalBookings ?? 0) ||
+      Number(catA.openBookings ?? 0) !== Number(catB.openBookings ?? 0) ||
+      Number(catA.activeBookings ?? 0) !== Number(catB.activeBookings ?? 0) ||
+      Number(catA.completedBookings ?? 0) !== Number(catB.completedBookings ?? 0) ||
+      Number(catA.cancelledBookings ?? 0) !== Number(catB.cancelledBookings ?? 0)
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function areAllStatsEqual(a: any, b: any): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (
+    Number(a.totalBookings ?? 0) === Number(b.totalBookings ?? 0) &&
+    Number(a.openBookings ?? 0) === Number(b.openBookings ?? 0) &&
+    Number(a.activeBookings ?? 0) === Number(b.activeBookings ?? 0) &&
+    Number(a.completedBookings ?? 0) === Number(b.completedBookings ?? 0) &&
+    Number(a.cancelledBookings ?? 0) === Number(b.cancelledBookings ?? 0)
+  );
+}
+
+function preStoreBookingDetail(b: Booking) {
+  if (typeof window !== "undefined") {
+    try {
+      const keys = [b.id, b.bookingNumber, (b as any)._id, (b as any).jobId].filter(Boolean);
+      const payload = JSON.stringify({ mapped: b, raw: (b as any).rawApiBooking || b });
+      keys.forEach((k) => {
+        sessionStorage.setItem(`booking_detail_${String(k).toLowerCase().trim()}`, payload);
+      });
+    } catch {}
+  }
+}
+
 function BookingsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const categoryParam = searchParams?.get("category");
   const bookingTypeParam = searchParams?.get("bookingType");
   const statusParam = searchParams?.get("status");
-  const selectedCategory = categoryParam || null;
+  const viewParam = searchParams?.get("view");
+  const tabParam = searchParams?.get("tab");
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(() => categoryParam || null);
+
+  useEffect(() => {
+    setSelectedCategory(categoryParam || null);
+  }, [categoryParam]);
   const { role, canView, canCreate, canEdit, canDelete } = useRbac();
   const isOfficeAdmin = role === "Office Admin";
 
@@ -274,19 +353,21 @@ function BookingsPageContent() {
     bookingsRef.current = bookings;
   }, [bookings]);
   const [apiCategories, setApiCategories] = useState<ApiBookingCategoryStat[]>(() => initialCachedCats || []);
-  const initialCachedStats = getStoredModuleData<any>("booking_dashboard_stats");
   const [allCategoryStats, setAllCategoryStats] = useState<any>(() => initialCachedAllStats || null);
-  const [dashboardStats, setDashboardStats] = useState<any | null>(() => initialCachedStats || null);
   const [isLoadingData, setIsLoadingData] = useState(() => !(
     (isModuleCacheFresh("booking_categories") && initialCachedCats && initialCachedCats.length > 0) ||
     ((isModuleCacheFresh(cacheKey) || isModuleCacheFresh("bookings")) && initialCachedBookings && initialCachedBookings.length > 0)
   ));
-  const [viewArchiveMode, setViewArchiveMode] = useState<boolean>(false);
-  const [isCalendarView, setIsCalendarView] = useState<boolean>(false);
+  const [viewArchiveMode, setViewArchiveMode] = useState<boolean>(() => tabParam === "archive");
+  const [isCalendarView, setIsCalendarView] = useState<boolean>(() => viewParam === "calendar");
   const [archivedBookings, setArchivedBookings] = useState<Booking[]>(() => initialCachedArchivedBookings || []);
   const [isLoadingArchived, setIsLoadingArchived] = useState<boolean>(false);
   const [archiveTargetBooking, setArchiveTargetBooking] = useState<Booking | null>(null);
   const [cancelTargetBooking, setCancelTargetBooking] = useState<Booking | null>(null);
+
+  useEffect(() => {
+    setIsCalendarView(viewParam === "calendar");
+  }, [viewParam]);
 
   // Pinned Categories State (strictly max 3, purely driven by backend isPinned)
   const [pinnedCategories, setPinnedCategories] = useState<string[]>(() => {
@@ -433,8 +514,8 @@ function BookingsPageContent() {
 
   const updateBookingFilters = (newType?: string | null, newStatus?: string | null) => {
     const params = new URLSearchParams();
-    if (categoryParam) {
-      params.set("category", categoryParam);
+    if (selectedCategory) {
+      params.set("category", selectedCategory);
     }
     if (newType !== undefined) {
       if (newType) {
@@ -454,107 +535,207 @@ function BookingsPageContent() {
     router.push(`/bookings${queryStr ? `?${queryStr}` : ""}`);
   };
 
-  const fetchArchivedBookings = useCallback(async () => {
-    setIsLoadingArchived(true);
+  const fetchArchivedBookings = useCallback(async (force: boolean = false) => {
+    // If not forced and already fresh in moduleCache, use cached data and DO NOT call API
+    if (!force && isModuleCacheFresh("archived_bookings")) {
+      const cached = getStoredModuleData<Booking[]>("archived_bookings");
+      if (cached && Array.isArray(cached) && cached.length > 0) {
+        setArchivedBookings((prev) => (areBookingsEqual(prev, cached) ? prev : cached));
+        setIsLoadingArchived(false);
+        return;
+      }
+    }
+
+    if (archivedBookings.length === 0 && !isModuleCacheFresh("archived_bookings")) {
+      setIsLoadingArchived(true);
+    }
     try {
-      const res = await getBookingsApi({ archived: true, forceRefresh: true });
+      const res = await getBookingsApi({ archived: true, forceRefresh: force });
       if (res && res.success && Array.isArray(res.data)) {
         const mappedList: Booking[] = res.data.map(mapApiBooking);
-        setArchivedBookings(mappedList);
         setCachedModuleData("archived_bookings", mappedList);
+        setArchivedBookings((prev) => (areBookingsEqual(prev, mappedList) ? prev : mappedList));
       }
     } catch (err) {
       console.error("Error fetching archived bookings:", err);
     } finally {
       setIsLoadingArchived(false);
     }
-  }, []);
+  }, [archivedBookings.length]);
+
+  useEffect(() => {
+    const isArchived = tabParam === "archive";
+    setViewArchiveMode(isArchived);
+    if (isArchived && !isModuleCacheFresh("archived_bookings")) {
+      fetchArchivedBookings(false);
+    }
+  }, [tabParam, fetchArchivedBookings]);
+
+  const getReturnUrl = useCallback(() => {
+    if (typeof window !== "undefined") {
+      const search = new URLSearchParams(window.location.search);
+      if (isCalendarView) {
+        search.set("view", "calendar");
+      } else {
+        search.delete("view");
+      }
+      if (selectedCategory) {
+        search.set("category", selectedCategory);
+      }
+      if (viewArchiveMode) {
+        search.set("tab", "archive");
+      } else {
+        search.delete("tab");
+      }
+      const query = search.toString();
+      return `/bookings${query ? `?${query}` : ""}`;
+    }
+    const params = new URLSearchParams();
+    if (isCalendarView) params.set("view", "calendar");
+    if (selectedCategory) params.set("category", selectedCategory);
+    if (viewArchiveMode) params.set("tab", "archive");
+    const query = params.toString();
+    return `/bookings${query ? `?${query}` : ""}`;
+  }, [isCalendarView, selectedCategory, viewArchiveMode]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      try {
+        sessionStorage.setItem("helpmate_last_admin_path", getReturnUrl());
+      } catch {}
+    }
+  }, [getReturnUrl]);
+
+  const handleToggleViewMode = (calendar: boolean) => {
+    setIsCalendarView(calendar);
+    const params = new URLSearchParams(searchParams?.toString() || "");
+    if (calendar) {
+      params.set("view", "calendar");
+    } else {
+      params.delete("view");
+    }
+    const query = params.toString() ? `?${params.toString()}` : "";
+    router.replace(`/bookings${query}`, { scroll: false });
+  };
+
+  const handleToggleArchiveMode = () => {
+    const nextMode = !viewArchiveMode;
+    setViewArchiveMode(nextMode);
+    if (nextMode && !isModuleCacheFresh("archived_bookings")) {
+      fetchArchivedBookings(false);
+    }
+    const params = new URLSearchParams(searchParams?.toString() || "");
+    if (nextMode) {
+      params.set("tab", "archive");
+    } else {
+      params.delete("tab");
+    }
+    const query = params.toString() ? `?${params.toString()}` : "";
+    router.replace(`/bookings${query}`, { scroll: false });
+  };
+
+  const isSyncingRef = useRef(false);
 
   const checkAndSyncBookings = useCallback(
-    async (isSilent: boolean = true) => {
+    async (isSilent: boolean = true, force: boolean = false) => {
+      if (isSyncingRef.current) return;
+      isSyncingRef.current = true;
+
       try {
+        if (!isSilent && bookingsRef.current.length === 0) {
+          setIsLoadingData(true);
+        }
         const bookingsRes = await getBookingsApi({
           status: statusParam || undefined,
-          forceRefresh: true,
+          forceRefresh: force,
         });
         if (bookingsRes && bookingsRes.success && Array.isArray(bookingsRes.data)) {
           const mappedList: Booking[] = bookingsRes.data.map(mapApiBooking);
-          setCachedModuleData(cacheKey, mappedList);
-          setCachedModuleData("bookings", mappedList);
-          setBookings(mappedList);
-
           const prev = bookingsRef.current;
-          const prevIds = new Set(prev.map((b) => b.id));
-          const newBookings = mappedList.filter((b) => !prevIds.has(b.id));
 
-          if (newBookings.length > 0 && prev.length > 0) {
-            toast.dismissAll();
-            toast.success(
-              "New Booking Received",
-              `${newBookings.length} new booking${newBookings.length > 1 ? "s" : ""} added to list.`
-            );
+          // "when change in data then change"
+          if (!areBookingsEqual(prev, mappedList)) {
+            setCachedModuleData(cacheKey, mappedList);
+            setCachedModuleData("bookings", mappedList);
+            setBookings(mappedList);
+
+            const prevIds = new Set(prev.map((b) => b.id));
+            const newBookings = mappedList.filter((b) => !prevIds.has(b.id));
+
+            if (newBookings.length > 0 && prev.length > 0) {
+              toast.dismissAll();
+              toast.success(
+                "New Booking Received",
+                `${newBookings.length} new booking${newBookings.length > 1 ? "s" : ""} added to list.`
+              );
+            }
           }
 
-          // Refresh dashboard stats quietly
-          getBookingDashboardStatsApi({ bookingType: bookingTypeParam || undefined })
-            .then((statsRes) => {
-              if (statsRes && (statsRes.data || statsRes.success || statsRes.totalBookings || statsRes.total)) {
-                const statsObj = statsRes.data || statsRes;
-                setDashboardStats(statsObj);
-                setCachedModuleData("booking_dashboard_stats", statsObj);
-              }
-            })
-            .catch(() => {});
-
-          // Refresh category stats quietly
-          getBookingCategoriesApi(true)
-            .then((catRes) => {
-              const rawCatList = Array.isArray(catRes?.data?.categories)
-                ? catRes.data.categories
-                : Array.isArray(catRes?.categories)
-                ? catRes.categories
-                : Array.isArray(catRes?.data)
-                ? catRes.data
-                : [];
-              if (rawCatList.length > 0) {
-                setApiCategories(rawCatList);
-                setCachedModuleData("booking_categories", rawCatList);
-              }
-              const allStatsObj = catRes?.data?.all || catRes?.data?.allServices || null;
-              if (allStatsObj) {
-                setAllCategoryStats(allStatsObj);
-                setCachedModuleData("booking_categories_all", allStatsObj);
-              }
-            })
-            .catch(() => {});
-
-          // Refresh archived bookings count quietly
-          fetchArchivedBookings();
+          // Quiet background sync of categories ONLY if forced or missing
+          if (force || !isModuleCacheFresh("booking_categories")) {
+            getBookingCategoriesApi(force)
+              .then((catRes) => {
+                const rawCatList = Array.isArray(catRes?.data?.categories)
+                  ? catRes.data.categories
+                  : Array.isArray(catRes?.categories)
+                  ? catRes.categories
+                  : Array.isArray(catRes?.data)
+                  ? catRes.data
+                  : [];
+                if (rawCatList.length > 0) {
+                  setApiCategories((prevCats) => {
+                    if (areCategoryStatsEqual(prevCats, rawCatList)) {
+                      return prevCats;
+                    }
+                    setCachedModuleData("booking_categories", rawCatList);
+                    return rawCatList;
+                  });
+                }
+                const allStatsObj = catRes?.data?.all || catRes?.data?.allServices || null;
+                if (allStatsObj) {
+                  setAllCategoryStats((prevAll: any) => {
+                    if (areAllStatsEqual(prevAll, allStatsObj)) {
+                      return prevAll;
+                    }
+                    setCachedModuleData("booking_categories_all", allStatsObj);
+                    return allStatsObj;
+                  });
+                }
+              })
+              .catch(() => {});
+          }
         }
       } catch (err) {
         console.error("Error checking for new bookings:", err);
       } finally {
+        isSyncingRef.current = false;
         setIsLoadingData(false);
       }
     },
-    [cacheKey, statusParam, bookingTypeParam, fetchArchivedBookings]
+    [cacheKey, statusParam]
   );
 
   const refreshBookingsFromBackend = async () => {
     setIsLoadingData(true);
     await Promise.all([
-      checkAndSyncBookings(false),
-      fetchArchivedBookings(),
+      checkAndSyncBookings(false, true),
+      fetchArchivedBookings(true),
     ]);
   };
 
   useEffect(() => {
     let isMounted = true;
     const loadData = async () => {
-      fetchArchivedBookings();
       const hasStoredCats = isModuleCacheFresh("booking_categories") && initialCachedCats && initialCachedCats.length > 0;
-      const hasStoredBookings = (isModuleCacheFresh(cacheKey) || isModuleCacheFresh("bookings")) && initialCachedBookings && initialCachedBookings.length > 0;
+      const hasStoredBookings = bookingsRef.current.length > 0 || ((isModuleCacheFresh(cacheKey) || isModuleCacheFresh("bookings")) && initialCachedBookings && initialCachedBookings.length > 0);
 
+      // ON "BACK" OR REVISITING: IF ALREADY CACHED IN MEMORY, DO NOT CALL API AT ALL!
+      if (hasStoredBookings && hasStoredCats) {
+        setIsLoadingData(false);
+        return;
+      }
+
+      // If categories missing from cache, fetch once
       if (!hasStoredCats) {
         try {
           const catRes = await getBookingCategoriesApi();
@@ -579,62 +760,30 @@ function BookingsPageContent() {
             setAllCategoryStats(allStatsObj);
             setCachedModuleData("booking_categories_all", allStatsObj);
           }
-
-          const statsRes = await getBookingDashboardStatsApi({ bookingType: bookingTypeParam || undefined });
-          if (isMounted && statsRes && (statsRes.data || statsRes.success || statsRes.totalBookings || statsRes.total)) {
-            const statsObj = statsRes.data || statsRes;
-            setDashboardStats(statsObj);
-            setCachedModuleData("booking_dashboard_stats", statsObj);
-          }
         } catch (err) {
           console.error("Error loading categories:", err);
         }
       }
 
-      if (hasStoredBookings) {
+      // If bookings missing from cache, fetch once
+      if (!hasStoredBookings) {
+        setIsLoadingData(true);
+        await checkAndSyncBookings(false, false);
+      } else {
         setIsLoadingData(false);
-        // Silently sync in background without showing loader or shimmer
-        checkAndSyncBookings(true);
-        return;
       }
 
-      if (bookings.length === 0 && (!initialCachedBookings || initialCachedBookings.length === 0)) {
-        setIsLoadingData(true);
+      // If archived bookings missing from cache, fetch once silently
+      if (!isModuleCacheFresh("archived_bookings")) {
+        fetchArchivedBookings(false);
       }
-      await checkAndSyncBookings(false);
     };
 
     loadData();
     return () => {
       isMounted = false;
     };
-  }, [bookingTypeParam, statusParam, categoryParam, checkAndSyncBookings]);
-
-  // Automated background sync on tab/window focus (Event-driven, NO 15-second polling interval)
-  useEffect(() => {
-    let lastSyncTime = Date.now();
-
-    const handleFocusSync = () => {
-      const now = Date.now();
-      // Cooldown: only trigger if tab is visible and at least 30 seconds have passed since last sync
-      if (now - lastSyncTime > 30000 && typeof document !== "undefined" && document.visibilityState === "visible") {
-        lastSyncTime = now;
-        checkAndSyncBookings(true);
-      }
-    };
-
-    if (typeof window !== "undefined") {
-      window.addEventListener("focus", handleFocusSync);
-      document.addEventListener("visibilitychange", handleFocusSync);
-    }
-
-    return () => {
-      if (typeof window !== "undefined") {
-        window.removeEventListener("focus", handleFocusSync);
-        document.removeEventListener("visibilitychange", handleFocusSync);
-      }
-    };
-  }, [checkAndSyncBookings]);
+  }, [bookingTypeParam, statusParam, checkAndSyncBookings, fetchArchivedBookings, cacheKey]);
 
   const [activeStatusFilter, setActiveStatusFilter] = useState<string>("All");
   const [cardFilter, setCardFilter] = useState<"ALL" | "UNASSIGNED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED">("ALL");
@@ -690,11 +839,26 @@ function BookingsPageContent() {
     setCardFilter("ALL");
     setChannelFilter("ALL");
     setActiveStatusFilter("All");
+    setSelectedCategory(catName);
+
+    const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
     if (catName) {
-      router.push(`/bookings?category=${encodeURIComponent(catName)}`);
+      params.set("category", catName);
     } else {
-      router.push("/bookings");
+      params.delete("category");
     }
+    if (isCalendarView) {
+      params.set("view", "calendar");
+    } else {
+      params.delete("view");
+    }
+    if (viewArchiveMode) {
+      params.set("tab", "archive");
+    } else {
+      params.delete("tab");
+    }
+    const query = params.toString() ? `?${params.toString()}` : "";
+    router.push(`/bookings${query}`, { scroll: false });
   };
 
   // Modals & Toasts
@@ -878,7 +1042,7 @@ function BookingsPageContent() {
       { id?: string; name: string; iconUrl?: string; count: number; unassigned: number; inProgress: number; completed: number; cancelled: number; isPinned?: boolean }
     > = {};
 
-    // 1. Initialize from API Categories if available
+    // 1. Initialize strictly from API Categories using the counts provided by categories API
     if (apiCategories.length > 0) {
       apiCategories.forEach((apiCat: any) => {
         const name = (apiCat.categoryName || apiCat.name || "Category").trim();
@@ -887,84 +1051,36 @@ function BookingsPageContent() {
             id: apiCat._id,
             name,
             iconUrl: apiCat.iconUrl !== undefined && apiCat.iconUrl !== null ? apiCat.iconUrl : (apiCat.icon || (apiCat._id ? `/api/media/category/${apiCat._id}/icon` : "")),
-            count: 0,
-            unassigned: 0,
-            inProgress: 0,
-            completed: 0,
-            cancelled: 0,
+            count: Number(apiCat.totalBookings ?? apiCat.count ?? 0),
+            unassigned: Number(apiCat.openBookings ?? apiCat.unassigned ?? 0),
+            inProgress: Number(apiCat.activeBookings ?? apiCat.inProgress ?? 0),
+            completed: Number(apiCat.completedBookings ?? apiCat.completed ?? 0),
+            cancelled: Number(apiCat.cancelledBookings ?? apiCat.cancelled ?? 0),
             isPinned: Boolean(apiCat.isPinned),
           };
         }
       });
     }
 
-    // 2. Count actual bookings from roleFilteredBookings
+    // 2. Include any custom category from bookings that isn't already in apiCategories
     if (roleFilteredBookings.length > 0) {
       roleFilteredBookings.forEach((b) => {
         const rawCat = (b.category || "General").trim();
         if (!rawCat) return;
 
-        // Try exact match first
-        let matchedKey = Object.keys(catMap).find(
-          (k) => k.toLowerCase() === rawCat.toLowerCase()
-        );
-
-        // Try partial match if not exact
-        if (!matchedKey) {
-          matchedKey = Object.keys(catMap).find(
-            (k) =>
-              k.toLowerCase().includes(rawCat.toLowerCase()) ||
-              rawCat.toLowerCase().includes(k.toLowerCase())
-          );
-        }
-
-        // If not found in catMap, add new category dynamically
-        if (!matchedKey) {
-          matchedKey = rawCat;
-          const matchedApiCat = apiCategories.find(
-            (c: any) => (c.categoryName || c.name || "").toLowerCase().trim() === rawCat.toLowerCase().trim()
-          );
-          catMap[matchedKey] = {
-            id: matchedApiCat?._id,
+        const exists = Object.keys(catMap).some((k) => k.toLowerCase() === rawCat.toLowerCase());
+        if (!exists) {
+          catMap[rawCat] = {
+            id: undefined,
             name: rawCat,
-            iconUrl: matchedApiCat?.iconUrl !== undefined && matchedApiCat?.iconUrl !== null ? matchedApiCat.iconUrl : ((matchedApiCat as any)?.icon || ""),
+            iconUrl: "",
             count: 0,
             unassigned: 0,
             inProgress: 0,
             completed: 0,
             cancelled: 0,
+            isPinned: false,
           };
-        }
-
-        const item = catMap[matchedKey];
-        item.count++;
-
-        const st = (b.status || "").toLowerCase().trim();
-        const hasTech = Boolean(b.technicianName && b.technicianName.trim());
-
-        if (!hasTech && st !== "completed" && st !== "cancelled") {
-          item.unassigned++;
-        }
-        if (st.includes("progress") || st.includes("assigned") || st === "in_progress") {
-          item.inProgress++;
-        }
-        if (st === "completed") {
-          item.completed++;
-        }
-        if (st === "cancelled" || st === "rejected") {
-          item.cancelled++;
-        }
-      });
-    } else if (apiCategories.length > 0) {
-      // Fallback only if no bookings are loaded yet
-      apiCategories.forEach((apiCat: any) => {
-        const name = (apiCat.categoryName || apiCat.name || "Category").trim();
-        if (catMap[name]) {
-          catMap[name].count = Number(apiCat.totalBookings || apiCat.count) || 0;
-          catMap[name].unassigned = Number(apiCat.openBookings || apiCat.unassigned) || 0;
-          catMap[name].inProgress = Number(apiCat.activeBookings || apiCat.inProgress) || 0;
-          catMap[name].completed = Number(apiCat.completedBookings || apiCat.completed) || 0;
-          catMap[name].cancelled = Number(apiCat.cancelledBookings || apiCat.cancelled) || 0;
         }
       });
     }
@@ -1144,12 +1260,14 @@ function BookingsPageContent() {
         stickyLeftOffset: 44,
         className: "w-[140px] min-w-[140px] max-w-[140px]",
         accessor: (row) => {
-          const catQuery = selectedCategory ? `?category=${encodeURIComponent(selectedCategory)}` : "";
           const displayId = row.bookingNumber || row.jobId || row.id;
           return (
             <button
               type="button"
-              onClick={() => router.push(`/bookings/${row.id}${catQuery}`)}
+              onClick={() => {
+                preStoreBookingDetail(row);
+                router.push(`/bookings/${row.id}?from=${encodeURIComponent(getReturnUrl())}`);
+              }}
               className="font-mono font-semibold text-brand-600 dark:text-brand-400 hover:underline cursor-pointer text-xs"
             >
               {displayId}
@@ -1422,7 +1540,10 @@ function BookingsPageContent() {
                   {
                     label: "View Details",
                     icon: Eye,
-                    href: `/bookings/${row.id}${selectedCategory ? `?category=${encodeURIComponent(selectedCategory)}` : ""}`,
+                    onClick: () => {
+                      preStoreBookingDetail(row);
+                      router.push(`/bookings/${row.id}?from=${encodeURIComponent(getReturnUrl())}`);
+                    },
                   },
                   ...(row.isArchived
                     ? [
@@ -1465,7 +1586,10 @@ function BookingsPageContent() {
                         {
                           label: "View",
                           icon: Eye,
-                          href: `/bookings/${row.id}${selectedCategory ? `?category=${encodeURIComponent(selectedCategory)}` : ""}`,
+                          onClick: () => {
+                            preStoreBookingDetail(row);
+                            router.push(`/bookings/${row.id}?from=${encodeURIComponent(getReturnUrl())}`);
+                          },
                         },
                       ]
                     : []),
@@ -1509,7 +1633,7 @@ function BookingsPageContent() {
       },
     ];
     return baseCols;
-  }, [isOfficeAdmin, selectedCategory, router]);
+  }, [isOfficeAdmin, selectedCategory, router, getReturnUrl]);
 
   const showTableView = Boolean(selectedCategory || bookingTypeParam || statusParam);
 
@@ -1522,6 +1646,25 @@ function BookingsPageContent() {
 
   const isChannelFiltered = channelFilter !== "ALL";
 
+  const allCategoryStatsFallback = useMemo(() => {
+    if (allCategoryStats) return allCategoryStats;
+    const totals = {
+      totalBookings: 0,
+      openBookings: 0,
+      activeBookings: 0,
+      completedBookings: 0,
+      cancelledBookings: 0,
+    };
+    apiCategories.forEach((c: any) => {
+      totals.totalBookings += Number(c.totalBookings ?? 0);
+      totals.openBookings += Number(c.openBookings ?? 0);
+      totals.activeBookings += Number(c.activeBookings ?? 0);
+      totals.completedBookings += Number(c.completedBookings ?? 0);
+      totals.cancelledBookings += Number(c.cancelledBookings ?? 0);
+    });
+    return totals;
+  }, [allCategoryStats, apiCategories]);
+
   const totalCardCount = useMemo(() => {
     if (isChannelFiltered) {
       return filteredBookings.length;
@@ -1529,10 +1672,8 @@ function BookingsPageContent() {
     if (selectedCatStat) {
       return selectedCatStat.count;
     }
-    return roleFilteredBookings.length > 0
-      ? roleFilteredBookings.length
-      : (allCategoryStats?.totalBookings ?? dashboardStats?.totalBookings ?? dashboardStats?.total ?? categoryBookings.length);
-  }, [isChannelFiltered, filteredBookings.length, selectedCatStat, roleFilteredBookings.length, allCategoryStats, dashboardStats, categoryBookings.length]);
+    return Number(allCategoryStats?.totalBookings ?? allCategoryStatsFallback.totalBookings ?? 0);
+  }, [isChannelFiltered, filteredBookings.length, selectedCatStat, allCategoryStats, allCategoryStatsFallback]);
 
   const unassignedCardCount = useMemo(() => {
     if (isChannelFiltered) {
@@ -1541,16 +1682,8 @@ function BookingsPageContent() {
     if (selectedCatStat) {
       return selectedCatStat.unassigned;
     }
-    return (
-      allCategoryStats?.openBookings ??
-      dashboardStats?.pendingBookings ??
-      dashboardStats?.openBookings ??
-      dashboardStats?.unassigned ??
-      dashboardStats?.waitingPartner ??
-      dashboardStats?.pending ??
-      categoryBookings.filter((b) => !b.technicianName).length
-    );
-  }, [isChannelFiltered, filteredBookings, selectedCatStat, allCategoryStats, dashboardStats, categoryBookings]);
+    return Number(allCategoryStats?.openBookings ?? allCategoryStatsFallback.openBookings ?? 0);
+  }, [isChannelFiltered, filteredBookings, selectedCatStat, allCategoryStats, allCategoryStatsFallback]);
 
   const inProgressCardCount = useMemo(() => {
     if (isChannelFiltered) {
@@ -1559,15 +1692,8 @@ function BookingsPageContent() {
     if (selectedCatStat) {
       return selectedCatStat.inProgress;
     }
-    return (
-      allCategoryStats?.activeBookings ??
-      dashboardStats?.partnerAssignedBookings ??
-      dashboardStats?.activeBookings ??
-      dashboardStats?.inProgress ??
-      dashboardStats?.active ??
-      categoryBookings.filter((b) => b.status === "In Progress" || b.status === "Assigned" || b.status === "Partner Accepted").length
-    );
-  }, [isChannelFiltered, filteredBookings, selectedCatStat, allCategoryStats, dashboardStats, categoryBookings]);
+    return Number(allCategoryStats?.activeBookings ?? allCategoryStatsFallback.activeBookings ?? 0);
+  }, [isChannelFiltered, filteredBookings, selectedCatStat, allCategoryStats, allCategoryStatsFallback]);
 
   const completedCardCount = useMemo(() => {
     if (isChannelFiltered) {
@@ -1576,14 +1702,8 @@ function BookingsPageContent() {
     if (selectedCatStat) {
       return selectedCatStat.completed;
     }
-    return (
-      allCategoryStats?.completedBookings ??
-      dashboardStats?.completedBookings ??
-      dashboardStats?.completed ??
-      dashboardStats?.closed ??
-      categoryBookings.filter((b) => b.status === "Completed").length
-    );
-  }, [isChannelFiltered, filteredBookings, selectedCatStat, allCategoryStats, dashboardStats, categoryBookings]);
+    return Number(allCategoryStats?.completedBookings ?? allCategoryStatsFallback.completedBookings ?? 0);
+  }, [isChannelFiltered, filteredBookings, selectedCatStat, allCategoryStats, allCategoryStatsFallback]);
 
   const cancelledCardCount = useMemo(() => {
     if (isChannelFiltered) {
@@ -1592,14 +1712,8 @@ function BookingsPageContent() {
     if (selectedCatStat) {
       return selectedCatStat.cancelled;
     }
-    return (
-      allCategoryStats?.cancelledBookings ??
-      dashboardStats?.cancelledBookings ??
-      dashboardStats?.cancelled ??
-      dashboardStats?.rejected ??
-      categoryBookings.filter((b) => b.status === "Cancelled" || b.status === "Rejected").length
-    );
-  }, [isChannelFiltered, filteredBookings, selectedCatStat, allCategoryStats, dashboardStats, categoryBookings]);
+    return Number(allCategoryStats?.cancelledBookings ?? allCategoryStatsFallback.cancelledBookings ?? 0);
+  }, [isChannelFiltered, filteredBookings, selectedCatStat, allCategoryStats, allCategoryStatsFallback]);
 
   const filteredDropdownCategories = useMemo(() => {
     const q = dropdownSearch.toLowerCase().trim();
@@ -1971,7 +2085,7 @@ function BookingsPageContent() {
                               <div className="min-w-0 truncate">
                                 <span className="block truncate font-extrabold">All Service Categories</span>
                                 <span className="text-[10px] text-slate-400 font-medium">
-                                  {totalCardCount} Total Orders
+                                  {allCategoryStats?.totalBookings ?? allCategoryStatsFallback.totalBookings} Total Orders
                                 </span>
                               </div>
                             </div>
@@ -2063,7 +2177,7 @@ function BookingsPageContent() {
               <div className="flex items-center p-1 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
                 <button
                   type="button"
-                  onClick={() => setIsCalendarView(false)}
+                  onClick={() => handleToggleViewMode(false)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-all cursor-pointer ${
                     !isCalendarView
                       ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs font-bold"
@@ -2075,7 +2189,7 @@ function BookingsPageContent() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setIsCalendarView(true)}
+                  onClick={() => handleToggleViewMode(true)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-all cursor-pointer ${
                     isCalendarView
                       ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs font-bold"
@@ -2089,11 +2203,7 @@ function BookingsPageContent() {
 
               <button
                 type="button"
-                onClick={() => {
-                  const nextMode = !viewArchiveMode;
-                  setViewArchiveMode(nextMode);
-                  if (nextMode) fetchArchivedBookings();
-                }}
+                onClick={handleToggleArchiveMode}
                 className={`px-3.5 py-2.5 rounded-xl font-semibold text-xs border transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 w-full sm:w-auto ${
                   viewArchiveMode
                     ? "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800 hover:bg-emerald-100"
@@ -2137,7 +2247,13 @@ function BookingsPageContent() {
               </div>
               <button
                 type="button"
-                onClick={() => setViewArchiveMode(false)}
+                onClick={() => {
+                  setViewArchiveMode(false);
+                  const params = new URLSearchParams(searchParams?.toString() || "");
+                  params.delete("tab");
+                  const query = params.toString() ? `?${params.toString()}` : "";
+                  router.replace(`/bookings${query}`, { scroll: false });
+                }}
                 className="px-3 py-1.5 rounded-xl bg-amber-200/80 hover:bg-amber-300 dark:bg-amber-900/60 dark:hover:bg-amber-800 text-amber-950 dark:text-amber-100 font-extrabold cursor-pointer transition-colors shrink-0"
               >
                 Return to Active Bookings
@@ -2151,7 +2267,11 @@ function BookingsPageContent() {
               categories={categoryStatsList}
               selectedCategory={selectedCategory}
               onSelectCategory={handleSelectCategory}
-              onSelectBooking={(b) => setDrawerBooking(b)}
+              onSelectBooking={(b) => {
+                const targetId = b.id || (b as any)._id;
+                preStoreBookingDetail(b);
+                router.push(`/bookings/${targetId}?from=${encodeURIComponent(getReturnUrl())}`);
+              }}
               onAssignPartner={(b) => setAssignBooking(b)}
               onCreateBooking={() => setIsWizardOpen(true)}
             />

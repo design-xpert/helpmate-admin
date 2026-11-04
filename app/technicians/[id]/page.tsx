@@ -612,7 +612,7 @@ export default function TechnicianDetailPage() {
       header: "Booking ID",
       accessor: (row) => (
         <Link
-          href={`/bookings/${row.id}`}
+          href={`/bookings/${row.id}?from=${encodeURIComponent(`/technicians/${techId}`)}`}
           className="font-mono text-xs font-black text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-950 px-2.5 py-1 rounded-lg border border-brand-200 dark:border-brand-800 hover:underline inline-flex items-center gap-1"
         >
           <span>#{row.id}</span>
@@ -709,7 +709,7 @@ export default function TechnicianDetailPage() {
             {
               label: "View Job Details",
               icon: Eye,
-              href: `/bookings/${row.id}`,
+              href: `/bookings/${row.id}?from=${encodeURIComponent(`/technicians/${techId}`)}`,
             },
           ]}
         />
@@ -1509,7 +1509,7 @@ export default function TechnicianDetailPage() {
 
                 <div className="flex items-center gap-2.5">
                   <Link
-                    href={`/bookings/${activeJob.id}`}
+                    href={`/bookings/${activeJob.id}?from=${encodeURIComponent(`/technicians/${techId}`)}`}
                     className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-white/10 dark:hover:bg-white/20 text-slate-700 dark:text-white font-extrabold text-xs transition-all border border-slate-200 dark:border-white/15 flex items-center gap-1.5 cursor-pointer shadow-xs"
                   >
                     <Eye className="w-3.5 h-3.5 text-brand-600 dark:text-brand-300" />

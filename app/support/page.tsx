@@ -171,7 +171,7 @@ export default function SupportPage() {
         accessor: (row) =>
           row.bookingId ? (
             <Link
-              href={`/bookings/${row.bookingId}`}
+              href={`/bookings/${row.bookingId}?from=${encodeURIComponent("/support")}`}
               className="font-mono text-xs font-extrabold text-purple-700 dark:text-purple-300 hover:underline"
             >
               {row.bookingId}

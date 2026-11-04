@@ -2261,6 +2261,125 @@ export async function getBookingDashboardStatsApi(params?: { categoryId?: string
   }
 }
 
+// ─── DASHBOARD OPERATIONS APIS ───
+
+export interface ApiDashboardBookingStatsParams {
+  status?: string;
+  bookingType?: "manual" | "online" | string;
+  categoryId?: string;
+  fromDate?: string;
+  toDate?: string;
+  forceRefresh?: boolean;
+}
+
+export interface ApiDashboardBookingStatsData {
+  totalBookings: number;
+  pendingBookings: number;
+  partnerAssignedBookings: number;
+  completedBookings: number;
+  cancelledBookings: number;
+}
+
+export interface ApiDashboardCategoryStatItem {
+  categoryId: string;
+  categoryName: string;
+  bookingCount: number;
+}
+
+export interface ApiDashboardCategoryStatsData {
+  totalBookings: number;
+  categoryCount: number;
+  categories: ApiDashboardCategoryStatItem[];
+}
+
+export interface ApiDashboardCategoryBookingsParams {
+  categoryId?: string;
+  status?: string;
+  bookingType?: "manual" | "online" | string;
+  fromDate?: string;
+  toDate?: string;
+  page?: number;
+  limit?: number;
+  forceRefresh?: boolean;
+}
+
+export async function getDashboardBookingStatsApi(params?: ApiDashboardBookingStatsParams) {
+  const query = new URLSearchParams();
+  if (params?.status && params.status !== "All") query.append("status", params.status);
+  if (params?.bookingType && params.bookingType !== "All") query.append("bookingType", params.bookingType);
+  if (params?.categoryId && params.categoryId !== "All") query.append("categoryId", params.categoryId);
+  if (params?.fromDate) query.append("fromDate", params.fromDate);
+  if (params?.toDate) query.append("toDate", params.toDate);
+  const qs = query.toString();
+  const cacheKey = `getDashboardBookingStatsApi:${qs}`;
+  const cached = getFromCache(cacheKey, params?.forceRefresh);
+  if (cached) return cached;
+
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/dashboard/booking-stats${qs ? `?${qs}` : ""}`);
+    const data = await safeJsonResponse(res);
+    if (data && data.success !== false) {
+      apiCache.set(cacheKey, data);
+    }
+    return data;
+  } catch (error) {
+    console.error("getDashboardBookingStatsApi error:", error);
+    return { success: false, message: "Failed to fetch dashboard booking stats." };
+  }
+}
+
+export async function getDashboardCategoryWiseStatsApi(params?: ApiDashboardBookingStatsParams) {
+  const query = new URLSearchParams();
+  if (params?.status && params.status !== "All") query.append("status", params.status);
+  if (params?.bookingType && params.bookingType !== "All") query.append("bookingType", params.bookingType);
+  if (params?.categoryId && params.categoryId !== "All") query.append("categoryId", params.categoryId);
+  if (params?.fromDate) query.append("fromDate", params.fromDate);
+  if (params?.toDate) query.append("toDate", params.toDate);
+  const qs = query.toString();
+  const cacheKey = `getDashboardCategoryWiseStatsApi:${qs}`;
+  const cached = getFromCache(cacheKey, params?.forceRefresh);
+  if (cached) return cached;
+
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/dashboard/bookings/category-wise-stats${qs ? `?${qs}` : ""}`);
+    const data = await safeJsonResponse(res);
+    if (data && data.success !== false) {
+      apiCache.set(cacheKey, data);
+    }
+    return data;
+  } catch (error) {
+    console.error("getDashboardCategoryWiseStatsApi error:", error);
+    return { success: false, message: "Failed to fetch category-wise booking stats." };
+  }
+}
+
+export async function getDashboardCategoryWiseBookingsApi(params?: ApiDashboardCategoryBookingsParams) {
+  const query = new URLSearchParams();
+  if (params?.categoryId && params.categoryId !== "All") query.append("categoryId", params.categoryId);
+  if (params?.status && params.status !== "All") query.append("status", params.status);
+  if (params?.bookingType && params.bookingType !== "All") query.append("bookingType", params.bookingType);
+  if (params?.fromDate) query.append("fromDate", params.fromDate);
+  if (params?.toDate) query.append("toDate", params.toDate);
+  if (params?.page) query.append("page", String(params.page));
+  if (params?.limit) query.append("limit", String(params.limit));
+  const qs = query.toString();
+  const cacheKey = `getDashboardCategoryWiseBookingsApi:${qs}`;
+  const cached = getFromCache(cacheKey, params?.forceRefresh);
+  if (cached) return cached;
+
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/dashboard/bookings/category-wise${qs ? `?${qs}` : ""}`);
+    const data = await safeJsonResponse(res);
+    if (data && data.success !== false) {
+      apiCache.set(cacheKey, data);
+    }
+    return data;
+  } catch (error) {
+    console.error("getDashboardCategoryWiseBookingsApi error:", error);
+    return { success: false, message: "Failed to fetch category-wise bookings." };
+  }
+}
+
 export async function getBookingDetailsApi(id: string) {
   try {
     let res = await authFetch(`${API_BASE_URL}/api/booking/${id}/details`);
@@ -2773,6 +2892,7 @@ export async function updateCustomerStatusApi(
 }
 
 export async function deleteCustomerApi(id: string, token?: string) {
+  clearApiCache("getCustomersApi");
   try {
     const reqHeaders: Record<string, string> = {};
     if (token) {
@@ -2784,13 +2904,42 @@ export async function deleteCustomerApi(id: string, token?: string) {
       headers: reqHeaders,
     });
     const data = await safeJsonResponse(res);
+    if (!data || data.success === false) {
+      return await bulkDeleteCustomersApi([id], token);
+    }
     if (data && data.success !== false) {
       apiCache.clear();
     }
     return data;
   } catch (error) {
-    console.error("deleteCustomerApi error:", error);
-    return { success: false, message: "Failed to delete customer." };
+    console.error("deleteCustomerApi error, trying bulk fallback:", error);
+    return await bulkDeleteCustomersApi([id], token);
+  }
+}
+
+export async function bulkDeleteCustomersApi(ids: string[], token?: string) {
+  clearApiCache("getCustomersApi");
+  try {
+    const reqHeaders: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (token) {
+      reqHeaders["Authorization"] = token.startsWith("Bearer ") ? token : `Bearer ${token}`;
+    }
+
+    const res = await authFetch(`${API_BASE_URL}/api/admin/customer/bulk`, {
+      method: "DELETE",
+      headers: reqHeaders,
+      body: JSON.stringify({ ids }),
+    });
+    const data = await safeJsonResponse(res);
+    if (data && data.success !== false) {
+      apiCache.clear();
+    }
+    return data;
+  } catch (error) {
+    console.error("bulkDeleteCustomersApi error:", error);
+    return { success: false, message: "Failed to bulk delete customers." };
   }
 }
 

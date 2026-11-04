@@ -352,7 +352,7 @@ export default function ReviewsPage() {
         return (
           <div className="space-y-0.5">
             <Link
-              href={`/bookings/${bId}`}
+              href={`/bookings/${bId}?from=${encodeURIComponent("/reviews")}`}
               className="font-mono font-black text-brand-600 dark:text-brand-400 hover:underline text-xs"
             >
               {bNum}

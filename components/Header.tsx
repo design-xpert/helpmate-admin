@@ -740,13 +740,21 @@ export function Header({ onOpenMobileSidebar }: HeaderProps) {
                           <div className="px-2 text-[10px] font-black text-brand-600 dark:text-brand-400 uppercase tracking-wider flex items-center gap-1.5">
                             <Calendar className="w-3.5 h-3.5" /> Bookings & Jobs ({searchResults.bookings.length})
                           </div>
-                          {searchResults.bookings.map((b) => (
-                            <Link
-                              key={b.id}
-                              href={`/bookings/${b.id}`}
-                              onClick={() => handleLinkClick(`/bookings/${b.id}`)}
-                              className="p-3 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors flex items-center justify-between gap-3 border border-slate-100 dark:border-slate-800"
-                            >
+                          {searchResults.bookings.map((b) => {
+                            const currentSearchFrom = typeof window !== "undefined"
+                              ? window.location.pathname + window.location.search
+                              : "/bookings";
+                            const bookingHref = `/bookings/${b.id}?from=${encodeURIComponent(currentSearchFrom)}`;
+                            return (
+                              <Link
+                                key={b.id}
+                                href={bookingHref}
+                                onClick={() => {
+                                  setIsSearchOpen(false);
+                                  setSearchQuery("");
+                                }}
+                                className="p-3 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors flex items-center justify-between gap-3 border border-slate-100 dark:border-slate-800"
+                              >
                               <div className="space-y-0.5 min-w-0">
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <span className="font-mono text-[11px] font-extrabold text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-950 px-2 py-0.5 rounded-lg border border-brand-200 dark:border-brand-800">
@@ -771,7 +779,8 @@ export function Header({ onOpenMobileSidebar }: HeaderProps) {
                                 )}
                               </div>
                             </Link>
-                          ))}
+                          );
+                        })}
                         </div>
                       )}
 

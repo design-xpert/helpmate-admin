@@ -208,7 +208,7 @@ function SettlementDetailContent() {
       header: "Booking ID",
       accessor: (row) => (
         <Link
-          href={`/bookings/${row.id}`}
+          href={`/bookings/${row.id}?from=${encodeURIComponent(`/settlements/${rawId}`)}`}
           className="font-mono text-xs font-black text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-950 px-2.5 py-1 rounded-lg border border-brand-200 dark:border-brand-800 hover:underline inline-flex items-center gap-1"
         >
           <span>#{row.id}</span>

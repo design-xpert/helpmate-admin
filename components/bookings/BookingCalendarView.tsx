@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { Booking, BookingStatus } from "@/lib/mockData";
 import {
   Calendar as CalendarIcon,
@@ -148,10 +148,37 @@ export function BookingCalendarView({
   onSelectCategory,
 }: BookingCalendarViewProps) {
   // Calendar Navigation State
-  const [currentDate, setCurrentDate] = useState<Date>(() => new Date());
-  const [viewMode, setViewMode] = useState<CalendarViewMode>("month");
+  const [currentDate, setCurrentDate] = useState<Date>(() => {
+    if (typeof window !== "undefined") {
+      const saved = sessionStorage.getItem("booking_calendar_date");
+      if (saved) {
+        const parsed = new Date(saved);
+        if (!isNaN(parsed.getTime())) return parsed;
+      }
+    }
+    return new Date();
+  });
+  const [viewMode, setViewMode] = useState<CalendarViewMode>(() => {
+    if (typeof window !== "undefined") {
+      const saved = sessionStorage.getItem("booking_calendar_view_mode");
+      if (saved === "month" || saved === "week" || saved === "day") return saved;
+    }
+    return "month";
+  });
   const [statusFilter, setStatusFilter] = useState<string>("All");
   const [searchQuery, setSearchQuery] = useState<string>("");
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem("booking_calendar_view_mode", viewMode);
+    }
+  }, [viewMode]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem("booking_calendar_date", currentDate.toISOString());
+    }
+  }, [currentDate]);
 
   const today = useMemo(() => new Date(), []);
 

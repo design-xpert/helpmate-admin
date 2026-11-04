@@ -36,6 +36,7 @@ import {
   updateCustomerApi,
   updateCustomerStatusApi,
   deleteCustomerApi,
+  bulkDeleteCustomersApi,
   getLocalitiesApi,
   ApiAdminCustomerItem,
   ApiLocality,
@@ -379,16 +380,35 @@ export default function CustomersPage() {
     try {
       const res = await deleteCustomerApi(deleteCustomer.id);
       if (res && res.success !== false) {
+        toast.success("Customer Deleted", res?.message || `Customer ${deleteCustomer.fullName} deleted successfully.`);
         setDeleteCustomer(null);
         await fetchCustomers(true);
       } else {
-        alert(res?.message || "Failed to delete customer.");
+        toast.error("Delete Failed", res?.message || "Failed to delete customer.");
       }
     } catch (err: any) {
       console.error("Delete Customer Error:", err);
-      alert(err?.message || "An error occurred while deleting customer.");
+      toast.error("Delete Error", err?.message || "An error occurred while deleting customer.");
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  // Bulk Delete Customers Handler (DELETE /api/customer/bulk)
+  const handleBulkDeleteCustomers = async (ids: string[]) => {
+    const validIds = ids.filter((id) => id && id.length === 24);
+    if (validIds.length > 0) {
+      try {
+        const res = await bulkDeleteCustomersApi(validIds);
+        if (res && res.success !== false) {
+          toast.success("Customers Deleted", res?.message || `Successfully deleted ${validIds.length} customer(s).`);
+          await fetchCustomers(true);
+        } else {
+          toast.error("Bulk Delete Failed", res?.message || "Failed to bulk delete customers.");
+        }
+      } catch (err: any) {
+        toast.error("Bulk Delete Failed", err?.message || "Failed to bulk delete customers.");
+      }
     }
   };
 
@@ -774,6 +794,8 @@ export default function CustomersPage() {
         columnStorageKey="helpmate_customer_columns_view"
         onRefresh={() => fetchCustomers(true)}
         isRefreshing={loading}
+        disableDelete={!canDelete("customers")}
+        onBulkDelete={handleBulkDeleteCustomers}
         extraFilters={
           <div className="flex flex-wrap items-center gap-2.5">
             <div className="w-44">

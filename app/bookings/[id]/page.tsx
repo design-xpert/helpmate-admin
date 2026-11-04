@@ -3,7 +3,7 @@
 import React, { useState, use, useMemo, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Booking, Technician, SelectedAddOnItem } from "@/lib/mockData";
 import { mapApiBooking } from "@/lib/bookingMapper";
 import { getBookingDetailsApi, getBookingsApi, archiveBookingApi, restoreBookingApi, cancelBookingApi } from "@/lib/api";
@@ -41,6 +41,7 @@ import { ArchiveBookingModal } from "@/components/bookings/ArchiveBookingModal";
 import { CancelBookingModal } from "@/components/bookings/CancelBookingModal";
 import { Portal } from "@/components/Portal";
 import { useRbac } from "@/context/RbacContext";
+import { getStoredModuleData, setCachedModuleData } from "@/lib/moduleCache";
 
 interface StoredBookingDetail {
   raw: any;
@@ -100,6 +101,8 @@ function setStoredBookingDetail(id: string, data: StoredBookingDetail): void {
 export default function BookingDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const fromPath = searchParams?.get("from");
   const bookingId = resolvedParams.id;
   const { role } = useRbac();
   const isOfficeAdmin = role === "Office Admin";
@@ -178,10 +181,67 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
     );
   }, [bookings, bookingId]);
 
+  const resolvedBackHref = useMemo(() => {
+    if (fromPath) return fromPath;
+    if (currentBooking?.category) {
+      return `/bookings?category=${encodeURIComponent(currentBooking.category)}`;
+    }
+    return "/bookings";
+  }, [fromPath, currentBooking?.category]);
+
+  const handleBack = () => {
+    if (fromPath) {
+      router.push(fromPath);
+      return;
+    }
+
+    if (typeof window !== "undefined") {
+      const storedLastPath = sessionStorage.getItem("helpmate_last_admin_path");
+      if (storedLastPath && storedLastPath !== window.location.pathname + window.location.search) {
+        router.push(storedLastPath);
+        return;
+      }
+
+      if (document.referrer && document.referrer.startsWith(window.location.origin)) {
+        try {
+          const refUrl = new URL(document.referrer);
+          if (refUrl.pathname !== window.location.pathname) {
+            router.push(refUrl.pathname + refUrl.search);
+            return;
+          }
+        } catch {}
+      }
+    }
+
+    router.push(resolvedBackHref);
+  };
+
+function syncBookingToModuleCache(updated: Booking) {
+  if (!updated || !updated.id) return;
+  const cachedList = getStoredModuleData<Booking[]>("bookings");
+  if (cachedList && Array.isArray(cachedList)) {
+    const nextList = cachedList.map((b) => (b.id === updated.id || b.bookingNumber === updated.bookingNumber ? updated : b));
+    setCachedModuleData("bookings", nextList);
+  }
+  const cachedArchived = getStoredModuleData<Booking[]>("archived_bookings");
+  if (cachedArchived && Array.isArray(cachedArchived)) {
+    if (updated.isArchived) {
+      if (!cachedArchived.some((b) => b.id === updated.id || b.bookingNumber === updated.bookingNumber)) {
+        setCachedModuleData("archived_bookings", [updated, ...cachedArchived]);
+      } else {
+        setCachedModuleData("archived_bookings", cachedArchived.map((b) => (b.id === updated.id || b.bookingNumber === updated.bookingNumber ? updated : b)));
+      }
+    } else {
+      setCachedModuleData("archived_bookings", cachedArchived.filter((b) => b.id !== updated.id && b.bookingNumber !== updated.bookingNumber));
+    }
+  }
+}
+
   // Synchronize any updates (e.g. partner assigned, rescheduling, quotes) back into the cache store
   useEffect(() => {
     if (currentBooking) {
       setStoredBookingDetail(bookingId, { raw: rawBooking, mapped: currentBooking });
+      syncBookingToModuleCache(currentBooking);
     }
   }, [currentBooking, rawBooking, bookingId]);
 
@@ -506,8 +566,12 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
       <div className="w-full space-y-6 pb-12">
         <div className="flex items-center gap-3 border-b border-slate-200 dark:border-slate-800 pb-4">
           <Link
-            href="/bookings"
-            className="text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-brand-600 transition-colors bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 w-fit"
+            href={resolvedBackHref}
+            onClick={(e) => {
+              e.preventDefault();
+              handleBack();
+            }}
+            className="text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-brand-600 transition-colors bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 w-fit cursor-pointer"
           >
             <ArrowLeft className="w-4 h-4 text-brand-600" />
             <span>Back</span>
@@ -574,8 +638,12 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
           {/* Clean Back Button */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-4">
             <Link
-              href={currentBooking.category ? `/bookings?category=${encodeURIComponent(currentBooking.category)}` : "/bookings"}
-              className="text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-brand-600 transition-colors bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 w-fit"
+              href={resolvedBackHref}
+              onClick={(e) => {
+                e.preventDefault();
+                handleBack();
+              }}
+              className="text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-brand-600 transition-colors bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 w-fit cursor-pointer"
             >
               <ArrowLeft className="w-4 h-4 text-brand-600" />
               <span>Back</span>
@@ -703,8 +771,12 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
           <div className="space-y-4 border-b border-slate-200 dark:border-slate-800 pb-5 print:hidden">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <Link
-                href={currentBooking.category ? `/bookings?category=${encodeURIComponent(currentBooking.category)}` : "/bookings"}
-                className="text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-brand-600 transition-colors bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 shrink-0"
+                href={resolvedBackHref}
+                onClick={(e) => {
+                  e.preventDefault();
+                  handleBack();
+                }}
+                className="text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-brand-600 transition-colors bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 shrink-0 cursor-pointer"
               >
                 <ArrowLeft className="w-4 h-4 text-brand-600" />
                 <span>Back</span>
@@ -1285,7 +1357,12 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                       {customerId ? (
                         <button
                           type="button"
-                          onClick={() => router.push(`/customers/${customerId}?from=${encodeURIComponent(`/bookings/${currentBooking.id}`)}`)}
+                          onClick={() => {
+                            const currentDetailUrl = typeof window !== "undefined"
+                              ? window.location.pathname + window.location.search
+                              : `/bookings/${currentBooking.id}${fromPath ? `?from=${encodeURIComponent(fromPath)}` : ""}`;
+                            router.push(`/customers/${customerId}?from=${encodeURIComponent(currentDetailUrl)}`);
+                          }}
                           className="font-extrabold text-slate-900 dark:text-white hover:text-brand-600 dark:hover:text-brand-400 hover:underline text-base text-left cursor-pointer flex items-center gap-1.5 break-words max-w-full"
                           title={`View ${customerName} details`}
                         >
