@@ -635,11 +635,16 @@ function BookingsPageContent() {
   };
 
   const isSyncingRef = useRef(false);
+  const lastSyncTimeRef = useRef(0);
 
   const checkAndSyncBookings = useCallback(
     async (isSilent: boolean = true, force: boolean = false) => {
+      const now = Date.now();
       if (isSyncingRef.current) return;
+      // Throttle: don't call if non-forced call happened less than 4 seconds ago
+      if (!force && now - lastSyncTimeRef.current < 4000) return;
       isSyncingRef.current = true;
+      lastSyncTimeRef.current = now;
 
       try {
         if (!isSilent && bookingsRef.current.length === 0) {
@@ -647,20 +652,34 @@ function BookingsPageContent() {
         }
         const bookingsRes = await getBookingsApi({
           status: statusParam || undefined,
-          forceRefresh: force,
+          forceRefresh: true,
         });
         if (bookingsRes && bookingsRes.success && Array.isArray(bookingsRes.data)) {
           const mappedList: Booking[] = bookingsRes.data.map(mapApiBooking);
           const prev = bookingsRef.current;
 
+          // Merge any recent locally created bookings that server doesn't have yet so they are not wiped out
+          const serverIdSet = new Set(mappedList.map((b) => String(b.id || (b as any)._id || b.jobId)));
+          const serverBookingNumbers = new Set(mappedList.map((b) => String(b.bookingNumber || "")));
+
+          const unsyncedLocalBookings = prev.filter((b) => {
+            const idStr = String(b.id || (b as any)._id || b.jobId || "");
+            const numStr = String(b.bookingNumber || "");
+            const isKnownByServer = serverIdSet.has(idStr) || (numStr && serverBookingNumbers.has(numStr));
+            if (isKnownByServer) return false;
+            return (b as any).isLocalOptimistic || idStr.startsWith("HB-") || idStr.startsWith("MANUAL-") || idStr.startsWith("BK-");
+          });
+
+          const mergedList: Booking[] = [...unsyncedLocalBookings, ...mappedList];
+
           // "when change in data then change"
-          if (!areBookingsEqual(prev, mappedList)) {
-            setCachedModuleData(cacheKey, mappedList);
-            setCachedModuleData("bookings", mappedList);
-            setBookings(mappedList);
+          if (!areBookingsEqual(prev, mergedList)) {
+            setCachedModuleData(cacheKey, mergedList);
+            setCachedModuleData("bookings", mergedList);
+            setBookings(mergedList);
 
             const prevIds = new Set(prev.map((b) => b.id));
-            const newBookings = mappedList.filter((b) => !prevIds.has(b.id));
+            const newBookings = mergedList.filter((b) => !prevIds.has(b.id) && !(b as any).isLocalOptimistic);
 
             if (newBookings.length > 0 && prev.length > 0) {
               toast.dismissAll();
@@ -729,9 +748,10 @@ function BookingsPageContent() {
       const hasStoredCats = isModuleCacheFresh("booking_categories") && initialCachedCats && initialCachedCats.length > 0;
       const hasStoredBookings = bookingsRef.current.length > 0 || ((isModuleCacheFresh(cacheKey) || isModuleCacheFresh("bookings")) && initialCachedBookings && initialCachedBookings.length > 0);
 
-      // ON "BACK" OR REVISITING: IF ALREADY CACHED IN MEMORY, DO NOT CALL API AT ALL!
+      // ON "BACK" OR REVISITING: show cached data immediately without spinner, then silently sync in background
       if (hasStoredBookings && hasStoredCats) {
         setIsLoadingData(false);
+        checkAndSyncBookings(true, false);
         return;
       }
 
@@ -771,6 +791,7 @@ function BookingsPageContent() {
         await checkAndSyncBookings(false, false);
       } else {
         setIsLoadingData(false);
+        checkAndSyncBookings(true, false);
       }
 
       // If archived bookings missing from cache, fetch once silently
@@ -784,6 +805,23 @@ function BookingsPageContent() {
       isMounted = false;
     };
   }, [bookingTypeParam, statusParam, checkAndSyncBookings, fetchArchivedBookings, cacheKey]);
+
+  // Auto-sync silently in background when user returns to this browser tab (e.g. from Postman or another app, no timer)
+  useEffect(() => {
+    const handleTabFocus = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "visible") {
+        checkAndSyncBookings(true, false);
+      }
+    };
+
+    window.addEventListener("focus", handleTabFocus);
+    document.addEventListener("visibilitychange", handleTabFocus);
+
+    return () => {
+      window.removeEventListener("focus", handleTabFocus);
+      document.removeEventListener("visibilitychange", handleTabFocus);
+    };
+  }, [checkAndSyncBookings]);
 
   const [activeStatusFilter, setActiveStatusFilter] = useState<string>("All");
   const [cardFilter, setCardFilter] = useState<"ALL" | "UNASSIGNED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED">("ALL");
@@ -879,12 +917,15 @@ function BookingsPageContent() {
     technicianId?: string,
     technicianName?: string
   ) => {
-    setBookings((prev) =>
-      prev.map((b) => {
+    setBookings((prev) => {
+      const nextList = prev.map((b) => {
         if (b.id === bookingId) {
           const updated: Booking = {
             ...b,
             date: newDate,
+            bookingDate: newDate,
+            scheduledDate: newDate,
+            workingDateRaw: newDate,
             timeSlot: newTimeSlot,
             technicianId: technicianId || b.technicianId,
             technicianName: technicianName || b.technicianName,
@@ -894,8 +935,11 @@ function BookingsPageContent() {
           return updated;
         }
         return b;
-      })
-    );
+      });
+      setCachedModuleData(cacheKey, nextList);
+      setCachedModuleData("bookings", nextList);
+      return nextList;
+    });
   };
 
   const handleMarkBookingCompleted = async (row: Booking) => {
@@ -1030,7 +1074,7 @@ function BookingsPageContent() {
   const roleFilteredBookings = useMemo(() => {
     const source = viewArchiveMode ? archivedBookings : bookings;
     if (isOfficeAdmin) {
-      return source.filter((b) => b.createdBy && b.createdBy.toLowerCase().includes("office"));
+      return source.filter((b) => (b.createdBy && b.createdBy.toLowerCase().includes("office")) || (b as any).isLocalOptimistic);
     }
     return source;
   }, [bookings, archivedBookings, viewArchiveMode, isOfficeAdmin]);
@@ -1085,6 +1129,33 @@ function BookingsPageContent() {
       });
     }
 
+    // 3. Dynamically reflect live bookings count so new bookings show immediately without waiting for API
+    const liveCounts: Record<string, { total: number; unassigned: number; inProgress: number; completed: number; cancelled: number }> = {};
+    roleFilteredBookings.forEach((b) => {
+      const catKey = (b.category || "General").trim();
+      const matchedKey = Object.keys(catMap).find((k) => k.toLowerCase() === catKey.toLowerCase()) || catKey;
+      if (!liveCounts[matchedKey]) {
+        liveCounts[matchedKey] = { total: 0, unassigned: 0, inProgress: 0, completed: 0, cancelled: 0 };
+      }
+      liveCounts[matchedKey].total += 1;
+      const s = (b.status || "").toLowerCase();
+      if (!b.technicianName || s.includes("pending") || s.includes("open")) liveCounts[matchedKey].unassigned += 1;
+      if (s.includes("progress") || s.includes("assigned")) liveCounts[matchedKey].inProgress += 1;
+      if (s.includes("completed")) liveCounts[matchedKey].completed += 1;
+      if (s.includes("cancel") || s.includes("reject")) liveCounts[matchedKey].cancelled += 1;
+    });
+
+    Object.keys(catMap).forEach((name) => {
+      const live = liveCounts[name];
+      if (live) {
+        catMap[name].count = Math.max(catMap[name].count, live.total);
+        catMap[name].unassigned = Math.max(catMap[name].unassigned, live.unassigned);
+        catMap[name].inProgress = Math.max(catMap[name].inProgress, live.inProgress);
+        catMap[name].completed = Math.max(catMap[name].completed, live.completed);
+        catMap[name].cancelled = Math.max(catMap[name].cancelled, live.cancelled);
+      }
+    });
+
     return Object.values(catMap);
   }, [apiCategories, roleFilteredBookings]);
 
@@ -1133,10 +1204,101 @@ function BookingsPageContent() {
   }, [categoryBookings, cardFilter, activeStatusFilter, channelFilter]);
 
   const handleBookingCreated = (newBooking: Booking) => {
-    setBookings((prev) => [newBooking, ...prev]);
+    const bookingWithFlag: Booking = {
+      ...newBooking,
+      isLocalOptimistic: true,
+      createdBy: newBooking.createdBy || (role ? String(role) : "Admin"),
+    } as any;
+
+    setBookings((prev) => {
+      const updated = [bookingWithFlag, ...prev.filter((b) => b.id !== bookingWithFlag.id)];
+      setCachedModuleData(cacheKey, updated);
+      setCachedModuleData("bookings", updated);
+      return updated;
+    });
+
+    // Update allCategoryStats in-memory immediately so KPI cards reflect the new count without API delay
+    setAllCategoryStats((prev: any) => {
+      const current = prev || { totalBookings: 0, openBookings: 0, activeBookings: 0, completedBookings: 0, cancelledBookings: 0 };
+      const isAssigned = Boolean(bookingWithFlag.technicianName || bookingWithFlag.technicianId || bookingWithFlag.status === "Assigned");
+      const updatedStats = {
+        ...current,
+        totalBookings: Number(current.totalBookings || 0) + 1,
+        openBookings: isAssigned ? Number(current.openBookings || 0) : Number(current.openBookings || 0) + 1,
+        activeBookings: isAssigned ? Number(current.activeBookings || 0) + 1 : Number(current.activeBookings || 0),
+      };
+      setCachedModuleData("booking_categories_all", updatedStats);
+      return updatedStats;
+    });
+
+    // Update apiCategories in-memory immediately
+    if (bookingWithFlag.category) {
+      setApiCategories((prevCats) => {
+        const catNameLower = bookingWithFlag.category.toLowerCase().trim();
+        const exists = prevCats.some((c: any) => (c.categoryName || c.name || "").toLowerCase().trim() === catNameLower);
+        const isAssigned = Boolean(bookingWithFlag.technicianName || bookingWithFlag.technicianId || bookingWithFlag.status === "Assigned");
+        let updatedCats: ApiBookingCategoryStat[];
+        if (exists) {
+          updatedCats = prevCats.map((c: any) => {
+            if ((c.categoryName || c.name || "").toLowerCase().trim() === catNameLower) {
+              return {
+                ...c,
+                totalBookings: Number(c.totalBookings || 0) + 1,
+                count: Number(c.count || c.totalBookings || 0) + 1,
+                openBookings: isAssigned ? Number(c.openBookings || 0) : Number(c.openBookings || 0) + 1,
+                unassigned: isAssigned ? Number(c.unassigned || c.openBookings || 0) : Number(c.unassigned || c.openBookings || 0) + 1,
+                activeBookings: isAssigned ? Number(c.activeBookings || 0) + 1 : Number(c.activeBookings || 0),
+                inProgress: isAssigned ? Number(c.inProgress || c.activeBookings || 0) + 1 : Number(c.inProgress || c.activeBookings || 0),
+              };
+            }
+            return c;
+          });
+        } else {
+          updatedCats = [
+            ...prevCats,
+            {
+              _id: `cat_local_${Date.now()}`,
+              categoryName: bookingWithFlag.category,
+              name: bookingWithFlag.category,
+              totalBookings: 1,
+              count: 1,
+              openBookings: isAssigned ? 0 : 1,
+              unassigned: isAssigned ? 0 : 1,
+              activeBookings: isAssigned ? 1 : 0,
+              inProgress: isAssigned ? 1 : 0,
+              completedBookings: 0,
+              cancelledBookings: 0,
+            } as any,
+          ];
+        }
+        setCachedModuleData("booking_categories", updatedCats);
+        return updatedCats;
+      });
+    }
+
+    // Ensure table view is active and switches to the created booking's category or "All" so the new booking is immediately visible
+    const targetCat = bookingWithFlag.category || "All";
+    setSelectedCategory(targetCat);
+    const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+    params.set("category", targetCat);
+    router.replace(`/bookings?${params.toString()}`, { scroll: false });
+
+    // Reset conflicting filters so the new booking is immediately visible
+    if (cardFilter === "COMPLETED" || cardFilter === "CANCELLED") {
+      setCardFilter("ALL");
+    }
+    if (channelFilter === "ONLINE") {
+      setChannelFilter("ALL");
+    }
+
+    preStoreBookingDetail(bookingWithFlag);
     setIsWizardOpen(false);
-    setCreatedBookingToast(newBooking);
-    refreshBookingsFromBackend();
+    setCreatedBookingToast(bookingWithFlag);
+
+    // Silent background sync after 500ms to reconcile backend ID and official booking number
+    setTimeout(() => {
+      checkAndSyncBookings(true, true);
+    }, 500);
   };
 
   const handlePartnerAssigned = (
@@ -1161,7 +1323,12 @@ function BookingsPageContent() {
       };
     };
 
-    setBookings((prev) => prev.map(update));
+    setBookings((prev) => {
+      const nextList = prev.map(update);
+      setCachedModuleData(cacheKey, nextList);
+      setCachedModuleData("bookings", nextList);
+      return nextList;
+    });
     setDrawerBooking((prev) => (prev && prev.id === bookingId ? update(prev) : prev));
   };
 
@@ -1191,24 +1358,34 @@ function BookingsPageContent() {
       };
     };
 
-    setBookings((prev) => prev.map(update));
+    setBookings((prev) => {
+      const nextList = prev.map(update);
+      setCachedModuleData(cacheKey, nextList);
+      setCachedModuleData("bookings", nextList);
+      return nextList;
+    });
     setDrawerBooking((prev) => (prev && prev.id === bookingId ? update(prev) : prev));
   };
 
   const handleInspectionApproved = (bookingId: string, updatedQuote: number, remarks: string) => {
-    setBookings(
-      bookings.map((b) =>
-        b.id === bookingId
-          ? {
+    setBookings((prev) => {
+      const nextList: Booking[] = prev.map((b) => {
+        if (b.id === bookingId) {
+          const updated: Booking = {
             ...b,
             basePrice: updatedQuote,
             totalAmount: Math.round(updatedQuote * 1.18 + 49),
             inspectionRemarks: remarks,
             status: "Customer Approval Pending",
-          }
-          : b
-      )
-    );
+          };
+          return updated;
+        }
+        return b;
+      });
+      setCachedModuleData(cacheKey, nextList);
+      setCachedModuleData("bookings", nextList);
+      return nextList;
+    });
   };
 
   const handleJobCompleted = (
@@ -1218,10 +1395,10 @@ function BookingsPageContent() {
     addOnsGstTotal?: number,
     addOnsFinalTotal?: number
   ) => {
-    setBookings((prev) =>
-      prev.map((b) =>
-        b.id === bookingId
-          ? {
+    setBookings((prev) => {
+      const nextList: Booking[] = prev.map((b) => {
+        if (b.id === bookingId) {
+          const updated: Booking = {
             ...b,
             isOtpVerified: true,
             status: "Completed",
@@ -1230,15 +1407,25 @@ function BookingsPageContent() {
             addOnsGstTotal: addOnsGstTotal ?? b.addOnsGstTotal,
             addOnsFinalTotal: addOnsFinalTotal ?? b.addOnsFinalTotal,
             totalAmount: b.totalAmount + (addOnsFinalTotal || 0),
-          }
-          : b
-      )
-    );
+          };
+          return updated;
+        }
+        return b;
+      });
+      setCachedModuleData(cacheKey, nextList);
+      setCachedModuleData("bookings", nextList);
+      return nextList;
+    });
     router.push(`/billing/${bookingId}`);
   };
 
   const handleBookingUpdated = (updated: Booking) => {
-    setBookings(bookings.map((b) => (b.id === updated.id ? updated : b)));
+    setBookings((prev) => {
+      const nextList = prev.map((b) => (b.id === updated.id ? updated : b));
+      setCachedModuleData(cacheKey, nextList);
+      setCachedModuleData("bookings", nextList);
+      return nextList;
+    });
     setDrawerBooking((prev) => (prev && prev.id === updated.id ? updated : prev));
   };
 
@@ -1670,50 +1857,63 @@ function BookingsPageContent() {
       return filteredBookings.length;
     }
     if (selectedCatStat) {
-      return selectedCatStat.count;
+      return Math.max(selectedCatStat.count, categoryBookings.length);
     }
-    return Number(allCategoryStats?.totalBookings ?? allCategoryStatsFallback.totalBookings ?? 0);
-  }, [isChannelFiltered, filteredBookings.length, selectedCatStat, allCategoryStats, allCategoryStatsFallback]);
+    const apiTotal = Number(allCategoryStats?.totalBookings ?? allCategoryStatsFallback.totalBookings ?? 0);
+    return Math.max(apiTotal, roleFilteredBookings.length);
+  }, [isChannelFiltered, filteredBookings.length, selectedCatStat, categoryBookings.length, allCategoryStats, allCategoryStatsFallback, roleFilteredBookings.length]);
 
   const unassignedCardCount = useMemo(() => {
     if (isChannelFiltered) {
       return filteredBookings.filter((b) => !b.technicianName).length;
     }
     if (selectedCatStat) {
-      return selectedCatStat.unassigned;
+      const liveUnassigned = categoryBookings.filter((b) => !b.technicianName).length;
+      return Math.max(selectedCatStat.unassigned, liveUnassigned);
     }
-    return Number(allCategoryStats?.openBookings ?? allCategoryStatsFallback.openBookings ?? 0);
-  }, [isChannelFiltered, filteredBookings, selectedCatStat, allCategoryStats, allCategoryStatsFallback]);
+    const apiOpen = Number(allCategoryStats?.openBookings ?? allCategoryStatsFallback.openBookings ?? 0);
+    const liveOpen = roleFilteredBookings.filter((b) => !b.technicianName).length;
+    return Math.max(apiOpen, liveOpen);
+  }, [isChannelFiltered, filteredBookings, selectedCatStat, categoryBookings, allCategoryStats, allCategoryStatsFallback, roleFilteredBookings]);
 
   const inProgressCardCount = useMemo(() => {
     if (isChannelFiltered) {
       return filteredBookings.filter((b) => b.status === "In Progress" || b.status === "Assigned" || b.status === "Partner Accepted").length;
     }
     if (selectedCatStat) {
-      return selectedCatStat.inProgress;
+      const liveInProgress = categoryBookings.filter((b) => b.status === "In Progress" || b.status === "Assigned" || b.status === "Partner Accepted").length;
+      return Math.max(selectedCatStat.inProgress, liveInProgress);
     }
-    return Number(allCategoryStats?.activeBookings ?? allCategoryStatsFallback.activeBookings ?? 0);
-  }, [isChannelFiltered, filteredBookings, selectedCatStat, allCategoryStats, allCategoryStatsFallback]);
+    const apiActive = Number(allCategoryStats?.activeBookings ?? allCategoryStatsFallback.activeBookings ?? 0);
+    const liveActive = roleFilteredBookings.filter((b) => b.status === "In Progress" || b.status === "Assigned" || b.status === "Partner Accepted").length;
+    return Math.max(apiActive, liveActive);
+  }, [isChannelFiltered, filteredBookings, selectedCatStat, categoryBookings, allCategoryStats, allCategoryStatsFallback, roleFilteredBookings]);
 
   const completedCardCount = useMemo(() => {
     if (isChannelFiltered) {
       return filteredBookings.filter((b) => b.status === "Completed").length;
     }
     if (selectedCatStat) {
-      return selectedCatStat.completed;
+      const liveCompleted = categoryBookings.filter((b) => b.status === "Completed").length;
+      return Math.max(selectedCatStat.completed, liveCompleted);
     }
-    return Number(allCategoryStats?.completedBookings ?? allCategoryStatsFallback.completedBookings ?? 0);
-  }, [isChannelFiltered, filteredBookings, selectedCatStat, allCategoryStats, allCategoryStatsFallback]);
+    const apiCompleted = Number(allCategoryStats?.completedBookings ?? allCategoryStatsFallback.completedBookings ?? 0);
+    const liveCompleted = roleFilteredBookings.filter((b) => b.status === "Completed").length;
+    return Math.max(apiCompleted, liveCompleted);
+  }, [isChannelFiltered, filteredBookings, selectedCatStat, categoryBookings, allCategoryStats, allCategoryStatsFallback, roleFilteredBookings]);
 
   const cancelledCardCount = useMemo(() => {
     if (isChannelFiltered) {
       return filteredBookings.filter((b) => b.status === "Cancelled" || b.status === "Rejected").length;
     }
     if (selectedCatStat) {
-      return selectedCatStat.cancelled;
+      const liveCancelled = categoryBookings.filter((b) => b.status === "Cancelled" || b.status === "Rejected").length;
+      return Math.max(selectedCatStat.cancelled, liveCancelled);
     }
-    return Number(allCategoryStats?.cancelledBookings ?? allCategoryStatsFallback.cancelledBookings ?? 0);
-  }, [isChannelFiltered, filteredBookings, selectedCatStat, allCategoryStats, allCategoryStatsFallback]);
+    const apiCancelled = Number(allCategoryStats?.cancelledBookings ?? allCategoryStatsFallback.cancelledBookings ?? 0);
+    const liveCancelled = roleFilteredBookings.filter((b) => b.status === "Cancelled" || b.status === "Rejected").length;
+    return Math.max(apiCancelled, liveCancelled);
+  }, [isChannelFiltered, filteredBookings, selectedCatStat, categoryBookings, allCategoryStats, allCategoryStatsFallback, roleFilteredBookings]);
 
   const filteredDropdownCategories = useMemo(() => {
     const q = dropdownSearch.toLowerCase().trim();

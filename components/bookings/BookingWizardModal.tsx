@@ -52,6 +52,7 @@ import {
 import { Portal } from "@/components/Portal";
 import { CustomerSearchPicker } from "@/components/CustomerSearchPicker";
 import { CustomSelect } from "@/components/CustomSelect";
+import { mapApiBooking } from "@/lib/bookingMapper";
 import { createBookingApi, updateBookingApi, calculateBookingPriceApi, getCustomerAddressesApi, createCustomerAddressApi, updateCustomerAddressApi, deleteCustomerAddressApi, getCustomerDropdownApi, getLocalitiesApi, sendBookingCustomerOtpApi, verifyBookingCustomerOtpApi, sendCustomerOtpApi, getCustomerTrustStatusApi, getCategoryDropdownApi, getServiceActionsApi, getServiceActionDropdownApi, getPackagesApi, getPartnerDropdownApi } from "@/lib/api";
 
 function safeStr(val: any): string {
@@ -1447,6 +1448,13 @@ export function BookingWizardModal({
     const partnerIdParam = preferredPartnerId && preferredPartnerId.length === 24 ? preferredPartnerId : undefined;
     const finalAddressId = (resolvedAddressId && resolvedAddressId.length === 24) ? resolvedAddressId : "65f1a2b3c4d5e6f7a8b9c0d5";
 
+    const targetCatObj = apiCategories.find(
+      (c) => c.id === selectedCategory || c.categoryName.toLowerCase().trim() === selectedCategory.toLowerCase().trim()
+    );
+    const effectiveCategory = targetCatObj?.categoryName || (selectedServicesList[0]?.category) || selectedCategory || "General";
+    const effectiveDate = bookingDate || new Date().toISOString().split("T")[0];
+    const nowIso = new Date().toISOString();
+
     if (bookingToEdit) {
       const updated: Booking = {
         ...bookingToEdit,
@@ -1463,7 +1471,7 @@ export function BookingWizardModal({
         recipientPhone: addressRecipientType !== "Self" ? recipientPhone : undefined,
         servicesList: finalServicesList,
         serviceTitle: combinedServiceTitle,
-        category: selectedCategory,
+        category: effectiveCategory,
         basePrice: servicePrice || bookingToEdit.basePrice,
         convenienceFee,
         discountAmount,
@@ -1474,7 +1482,10 @@ export function BookingWizardModal({
         status: tech ? (bookingToEdit.status === "Pending" ? "Assigned" : bookingToEdit.status) : bookingToEdit.status,
         technicianName: tech ? tech.name : (preferredPartnerId === "" ? undefined : bookingToEdit.technicianName),
         technicianId: tech ? tech.id : (preferredPartnerId === "" ? undefined : bookingToEdit.technicianId),
-        date: bookingDate,
+        date: effectiveDate,
+        bookingDate: effectiveDate,
+        scheduledDate: effectiveDate,
+        workingDateRaw: effectiveDate,
         timeSlot: formattedTime,
         paymentMethod,
       };
@@ -1485,7 +1496,7 @@ export function BookingWizardModal({
             addressId: finalAddressId,
             items: apiItems,
             partnerId: partnerIdParam,
-            bookingDate: bookingDate || new Date().toISOString().split("T")[0],
+            bookingDate: effectiveDate,
             timeSlot: formattedTime,
           });
         } catch (err) {
@@ -1503,6 +1514,7 @@ export function BookingWizardModal({
     const created: Booking = {
       id: generatedBookingId,
       jobId: generatedBookingId,
+      bookingNumber: generatedBookingId,
       customerName: customerName || "",
       customerPhone: customerPhone || "",
       customerEmail: customerEmail || "",
@@ -1516,7 +1528,7 @@ export function BookingWizardModal({
       recipientPhone: addressRecipientType !== "Self" ? recipientPhone : undefined,
       servicesList: finalServicesList,
       serviceTitle: combinedServiceTitle,
-      category: selectedCategory,
+      category: effectiveCategory,
       basePrice: servicePrice,
       convenienceFee,
       discountAmount,
@@ -1530,11 +1542,20 @@ export function BookingWizardModal({
       status: preferredPartnerId ? "Assigned" : "Pending",
       technicianName: tech ? tech.name : undefined,
       technicianId: tech ? tech.id : undefined,
-      date: bookingDate,
+      date: effectiveDate,
+      bookingDate: effectiveDate,
+      scheduledDate: effectiveDate,
+      workingDateRaw: effectiveDate,
       timeSlot: formattedTime,
       paymentMethod,
-      createdAt: "Just Now",
-    };
+      origin: "Manual",
+      isOnline: false,
+      rawTimestamp: nowIso,
+      createdAt: nowIso,
+      items: apiItems,
+      isLocalOptimistic: true,
+      createdBy: "Admin",
+    } as any;
 
     if (targetCustId && targetCustId.length === 24) {
       try {
@@ -1543,15 +1564,27 @@ export function BookingWizardModal({
           addressId: finalAddressId,
           items: apiItems,
           partnerId: partnerIdParam,
-          bookingDate: bookingDate || new Date().toISOString().split("T")[0],
+          bookingDate: effectiveDate,
           timeSlot: formattedTime,
           paymentMethod: mapPaymentMethod(paymentMethod),
           bookingSource: "admin",
         });
 
         if (apiRes && apiRes.success && apiRes.data) {
-          created.id = apiRes.data._id || created.id;
-          created.jobId = apiRes.data.bookingNumber || created.jobId;
+          const mapped = mapApiBooking(apiRes.data);
+          created.id = mapped.id || apiRes.data._id || created.id;
+          created.rawId = apiRes.data._id || created.rawId;
+          created.jobId = mapped.jobId || apiRes.data.bookingNumber || created.jobId;
+          created.bookingNumber = mapped.bookingNumber || apiRes.data.bookingNumber || created.bookingNumber;
+          created.workingDateRaw = mapped.workingDateRaw || created.workingDateRaw;
+          created.scheduledDate = mapped.scheduledDate || created.scheduledDate;
+          created.rawTimestamp = mapped.rawTimestamp || created.rawTimestamp;
+          (created as any).rawApiBooking = apiRes.data;
+          if (effectiveCategory && effectiveCategory !== "General") {
+            created.category = effectiveCategory;
+          } else if (mapped.category && mapped.category.length !== 24) {
+            created.category = mapped.category;
+          }
         }
       } catch (err) {
         console.error("Failed to create booking API:", err);

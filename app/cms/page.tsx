@@ -42,8 +42,9 @@ import {
   formatImageUrl,
 } from "@/lib/api";
 import { ShimmerRow, ShimmerCardGrid } from "@/components/ShimmerLoader";
-import { Wrench, Plus, CheckCircle2, Check, Search, MapPin, Tag, X, Filter, Sliders, Briefcase, Trash2, Link, Layers, AlertCircle, Edit, ChevronDown, FileImage, Upload, Megaphone, Eye, Flame, Image as ImageIcon, Link as LinkIcon, Copy, Loader2, Clock, Lock } from "lucide-react";
+import { Wrench, Plus, CheckCircle2, Check, Search, MapPin, Tag, X, Filter, Sliders, Briefcase, Trash2, Link, Layers, AlertCircle, Edit, ChevronDown, FileImage, Upload, Megaphone, Eye, Flame, Image as ImageIcon, Link as LinkIcon, Copy, Loader2, Clock, Lock, Calendar } from "lucide-react";
 import { useRbac } from "@/context/RbacContext";
+import { ServiceAvailabilityCalendar } from "@/components/cms/ServiceAvailabilityCalendar";
 
 function safeStr(val: any): string {
   if (val === null || val === undefined) return "";
@@ -208,7 +209,8 @@ export default function CmsPage() {
 
   const [services, setServices] = useState<ServiceItem[]>(() => initialCachedServices);
   const [addons, setAddons] = useState<ServiceAddon[]>(() => initialCachedAddons);
-  const [activeTab, setActiveTab] = useState<"services" | "addons">("services");
+  const [activeTab, setActiveTab] = useState<"services" | "addons" | "calendar">("services");
+  const [isAddDayOffModalOpen, setIsAddDayOffModalOpen] = useState(false);
 
   // If cache is fresh and has items, don't show any loader at all! Exact data shows with 0 delay
   const [isLoading, setIsLoading] = useState<boolean>(() => {
@@ -2334,7 +2336,8 @@ export default function CmsPage() {
             type="button"
             onClick={() => {
               if (activeTab === "services") openAddServiceDrawer();
-              else openAddAddonDrawer();
+              else if (activeTab === "addons") openAddAddonDrawer();
+              else setIsAddDayOffModalOpen(true);
             }}
             className="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 w-full sm:w-auto"
           >
@@ -2342,7 +2345,9 @@ export default function CmsPage() {
             <span>
               {activeTab === "services"
                 ? "Create Service Offer"
-                : "Add Spare Component"}
+                : activeTab === "addons"
+                ? "Add Spare Component"
+                : "Set Day Off / Unavailable"}
             </span>
           </button>
         )}
@@ -2370,6 +2375,17 @@ export default function CmsPage() {
               }`}
           >
             Add-on Parts
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("calendar")}
+            className={`px-3 sm:px-4 py-2 rounded-xl transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${activeTab === "calendar"
+              ? "bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-400 shadow-sm"
+              : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+              }`}
+          >
+            <Calendar className="w-3.5 h-3.5" />
+            <span>Availability & Day-Off Calendar</span>
           </button>
         </div>
       </div>
@@ -2431,7 +2447,7 @@ export default function CmsPage() {
           disableDelete={!canDelete("cms")}
           onBulkDelete={handleBulkDeletePackages}
         />
-      ) : (
+      ) : activeTab === "addons" ? (
         <div className="space-y-4">
 
           <DataTable
@@ -2442,6 +2458,13 @@ export default function CmsPage() {
             hideStatusFilter={true}
           />
         </div>
+      ) : (
+        <ServiceAvailabilityCalendar
+          categories={categoriesFromApi}
+          services={services}
+          isAddModalOpen={isAddDayOffModalOpen}
+          onCloseAddModal={() => setIsAddDayOffModalOpen(false)}
+        />
       )}
 
       {/* COMPREHENSIVE ADD-ONS MANAGEMENT POPUP */}

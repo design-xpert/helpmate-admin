@@ -20,7 +20,18 @@ import {
   X,
   Layers,
   ChevronDown,
+  Wind,
+  Hammer,
+  Droplets,
+  Paintbrush,
+  ShieldAlert,
+  Tv,
+  Sparkles,
+  Zap,
+  Car,
+  Wrench,
 } from "lucide-react";
+import { CustomSelect, CustomSelectOption } from "@/components/CustomSelect";
 
 export type CalendarViewMode = "month" | "week" | "day";
 
@@ -68,6 +79,21 @@ function getStatusTheme(status: BookingStatus | string) {
     card: "border-l-amber-500 bg-amber-50/40 dark:bg-amber-950/20 text-amber-900 dark:text-amber-200",
     label: "Pending",
   };
+}
+
+// Category icon helper
+function getCategoryIcon(cat: string, className = "w-3.5 h-3.5") {
+  const c = (cat || "").toLowerCase();
+  if (c.includes("ac")) return <Wind className={`${className} text-cyan-500`} />;
+  if (c.includes("carpenter")) return <Hammer className={`${className} text-amber-600`} />;
+  if (c.includes("clean")) return <Sparkles className={`${className} text-emerald-500`} />;
+  if (c.includes("electric")) return <Zap className={`${className} text-amber-500`} />;
+  if (c.includes("paint")) return <Paintbrush className={`${className} text-purple-500`} />;
+  if (c.includes("pest")) return <ShieldAlert className={`${className} text-rose-500`} />;
+  if (c.includes("plumb")) return <Droplets className={`${className} text-blue-500`} />;
+  if (c.includes("appliance")) return <Tv className={`${className} text-indigo-500`} />;
+  if (c.includes("car")) return <Car className={`${className} text-sky-500`} />;
+  return <Wrench className={`${className} text-slate-500`} />;
 }
 
 // Parse scheduled hour from timeSlot or default to 10
@@ -181,6 +207,57 @@ export function BookingCalendarView({
   }, [currentDate]);
 
   const today = useMemo(() => new Date(), []);
+
+  // Custom Dropdown Options for Category
+  const categoryOptions: CustomSelectOption[] = useMemo(() => {
+    const list: CustomSelectOption[] = [
+      {
+        value: "All",
+        label: "All Categories",
+        icon: <Layers className="w-3.5 h-3.5 text-slate-400" />,
+      },
+    ];
+    categories.forEach((c) => {
+      list.push({
+        value: c.name,
+        label: `${c.name} (${c.count})`,
+        icon: getCategoryIcon(c.name, "w-3.5 h-3.5"),
+      });
+    });
+    return list;
+  }, [categories]);
+
+  // Custom Dropdown Options for Status
+  const statusOptions: CustomSelectOption[] = useMemo(
+    () => [
+      {
+        value: "All",
+        label: "All Statuses",
+        icon: <Filter className="w-3.5 h-3.5 text-slate-400" />,
+      },
+      {
+        value: "Pending",
+        label: "Pending",
+        icon: <Clock className="w-3.5 h-3.5 text-amber-500" />,
+      },
+      {
+        value: "Active",
+        label: "Active / In Field",
+        icon: <AlertCircle className="w-3.5 h-3.5 text-blue-500" />,
+      },
+      {
+        value: "Completed",
+        label: "Completed",
+        icon: <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />,
+      },
+      {
+        value: "Cancelled",
+        label: "Cancelled",
+        icon: <X className="w-3.5 h-3.5 text-rose-500" />,
+      },
+    ],
+    []
+  );
 
   // Filtered Bookings according to category, status, and search
   const filteredBookings = useMemo(() => {
@@ -432,9 +509,34 @@ export function BookingCalendarView({
           </div>
 
           {/* Period Title */}
-          <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight pl-1">
-            {periodTitle}
-          </h2>
+          <div>
+            <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight pl-1">
+              {periodTitle}
+            </h2>
+            {viewMode === "day" && (
+              <div className="flex items-center gap-2 pl-1 mt-0.5">
+                <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold">
+                  {dayBookings.length} booking{dayBookings.length === 1 ? "" : "s"} scheduled
+                </span>
+                {dayBookings.length > 0 && (
+                  <div className="flex items-center gap-1 pl-2 border-l border-slate-200 dark:border-slate-700">
+                    {dayBookings.slice(0, 5).map((b, idx) => (
+                      <span
+                        key={idx}
+                        className={`w-2 h-2 rounded-full ${getStatusTheme(b.status).dot}`}
+                        title={`${b.customerName || "Booking"} (${b.status})`}
+                      />
+                    ))}
+                    {dayBookings.length > 5 && (
+                      <span className="text-[10px] font-bold text-slate-400">
+                        +{dayBookings.length - 5}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Center / Right: Search, Status Filter, Category Filter & View Mode Switcher */}
@@ -460,36 +562,32 @@ export function BookingCalendarView({
             )}
           </div>
 
-          {/* Category Filter Dropdown */}
+          {/* Category Filter CustomSelect */}
           {categories.length > 0 && onSelectCategory && (
-            <div className="relative">
-              <select
+            <div className="w-[170px] sm:w-[195px]">
+              <CustomSelect
                 value={selectedCategory || "All"}
-                onChange={(e) => onSelectCategory(e.target.value === "All" ? null : e.target.value)}
-                className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-semibold focus:outline-none cursor-pointer"
-              >
-                <option value="All">All Categories</option>
-                {categories.map((c) => (
-                  <option key={c.name} value={c.name}>
-                    {c.name} ({c.count})
-                  </option>
-                ))}
-              </select>
+                onChange={(val) => onSelectCategory(val === "All" ? null : val)}
+                options={categoryOptions}
+                size="sm"
+                searchable={true}
+                searchPlaceholder="Search category..."
+                placeholder="All Categories"
+              />
             </div>
           )}
 
-          {/* Status Filter */}
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-semibold focus:outline-none cursor-pointer"
-          >
-            <option value="All">All Statuses</option>
-            <option value="Pending">Pending</option>
-            <option value="Active">Active</option>
-            <option value="Completed">Completed</option>
-            <option value="Cancelled">Cancelled</option>
-          </select>
+          {/* Status Filter CustomSelect */}
+          <div className="w-[145px] sm:w-[165px]">
+            <CustomSelect
+              value={statusFilter}
+              onChange={(val) => setStatusFilter(val)}
+              options={statusOptions}
+              size="sm"
+              searchable={false}
+              placeholder="All Statuses"
+            />
+          </div>
 
           {/* Google Calendar View Switcher: Day | Week | Month */}
           <div className="flex items-center p-0.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
@@ -554,9 +652,6 @@ export function BookingCalendarView({
           </div>
         </div>
 
-        <span className="text-[10px] text-slate-400 font-medium shrink-0">
-          Showing {filteredBookings.length} bookings
-        </span>
       </div>
 
       {/* ─── VIEW 1: MONTH CALENDAR GRID ─── */}
@@ -785,64 +880,6 @@ export function BookingCalendarView({
       {/* ─── VIEW 3: DAY VIEW ─── */}
       {viewMode === "day" && (
         <div className="space-y-4">
-          {/* Day Summary Banner with DOTS */}
-          <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-2xl bg-brand-50 dark:bg-brand-950/60 text-brand-600 dark:text-brand-400 flex flex-col items-center justify-center shrink-0 border border-brand-200 dark:border-brand-800 shadow-2xs">
-                <span className="text-[10px] font-extrabold uppercase leading-none">
-                  {currentDate.toLocaleDateString("en-US", { weekday: "short" })}
-                </span>
-                <span className="text-base font-black leading-none mt-0.5">
-                  {currentDate.getDate()}
-                </span>
-              </div>
-
-              <div>
-                <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
-                  {currentDate.toLocaleDateString("en-US", {
-                    weekday: "long",
-                    month: "long",
-                    day: "numeric",
-                    year: "numeric",
-                  })}
-                </h3>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-xs text-slate-500 font-semibold">
-                    {dayBookings.length} booking(s) scheduled
-                  </span>
-
-                  {/* ─── DOTS ON DATE THAT HAVE BOOKINGS ─── */}
-                  {dayBookings.length > 0 && (
-                    <div className="flex items-center gap-1 pl-2 border-l border-slate-200 dark:border-slate-700">
-                      {dayBookings.slice(0, 5).map((b, idx) => (
-                        <span
-                          key={idx}
-                          className={`w-2 h-2 rounded-full ${getStatusTheme(b.status).dot}`}
-                          title={b.status}
-                        />
-                      ))}
-                      {dayBookings.length > 5 && (
-                        <span className="text-[10px] font-bold text-slate-400">
-                          +{dayBookings.length - 5}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {onCreateBooking && (
-              <button
-                type="button"
-                onClick={onCreateBooking}
-                className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer self-start sm:self-auto"
-              >
-                + Schedule for this Day
-              </button>
-            )}
-          </div>
-
           {/* Day Timeline */}
           <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden divide-y divide-slate-100 dark:divide-slate-800">
             {hoursRange.map((hour) => {

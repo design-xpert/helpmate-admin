@@ -1,16 +1,43 @@
 import { Booking, BookingStatus } from "@/lib/mockData";
+import { getStoredModuleData } from "@/lib/moduleCache";
 
 export function mapApiBooking(b: any): Booking {
   const item0 = b.items?.[0];
-  const catName =
+  let catName =
     (typeof item0?.category === "object"
       ? item0?.category?.name || item0?.category?.categoryName
-      : typeof item0?.category === "string"
+      : typeof item0?.category === "string" && item0.category.length !== 24
       ? item0.category
       : "") ||
-    b.category ||
+    (typeof b.category === "string" && b.category.length !== 24 ? b.category : "") ||
     b.categoryName ||
-    "General";
+    "";
+
+  // If catName is empty or an ObjectId, resolve from cached categories
+  if (!catName || catName.length === 24) {
+    const rawCatId = (typeof item0?.category === "string" ? item0.category : "") || (typeof b.category === "string" ? b.category : "") || b.categoryId || item0?.categoryId;
+    const storedCats = getStoredModuleData<any[]>("booking_categories");
+    if (storedCats && Array.isArray(storedCats) && rawCatId) {
+      const found = storedCats.find((c: any) => (c._id || c.id) === rawCatId);
+      if (found) {
+        catName = found.categoryName || found.name || catName;
+      }
+    }
+  }
+
+  // Fallback to service title or package trade name if still unresolved
+  if (!catName || catName.length === 24) {
+    const hint = (b.serviceTitle || item0?.package?.name || item0?.serviceAction?.name || "").toLowerCase();
+    if (hint.includes("ac") || hint.includes("air")) catName = "AC Repair";
+    else if (hint.includes("clean")) catName = "Cleaning";
+    else if (hint.includes("plumb")) catName = "Plumber";
+    else if (hint.includes("electr")) catName = "Electrician";
+    else if (hint.includes("paint")) catName = "Painter";
+    else if (hint.includes("carpent")) catName = "Carpenter";
+    else if (hint.includes("pest")) catName = "Pest Control";
+    else if (hint.includes("appliance")) catName = "Appliance Repair";
+    else catName = "General";
+  }
   const subCatName = item0?.subCategory?.name || (typeof item0?.subCategory === "string" ? item0.subCategory : "") || "";
   const serviceActionName = item0?.serviceAction?.name || "";
   const pkgTitle = item0?.package?.name || item0?.package?.packageName || serviceActionName || "Service Package";
