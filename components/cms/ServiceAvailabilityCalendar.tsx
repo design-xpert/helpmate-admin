@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import { ServiceItem } from "@/lib/mockData";
 import { ApiCategory } from "@/lib/api";
+import { toast } from "@/components/Toast";
 
 export interface DayOffRule {
   id: string;
@@ -466,13 +467,28 @@ export function ServiceAvailabilityCalendar({
 
   // Delete a rule
   const handleDeleteRule = (id: string) => {
+    const targetRule = rules.find((r) => r.id === id);
     setRules((prev) => prev.filter((r) => r.id !== id));
+    toast.success("Rule Deleted", `Availability blackout rule for "${targetRule?.targetName || "service"}" deleted.`);
   };
 
   // Toggle active status
   const handleToggleRuleStatus = (id: string) => {
+    let nextStatus = false;
+    let targetName = "";
     setRules((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, isActive: !r.isActive } : r))
+      prev.map((r) => {
+        if (r.id === id) {
+          nextStatus = !r.isActive;
+          targetName = r.targetName;
+          return { ...r, isActive: nextStatus };
+        }
+        return r;
+      })
+    );
+    toast.success(
+      nextStatus ? "Rule Activated" : "Rule Paused",
+      `Rule for "${targetName}" is now ${nextStatus ? "active" : "inactive"}.`
     );
   };
 
@@ -536,6 +552,7 @@ export function ServiceAvailabilityCalendar({
       setRules((prev) => [newRule, ...prev]);
     }
 
+    toast.success(editingRule ? "Rule Updated" : "Rule Created", `Availability rule saved for "${targetName}".`);
     setIsModalOpen(false);
     if (onCloseAddModal) onCloseAddModal();
   };

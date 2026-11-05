@@ -28,6 +28,7 @@ import {
 import { Portal } from "@/components/Portal";
 import { CustomSelect } from "@/components/CustomSelect";
 import { useRbac } from "@/context/RbacContext";
+import { toast } from "@/components/Toast";
 
 export default function CouponsPage() {
   const { canView, canCreate, canEdit, canDelete } = useRbac();
@@ -93,7 +94,9 @@ export default function CouponsPage() {
 
   // Delete Coupon
   const handleDeleteCoupon = (id: string) => {
-    setCoupons(coupons.filter((c) => c.id !== id));
+    const couponToDelete = coupons.find((c) => c.id === id);
+    setCoupons((prev) => prev.filter((c) => c.id !== id));
+    toast.success("Coupon Deleted", `Coupon ${couponToDelete?.code || id} deleted successfully.`);
   };
 
   const handleSaveCoupon = (e: React.FormEvent) => {
@@ -147,6 +150,7 @@ export default function CouponsPage() {
       setCoupons([newItem, ...coupons]);
     }
 
+    toast.success(editingCoupon ? "Coupon Updated" : "Coupon Created", `Coupon ${cleanCode} saved successfully.`);
     setIsAddOpen(false);
   };
 
@@ -245,15 +249,16 @@ export default function CouponsPage() {
         <StatusDropdown
           status={row.status === "Active" ? "Active" : "Inactive"}
           disabled={!canEdit("coupons")}
-          onChange={(newStatus) =>
+          onChange={(newStatus) => {
             setCoupons((prev) =>
               prev.map((c) =>
                 c.id === row.id
                   ? { ...c, status: newStatus === "Active" ? "Active" : "Disabled" }
                   : c
               )
-            )
-          }
+            );
+            toast.success("Coupon Status Updated", `Coupon ${row.code} marked as ${newStatus}.`);
+          }}
           title="Click to change coupon status"
         />
       ),

@@ -59,6 +59,7 @@ import {
 import { Portal } from "@/components/Portal";
 import { PermissionGuard } from "@/components/PermissionGuard";
 import { StatusDropdown } from "@/components/StatusDropdown";
+import { toast as globalToast } from "@/components/Toast";
 import {
   getRolesApi,
   createRoleApi,
@@ -70,7 +71,9 @@ import {
   getAdminsApi,
   createAdminApi,
   updateAdminApi,
+  updateAdminStatusApi,
   deleteAdminApi,
+  handleGlobalLogout,
 } from "@/lib/api";
 import { getStoredModuleData, setCachedModuleData, isModuleCacheFresh } from "@/lib/moduleCache";
 
@@ -564,7 +567,17 @@ export default function UsersPage() {
   const [deleteUser, setDeleteUser] = useState<UserManagementItem | null>(null);
   const [deletePermissionItem, setDeletePermissionItem] = useState<PermissionItem | null>(null);
   const [deletePermissionGroup, setDeletePermissionGroup] = useState<ModulePermissionGroup | null>(null);
-  const [toast, setToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [toast, setLocalToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const setToast = (t: { type: "success" | "error"; message: string } | null) => {
+    setLocalToast(t);
+    if (t) {
+      if (t.type === "success") {
+        globalToast.success(t.message);
+      } else {
+        globalToast.error(t.message);
+      }
+    }
+  };
 
   // Add User Form States (Clean & Simple: Name + CustomSelect Role Dropdown)
   const [name, setName] = useState("");
@@ -1223,13 +1236,12 @@ export default function UsersPage() {
     );
 
     try {
-      const res = await updateAdminApi(targetId, {
-        name: user.name,
-        email: user.email,
-        status: apiStatus,
-      });
+      const res = await updateAdminStatusApi(targetId, apiStatus);
       if (res && res.success !== false) {
-        setToast({ type: "success", message: `Admin ${user.name} is now ${newStatus}.` });
+        setToast({ type: "success", message: res.message || `Admin ${user.name} is now ${newStatus}.` });
+        if (res.logoutRequired) {
+          handleGlobalLogout();
+        }
       } else {
         setUsers((prev) =>
           prev.map((u) => ((u as any)._id === targetId || u.id === targetId ? { ...u, status: user.status } : u))

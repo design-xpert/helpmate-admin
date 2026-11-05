@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import { useRbac } from "@/context/RbacContext";
 import { CustomSelect } from "@/components/CustomSelect";
+import { toast } from "@/components/Toast";
 import Link from "next/link";
 import Image from "next/image";
 import { DataTable, Column } from "@/components/DataTable";
@@ -82,6 +83,7 @@ export default function SupportPage() {
           : t
       )
     );
+    toast.success("Ticket Assigned", adminName ? `Ticket ${ticketId} assigned to ${adminName}.` : `Ticket ${ticketId} unassigned (moved to In Review).`);
     setTicketToReassign(null);
   };
 

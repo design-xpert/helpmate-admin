@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { getPlatformSettingsApi, updatePlatformSettingsApi } from "@/lib/api";
 import { getStoredModuleData, setCachedModuleData, isModuleCacheFresh } from "@/lib/moduleCache";
+import { toast as globalToast } from "@/components/Toast";
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<
@@ -47,7 +48,17 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [updatedBy, setUpdatedBy] = useState<{ name?: string; email?: string } | null>(() => initialCachedSettings?.updatedBy || null);
   const [updatedAt, setUpdatedAt] = useState<string | null>(() => initialCachedSettings?.updatedAt || null);
-  const [toast, setToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [toast, setLocalToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const setToast = (t: { type: "success" | "error"; message: string } | null) => {
+    setLocalToast(t);
+    if (t) {
+      if (t.type === "success") {
+        globalToast.success(t.message);
+      } else {
+        globalToast.error(t.message);
+      }
+    }
+  };
 
   // General Settings State
   const [appName, setAppName] = useState("HelpMate Varanasi HQ");

@@ -10,6 +10,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { Portal } from "@/components/Portal";
+import { toast } from "@/components/Toast";
 import { TrendingServiceCard } from "./types";
 import { SectionCardImage } from "./SectionCardImage";
 import { TrendingCardShimmerGrid } from "./SectionShimmers";
@@ -51,9 +52,19 @@ export function TrendingServicesSection({
   );
 
   const toggleTrendingActive = (id: string) => {
+    let nextStatus = false;
+    let targetTitle = "";
     onUpdateTrendingServices((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, isActive: !t.isActive } : t))
+      prev.map((t) => {
+        if (t.id === id) {
+          nextStatus = !t.isActive;
+          targetTitle = t.title;
+          return { ...t, isActive: nextStatus };
+        }
+        return t;
+      })
     );
+    toast.success("Trending Status Updated", `"${targetTitle || "Item"}" is now ${nextStatus ? "active" : "inactive"}.`);
   };
 
   const saveTrending = () => {

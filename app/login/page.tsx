@@ -34,7 +34,7 @@ export default function LoginPage() {
 
       const token = localStorage.getItem("helpmate_admin_token");
       if (token && !isTokenExpired(token)) {
-        window.location.href = "/";
+        window.location.href = "/bookings";
       }
     }
   }, []);
@@ -89,19 +89,19 @@ export default function LoginPage() {
         localStorage.setItem("helpmate_admin_session", "true");
 
         const userRole = res.admin?.role?.name || res.admin?.role || (isSuperAdmin ? "Super Admin" : "Office Admin");
-        let targetPath = "/";
+        let targetPath = "/bookings";
         if (typeof userRole === "string" && (userRole.toLowerCase().includes("partner") || email.toLowerCase().includes("partner"))) {
           setRole("Service Partner");
           targetPath = "/partner";
         } else if (typeof userRole === "string" && (userRole.toLowerCase().includes("office") || email.toLowerCase().includes("office"))) {
           setRole("Office Admin");
-          targetPath = "/";
+          targetPath = "/bookings";
         } else if (isSuperAdmin) {
           setRole("Super Admin");
-          targetPath = "/";
+          targetPath = "/bookings";
         } else {
           setRole(userRole as any);
-          targetPath = "/";
+          targetPath = "/bookings";
         }
 
         // Hard redirect guarantees clean layout re-initialization and authenticated provider mount

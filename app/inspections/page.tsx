@@ -33,6 +33,7 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { DataTable, Column } from "@/components/DataTable";
+import { toast } from "@/components/Toast";
 import { RowActionMenu } from "@/components/RowActionMenu";
 import { initialBookings, Booking } from "@/lib/mockData";
 import { Portal } from "@/components/Portal";
@@ -113,6 +114,7 @@ export default function InspectionsPage() {
         status: "In Progress" as const,
       });
     }
+    toast.success("Quote Validated & Approved", `Inspection ${validateModalBooking.id} quote saved. Status set to In Progress.`);
     setValidateModalBooking(null);
   };
 
@@ -147,6 +149,7 @@ export default function InspectionsPage() {
       });
     }
 
+    toast.success("Inspection Job Completed", `OTP verified for inspection ${otpModalBooking.id}. Status set to Completed.`);
     setOtpModalBooking(null);
     setEnteredOtp("");
     setOtpError("");

@@ -4504,6 +4504,24 @@ export async function updateAdminApi(id: string, payload: { name?: string; email
   }
 }
 
+export async function updateAdminStatusApi(id: string, status: "active" | "inactive" | string | boolean) {
+  clearApiCache("getAdminsApi");
+  const normalizedStatus = typeof status === "boolean"
+    ? (status ? "active" : "inactive")
+    : String(status).toLowerCase().trim();
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/admin/${id}/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: normalizedStatus }),
+    });
+    return await safeJsonResponse(res);
+  } catch (error) {
+    console.error("updateAdminStatusApi error:", error);
+    return { success: false, message: "Failed to update admin status." };
+  }
+}
+
 export async function deleteAdminApi(id: string) {
   clearApiCache("getAdminsApi");
   try {

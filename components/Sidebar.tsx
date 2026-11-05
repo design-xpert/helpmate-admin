@@ -256,17 +256,17 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, initialState }: S
   ];
 
   const adminNavSections: NavSection[] = [
-    {
-      sectionTitle: "Overview",
-      items: [
-        {
-          title: "Dashboard",
-          icon: LayoutDashboard,
-          href: "/",
-          // badge: "Coming Soon",
-        },
-      ],
-    },
+    // {
+    //   sectionTitle: "Overview",
+    //   items: [
+    //     {
+    //       title: "Dashboard",
+    //       icon: LayoutDashboard,
+    //       href: "/",
+    //       // badge: "Coming Soon",
+    //     },
+    //   ],
+    // },
     {
       sectionTitle: "Operations",
       items: [
@@ -441,17 +441,17 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, initialState }: S
   ];
 
   const officeAdminNavSections: NavSection[] = [
-    {
-      sectionTitle: "Overview",
-      items: [
-        {
-          title: "Dashboard",
-          icon: LayoutDashboard,
-          href: "/",
-          badge: "Coming Soon",
-        },
-      ],
-    },
+    // {
+    //   sectionTitle: "Overview",
+    //   items: [
+    //     {
+    //       title: "Dashboard",
+    //       icon: LayoutDashboard,
+    //       href: "/",
+    //       badge: "Coming Soon",
+    //     },
+    //   ],
+    // },
     {
       sectionTitle: "Operations",
       items: [
@@ -641,12 +641,12 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, initialState }: S
     if (!apiAllowedModules || apiAllowedModules.size === 0) {
       return [
         {
-          sectionTitle: "Overview",
+          sectionTitle: "Operations",
           items: [
             {
-              title: "Dashboard",
-              icon: LayoutDashboard,
-              href: "/",
+              title: "Bookings",
+              icon: CalendarCheck,
+              href: "/bookings",
             },
           ],
         },
@@ -1406,7 +1406,7 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, initialState }: S
         }`}
       >
         <Link
-          href={isPartner ? "/partner" : "/"}
+          href={isPartner ? "/partner" : "/bookings"}
           onClick={onCloseMobile}
           className="flex items-center gap-2.5 group min-w-0"
         >

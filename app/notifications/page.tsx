@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { toast } from "@/components/Toast";
 import {
   Bell,
   CheckCircle2,
@@ -165,6 +166,7 @@ export default function NotificationsPage() {
       )
     );
     setCopiedId(id);
+    toast.success("Notification Resent", `Notification #${id} dispatched to recipient.`);
     setTimeout(() => setCopiedId(null), 2000);
   };
 

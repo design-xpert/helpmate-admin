@@ -58,6 +58,7 @@ import {
 } from "lucide-react";
 import { Portal } from "@/components/Portal";
 import { useRbac } from "@/context/RbacContext";
+import { toast } from "@/components/Toast";
 
 const STAGES: {
   label: LeadStatus;
@@ -292,6 +293,7 @@ export default function LeadCRMPage() {
     }
 
     setToastMessage(`Updated ${leadId} stage to "${newStatus}"!`);
+    toast.success("Lead Stage Updated", `Moved lead ${leadId} to stage "${newStatus}".`);
     setTimeout(() => setToastMessage(null), 3500);
   };
 

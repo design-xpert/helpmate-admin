@@ -5,6 +5,7 @@ import Image from "next/image";
 import { DataTable, Column } from "@/components/DataTable";
 import { RowActionMenu } from "@/components/RowActionMenu";
 import { Portal } from "@/components/Portal";
+import { toast } from "@/components/Toast";
 import {
   initialTechnicians,
   Technician,
@@ -67,6 +68,7 @@ export default function CommissionPage() {
           : r
       )
     );
+    toast.success("Commission Rule Updated", `Updated ${editingRule.categoryName} to ${editRateInput}% (Min ₹${editFloorInput}).`);
     setEditingRule(null);
   };
 

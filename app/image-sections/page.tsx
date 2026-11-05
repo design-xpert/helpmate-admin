@@ -31,6 +31,7 @@ import { SpotlightSection } from "@/components/image-sections/SpotlightSection";
 import { CategoryServiceSections } from "@/components/image-sections/CategoryServiceSections";
 import { CatalogPickerModal } from "@/components/image-sections/CatalogPickerModal";
 import { DeleteConfirmModal } from "@/components/image-sections/DeleteConfirmModal";
+import { toast } from "@/components/Toast";
 
 import {
   getAdminTrendingPackagesApi,
@@ -677,12 +678,14 @@ export default function ImageSectionsPage() {
       try {
         const res = await deleteWebsiteZoneApi(deleteModal.id);
         if (res && res.success) {
+          toast.success("Zone Deleted", `Zone "${deleteModal.name || "Zone"}" deleted successfully.`);
           await fetchZones();
         } else {
-          alert(res?.message || "Failed to delete zone.");
+          toast.error("Delete Failed", res?.message || "Failed to delete zone.");
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error("Error deleting zone:", err);
+        toast.error("Delete Failed", err?.message || "Failed to delete zone.");
       }
     }
     if (deleteModal.type === "trending") {
@@ -691,6 +694,7 @@ export default function ImageSectionsPage() {
       );
       const targetPkgId = item?.packageId || deleteModal.id;
       await handleRemovePackageFromTrending(targetPkgId);
+      toast.success("Trending Item Removed", `Removed "${deleteModal.name || "item"}" from trending.`);
     }
     if (deleteModal.type === "quick") {
       const item = quickServices.find(
@@ -698,13 +702,16 @@ export default function ImageSectionsPage() {
       );
       const targetPkgId = item?.packageId || deleteModal.id;
       await handleRemovePackageFromQuickServices(targetPkgId);
+      toast.success("Quick Service Removed", `Removed "${deleteModal.name || "item"}" from quick services.`);
     }
     if (deleteModal.type === "spotlight") {
       try {
         await deleteSpotlightApi(deleteModal.id);
         updateSpotlightBannersState((prev) => prev.filter((b) => b.id !== deleteModal.id));
-      } catch (e) {
+        toast.success("Spotlight Item Deleted", `Deleted "${deleteModal.name || "banner"}" successfully.`);
+      } catch (e: any) {
         console.error("Failed to delete spotlight item:", e);
+        toast.error("Delete Failed", e?.message || "Failed to delete spotlight item.");
       }
     }
     if (deleteModal.type === "categorySections") {
@@ -720,6 +727,7 @@ export default function ImageSectionsPage() {
       }
       updateCategorySectionsState(() => updatedList);
       await saveQuickServiceSections(updatedList);
+      toast.success("Section Item Removed", `Removed "${deleteModal.name || "item"}" successfully.`);
     }
     setDeleteModal(null);
   };

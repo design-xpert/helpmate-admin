@@ -16,6 +16,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { initialAuditLogs, AuditLog } from "@/lib/mockData";
+import { toast } from "@/components/Toast";
 
 export default function RBACPage() {
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(initialAuditLogs);
@@ -120,7 +121,10 @@ export default function RBACPage() {
           </div>
 
           <button
-            onClick={() => setAuditLogs([])}
+            onClick={() => {
+              setAuditLogs([]);
+              toast.info("Audit Stream Cleared", "The live log stream has been reset.");
+            }}
             className="text-xs font-semibold text-slate-600 hover:text-slate-900 px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200"
           >
             Clear Log Stream

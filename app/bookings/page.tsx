@@ -2087,111 +2087,104 @@ function BookingsPageContent() {
                     <div
                       key={cat.name}
                       onClick={() => handleSelectCategory(cat.name)}
-                      className={`p-3.5 sm:p-4 rounded-2xl border transition-all duration-200 cursor-pointer group flex flex-col justify-between ${
+                      className={`p-3.5 sm:p-4 rounded-2xl border transition-all duration-200 cursor-pointer group ${
                         isPinned
                           ? "bg-gradient-to-br from-amber-50/30 via-white to-white dark:from-amber-950/25 dark:via-slate-900 dark:to-slate-900 border-amber-300 dark:border-amber-700/70 hover:border-amber-500 hover:shadow-md shadow-2xs"
                           : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-brand-500 hover:shadow-md"
                       }`}
                     >
-                      <div>
-                        {/* Header Row: Icon + Title/Pinned (in place of Service Category to reduce space) & Orders Count + Pin Button */}
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                            <BookingCategoryIcon
-                              iconUrl={cat.iconUrl}
-                              name={cat.name}
-                              className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80"
-                              imgClassName="w-full h-full object-contain p-1"
-                            />
-                            <div className="min-w-0 flex-1">
-                              <h3
-                                className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white group-hover:text-brand-600 transition-colors truncate"
-                                title={cat.name}
-                              >
-                                {cat.name}
-                              </h3>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <span
-                              className={`text-[10px] font-semibold px-2 py-0.5 rounded-lg border ${
-                                isPinned
-                                  ? "bg-amber-100/60 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800"
-                                  : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700"
-                              }`}
+                      {/* Header Row: Icon + Title/Pinned (in place of Service Category to reduce space) & Orders Count + Pin Button */}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          <BookingCategoryIcon
+                            iconUrl={cat.iconUrl}
+                            name={cat.name}
+                            className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80"
+                            imgClassName="w-full h-full object-contain p-1"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <h3
+                              className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white group-hover:text-brand-600 transition-colors truncate"
+                              title={cat.name}
                             >
-                              {cat.count} Orders
-                            </span>
-
-                            <button
-                              type="button"
-                              disabled={pinLoadingCat === cat.name}
-                              onClick={(e) => togglePinCategory(cat.name, e, cat.id)}
-                              title={
-                                pinLoadingCat === cat.name
-                                  ? "Updating pin..."
-                                  : isPinned
-                                  ? "Unpin category"
-                                  : categoryStatsList.filter((c) => Boolean(c.isPinned)).length >= 3
-                                  ? "Pin limit reached (max 3)"
-                                  : "Pin to top (max 3)"
-                              }
-                              className={`p-1.5 rounded-lg transition-all cursor-pointer ${
-                                isPinned
-                                  ? "bg-amber-100 dark:bg-amber-950 text-amber-600 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-900/80 border border-amber-300/80 dark:border-amber-700"
-                                  : "text-slate-400 hover:text-amber-600 hover:bg-slate-100 dark:hover:bg-slate-800 opacity-60 group-hover:opacity-100"
-                              } disabled:opacity-50`}
-                            >
-                              {pinLoadingCat === cat.name ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-600" />
-                              ) : (
-                                <Pin className={`w-3.5 h-3.5 ${isPinned ? "fill-current" : ""}`} />
-                              )}
-                            </button>
+                              {cat.name}
+                            </h3>
                           </div>
                         </div>
 
-                        {/* Status indicators (slim 4-pill row) */}
-                        <div className="grid grid-cols-4 gap-1.5 text-center mt-3">
-                          <div className="py-1 px-1 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60">
-                            <span className="text-[8px] font-medium text-amber-600 dark:text-amber-400 block uppercase leading-none tracking-wide">
-                              Open
-                            </span>
-                            <span className="text-xs font-semibold text-amber-600 dark:text-amber-400 mt-0.5 block">
-                              {cat.unassigned}
-                            </span>
-                          </div>
-                          <div className="py-1 px-1 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60">
-                            <span className="text-[8px] font-medium text-blue-600 dark:text-blue-400 block uppercase leading-none tracking-wide">
-                              Active
-                            </span>
-                            <span className="text-xs font-semibold text-blue-600 dark:text-blue-400 mt-0.5 block">
-                              {cat.inProgress}
-                            </span>
-                          </div>
-                          <div className="py-1 px-1 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60">
-                            <span className="text-[8px] font-medium text-emerald-600 dark:text-emerald-400 block uppercase leading-none tracking-wide">
-                              Done
-                            </span>
-                            <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 mt-0.5 block">
-                              {cat.completed}
-                            </span>
-                          </div>
-                          <div className="py-1 px-1 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60">
-                            <span className="text-[8px] font-medium text-rose-600 dark:text-rose-400 block uppercase leading-none tracking-wide">
-                              Cancel
-                            </span>
-                            <span className="text-xs font-semibold text-rose-600 dark:text-rose-400 mt-0.5 block">
-                              {cat.cancelled}
-                            </span>
-                          </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span
+                            className={`text-[10px] font-semibold px-2 py-0.5 rounded-lg border ${
+                              isPinned
+                                ? "bg-amber-100/60 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800"
+                                : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700"
+                            }`}
+                          >
+                            {cat.count} Orders
+                          </span>
+
+                          <button
+                            type="button"
+                            disabled={pinLoadingCat === cat.name}
+                            onClick={(e) => togglePinCategory(cat.name, e, cat.id)}
+                            title={
+                              pinLoadingCat === cat.name
+                                ? "Updating pin..."
+                                : isPinned
+                                ? "Unpin category"
+                                : categoryStatsList.filter((c) => Boolean(c.isPinned)).length >= 3
+                                ? "Pin limit reached (max 3)"
+                                : "Pin to top (max 3)"
+                            }
+                            className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                              isPinned
+                                ? "bg-amber-100 dark:bg-amber-950 text-amber-600 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-900/80 border border-amber-300/80 dark:border-amber-700"
+                                : "text-slate-400 hover:text-amber-600 hover:bg-slate-100 dark:hover:bg-slate-800 opacity-60 group-hover:opacity-100"
+                            } disabled:opacity-50`}
+                          >
+                            {pinLoadingCat === cat.name ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-600" />
+                            ) : (
+                              <Pin className={`w-3.5 h-3.5 ${isPinned ? "fill-current" : ""}`} />
+                            )}
+                          </button>
                         </div>
                       </div>
 
-                      <div className="pt-2 mt-2.5 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-[11px] font-semibold text-brand-600 dark:text-brand-400 group-hover:translate-x-0.5 transition-transform">
-                        <span>Open {cat.name}</span>
-                        <ChevronRight className="w-3.5 h-3.5" />
+                      {/* Status indicators (slim 4-pill row) */}
+                      <div className="grid grid-cols-4 gap-1.5 text-center mt-3">
+                        <div className="py-1 px-1 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60">
+                          <span className="text-[8px] font-medium text-amber-600 dark:text-amber-400 block uppercase leading-none tracking-wide">
+                            Open
+                          </span>
+                          <span className="text-xs font-semibold text-amber-600 dark:text-amber-400 mt-0.5 block">
+                            {cat.unassigned}
+                          </span>
+                        </div>
+                        <div className="py-1 px-1 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60">
+                          <span className="text-[8px] font-medium text-blue-600 dark:text-blue-400 block uppercase leading-none tracking-wide">
+                            Active
+                          </span>
+                          <span className="text-xs font-semibold text-blue-600 dark:text-blue-400 mt-0.5 block">
+                            {cat.inProgress}
+                          </span>
+                        </div>
+                        <div className="py-1 px-1 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60">
+                          <span className="text-[8px] font-medium text-emerald-600 dark:text-emerald-400 block uppercase leading-none tracking-wide">
+                            Done
+                          </span>
+                          <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 mt-0.5 block">
+                            {cat.completed}
+                          </span>
+                        </div>
+                        <div className="py-1 px-1 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60">
+                          <span className="text-[8px] font-medium text-rose-600 dark:text-rose-400 block uppercase leading-none tracking-wide">
+                            Cancel
+                          </span>
+                          <span className="text-xs font-semibold text-rose-600 dark:text-rose-400 mt-0.5 block">
+                            {cat.cancelled}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   );

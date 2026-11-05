@@ -38,7 +38,7 @@ import {
   Percent,
 } from "lucide-react";
 import { Portal } from "@/components/Portal";
-import { ToastContainer, ToastMessage } from "@/components/Toast";
+import { toast, ToastContainer, ToastMessage } from "@/components/Toast";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { PartnerMapView } from "@/components/PartnerMapView";
 import { useRbac } from "@/context/RbacContext";
@@ -2028,8 +2028,10 @@ export default function TechniciansPage() {
                 <button
                   type="button"
                   onClick={() => {
+                    const deletedName = deleteTech.name;
                     setTechs(techs.filter((t) => t.id !== deleteTech.id));
                     setDeleteTech(null);
+                    toast.success("Partner Deleted", `Partner ${deletedName} deleted successfully.`);
                   }}
                   className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold text-xs shadow-lux"
                 >

@@ -24,6 +24,7 @@ import { CustomSelect } from "@/components/CustomSelect";
 import { StatusDropdown } from "@/components/StatusDropdown";
 import { ShimmerRow, ShimmerCardGrid } from "@/components/ShimmerLoader";
 import { useRbac } from "@/context/RbacContext";
+import { toast } from "@/components/Toast";
 import {
   Sliders,
   Plus,
@@ -156,18 +157,27 @@ export default function CategoriesPage() {
     if (!deleteModal) return;
     const catToDelete = deleteModal.cat;
 
-    if (catToDelete.id.length === 24) {
-      await deleteCategoryApi(catToDelete.id);
+    try {
+      if (catToDelete.id.length === 24) {
+        const res = await deleteCategoryApi(catToDelete.id);
+        if (res && res.success === false) {
+          toast.error("Delete Failed", res.message || "Failed to delete category.");
+          return;
+        }
+      }
+      setCategories((prev) => {
+        const updated = prev.filter((c) => c.id !== catToDelete.id);
+        setCachedModuleData("categories", updated);
+        return updated;
+      });
+      if (editingCategory?.id === catToDelete.id) {
+        setIsDrawerOpen(false);
+      }
+      toast.success("Category Deleted", `Category "${catToDelete.name}" deleted successfully.`);
+      setDeleteModal(null);
+    } catch (err: any) {
+      toast.error("Delete Failed", err?.message || "Failed to delete category.");
     }
-    setCategories((prev) => {
-      const updated = prev.filter((c) => c.id !== catToDelete.id);
-      setCachedModuleData("categories", updated);
-      return updated;
-    });
-    if (editingCategory?.id === catToDelete.id) {
-      setIsDrawerOpen(false);
-    }
-    setDeleteModal(null);
   };
 
   const [updatingCatStatusId, setUpdatingCatStatusId] = useState<string | null>(null);
@@ -180,13 +190,22 @@ export default function CategoriesPage() {
     setUpdatingCatStatusId(cat.id);
     try {
       if (cat.id.length === 24) {
-        await toggleCategoryStatusApi(cat.id, newStatusBool);
+        const res = await toggleCategoryStatusApi(cat.id, newStatusBool);
+        if (res && res.success === false) {
+          toast.error("Status Update Failed", res.message || "Failed to update category status.");
+          return;
+        }
       }
       setCategories((prev) =>
         prev.map((c) => (c.id === cat.id ? { ...c, status: newStatusStr } : c))
       );
-    } catch (err) {
+      toast.success(
+        newStatusBool ? "Category Activated" : "Category Deactivated",
+        `Category "${cat.name}" is now ${newStatusStr}.`
+      );
+    } catch (err: any) {
       console.error(err);
+      toast.error("Status Update Failed", err?.message || "Failed to update category status.");
     } finally {
       setUpdatingCatStatusId(null);
     }
@@ -457,6 +476,7 @@ export default function CategoriesPage() {
         }
       }
 
+      toast.success(editingCategory ? "Category Updated" : "Category Created", `Category "${catName.trim()}" saved successfully.`);
       setIsDrawerOpen(false);
     } catch (err) {
       console.error("Save category error:", err);

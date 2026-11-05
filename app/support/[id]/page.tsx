@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRbac } from "@/context/RbacContext";
 import { CustomSelect } from "@/components/CustomSelect";
+import { toast } from "@/components/Toast";
 import { initialSupportTickets, SupportTicketItem, SupportMessage, officeAdminsList } from "@/lib/mockData";
 import {
   ArrowLeft,
@@ -43,6 +44,7 @@ export default function SupportTicketDetailPage({ params }: { params: Promise<{ 
     status: "Replied" | "Customer Replied" | "In Progress" | "In Review" | "Answered" | "Closed"
   ) => {
     setTickets((prev) => prev.map((t) => (t.id === ticket.id ? { ...t, status } : t)));
+    toast.success("Ticket Status Updated", `Ticket #${ticket.id} status is now ${status}.`);
   };
 
   const handleAssignAdmin = (adminName: string) => {
@@ -57,6 +59,7 @@ export default function SupportTicketDetailPage({ params }: { params: Promise<{ 
           : t
       )
     );
+    toast.success("Ticket Assigned", adminName ? `Ticket assigned to ${adminName}.` : "Ticket unassigned.");
   };
 
   const handleSendMessage = (e: React.FormEvent) => {
@@ -84,6 +87,7 @@ export default function SupportTicketDetailPage({ params }: { params: Promise<{ 
       )
     );
 
+    toast.success("Reply Sent", "Your response has been dispatched to the customer.");
     setNewMessageText("");
   };
 

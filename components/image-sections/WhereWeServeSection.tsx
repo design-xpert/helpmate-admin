@@ -16,6 +16,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { Portal } from "@/components/Portal";
+import { toast } from "@/components/Toast";
 import { ZoneCard } from "./types";
 import { SectionCardImage } from "./SectionCardImage";
 import { ZoneCardShimmerGrid } from "./SectionShimmers";
@@ -98,12 +99,14 @@ export function WhereWeServeSection({
     try {
       const res = await updateWebsiteZoneApi(zone.id, formData);
       if (res && res.success) {
+        toast.success("Zone Status Updated", `Zone "${zone.name}" is now ${nextStatus ? "active" : "inactive"}.`);
         await fetchZones();
       } else {
-        alert(res?.message || "Failed to update zone status.");
+        toast.error("Status Update Failed", res?.message || "Failed to update zone status.");
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to toggle zone status:", err);
+      toast.error("Status Update Failed", err?.message || "Failed to update zone status.");
     }
   };
 
@@ -111,11 +114,11 @@ export function WhereWeServeSection({
     if (isSavingZone) return;
     const d = zoneModal.data;
     if (!d.name?.trim()) {
-      alert("Zone name is required.");
+      toast.error("Validation Error", "Zone name is required.");
       return;
     }
     if (!d.city?.trim()) {
-      alert("City is required.");
+      toast.error("Validation Error", "City is required.");
       return;
     }
 
@@ -149,19 +152,21 @@ export function WhereWeServeSection({
         }
         const res = await addWebsiteZoneApi(formData);
         if (res && res.success) {
+          toast.success("Zone Created", `Zone "${d.name.trim()}" added successfully.`);
           await fetchZones();
           setZoneModal({ open: false, mode: "add", data: {}, file: null, areasInput: "" });
         } else {
-          alert(res?.message || "Failed to add zone.");
+          toast.error("Save Failed", res?.message || "Failed to add zone.");
         }
       } else {
         if (!d.id) return;
         const res = await updateWebsiteZoneApi(d.id, formData);
         if (res && res.success) {
+          toast.success("Zone Updated", `Zone "${d.name.trim()}" updated successfully.`);
           await fetchZones();
           setZoneModal({ open: false, mode: "add", data: {}, file: null, areasInput: "" });
         } else {
-          alert(res?.message || "Failed to update zone.");
+          toast.error("Save Failed", res?.message || "Failed to update zone.");
         }
       }
     } catch (err) {

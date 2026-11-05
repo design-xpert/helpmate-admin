@@ -50,6 +50,7 @@ import {
   AddressRecipientType,
 } from "@/lib/mockData";
 import { Portal } from "@/components/Portal";
+import { toast } from "@/components/Toast";
 import { CustomerSearchPicker } from "@/components/CustomerSearchPicker";
 import { CustomSelect } from "@/components/CustomSelect";
 import { mapApiBooking } from "@/lib/bookingMapper";
@@ -254,7 +255,7 @@ export function BookingWizardModal({
   const handleDeleteSavedAddressItem = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (savedAddresses.length <= 1) {
-      alert("At least one saved address must remain.");
+      toast.error("Delete Address", "At least one saved address must remain.");
       return;
     }
     const filtered = savedAddresses.filter((a) => a.id !== id);
@@ -262,6 +263,7 @@ export function BookingWizardModal({
     if (selectedSavedAddressId === id && filtered.length > 0) {
       selectSavedAddress(filtered[0]);
     }
+    toast.success("Address Deleted", "Saved address removed successfully.");
 
     // Call delete API: DELETE /api/customer-address/{id}
     if (id && id.length === 24) {

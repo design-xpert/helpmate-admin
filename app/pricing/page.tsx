@@ -46,6 +46,7 @@ import {
 } from "lucide-react";
 import { Portal } from "@/components/Portal";
 import { useRbac } from "@/context/RbacContext";
+import { toast } from "@/components/Toast";
 
 interface CalcLayoutItem {
   id: string;
@@ -344,15 +345,19 @@ export default function PricingPage() {
     if (deleteConfirm.type === "model") {
       setServiceModels(serviceModels.filter((m) => m.id !== deleteConfirm.id));
       showToast(`Deleted Service Model '${deleteConfirm.name}'`);
+      toast.success("Service Model Deleted", `Deleted '${deleteConfirm.name}' successfully.`);
     } else if (deleteConfirm.type === "layout") {
       setCalcLayouts(calcLayouts.filter((l) => l.id !== deleteConfirm.id));
       showToast(`Deleted Layout Tier '${deleteConfirm.name}'`);
+      toast.success("Layout Tier Deleted", `Deleted '${deleteConfirm.name}' successfully.`);
     } else if (deleteConfirm.type === "addon") {
       setCalcAddons(calcAddons.filter((a) => a.id !== deleteConfirm.id));
       showToast(`Deleted Add-on Item '${deleteConfirm.name}'`);
+      toast.success("Add-on Item Deleted", `Deleted '${deleteConfirm.name}' successfully.`);
     } else if (deleteConfirm.type === "guarantee") {
       setGuaranteesList(guaranteesList.filter((g) => g.id !== deleteConfirm.id));
       showToast("Deleted Guarantee Bullet");
+      toast.success("Guarantee Deleted", "Deleted guarantee bullet successfully.");
     }
     setDeleteConfirm({ isOpen: false, type: null, id: "", name: "" });
   };
@@ -394,11 +399,20 @@ export default function PricingPage() {
   };
 
   const handleToggleRateStatus = (id: string, targetStatus?: "Active" | "Inactive") => {
+    let nextStatus = "Active";
+    let targetTitle = "";
     setRateCards(
-      rateCards.map((rc) =>
-        rc.id === id ? { ...rc, status: targetStatus || (rc.status === "Active" ? "Inactive" : "Active") } : rc
-      )
+      rateCards.map((rc) => {
+        if (rc.id === id) {
+          nextStatus = targetStatus || (rc.status === "Active" ? "Inactive" : "Active");
+          targetTitle = rc.serviceTitle;
+          return { ...rc, status: nextStatus as "Active" | "Inactive" };
+        }
+        return rc;
+      })
     );
+    showToast(`Rate Card '${targetTitle}' is now ${nextStatus}`);
+    toast.success("Rate Card Status Updated", `Rate card '${targetTitle}' is now ${nextStatus}.`);
   };
 
   const handleDeleteRateCard = (id: string) => {

@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Booking, Technician, SelectedAddOnItem } from "@/lib/mockData";
 import { mapApiBooking } from "@/lib/bookingMapper";
 import { getBookingDetailsApi, getBookingsApi, archiveBookingApi, restoreBookingApi, cancelBookingApi } from "@/lib/api";
+import { toast } from "@/components/Toast";
 import {
   ArrowLeft,
   CalendarCheck,
@@ -255,7 +256,17 @@ function syncBookingToModuleCache(updated: Booking) {
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const [isArchiving, setIsArchiving] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
-  const [toastMessage, setToastMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
+  const [toastMessage, setLocalToastMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
+  const setToastMessage = (msg: { text: string; type: "success" | "error" } | null) => {
+    setLocalToastMessage(msg);
+    if (msg) {
+      if (msg.type === "success") {
+        toast.success(msg.text);
+      } else {
+        toast.error(msg.text);
+      }
+    }
+  };
 
   const handleArchive = async () => {
     if (!currentBooking) return;

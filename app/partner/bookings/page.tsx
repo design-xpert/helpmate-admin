@@ -6,6 +6,7 @@ import { initialBookings, Booking, SelectedAddOnItem } from "@/lib/mockData";
 import { CalendarCheck, MapPin, CheckCircle2, KeyRound, ShieldCheck, Phone, Navigation, ExternalLink, Package } from "lucide-react";
 import { Portal } from "@/components/Portal";
 import { AddOnManager } from "@/components/bookings/AddOnManager";
+import { toast } from "@/components/Toast";
 
 export default function PartnerBookingsPage() {
   const [bookings, setBookings] = useState<Booking[]>(initialBookings);
@@ -40,6 +41,7 @@ export default function PartnerBookingsPage() {
             : b
         )
       );
+      toast.success("Job Completed", `Booking #${selectedBooking.id} marked as completed!`);
       setTimeout(() => {
         setSelectedBooking(null);
         setOtpSuccess(false);

@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { Portal } from "@/components/Portal";
 import { useRbac } from "@/context/RbacContext";
+import { toast } from "@/components/Toast";
 
 interface FaqItem {
   id: string;
@@ -93,17 +94,33 @@ export default function FaqPage() {
     } else {
       setFaqs(faqs.map((f) => f.id === d.id ? { ...f, ...d } as FaqItem : f));
     }
+    toast.success(faqModal.mode === "add" ? "FAQ Created" : "FAQ Updated", "FAQ item saved successfully.");
     setFaqModal({ open: false, mode: "add", data: {} });
   };
 
   const deleteFaq = () => {
     if (!deleteModal) return;
     setFaqs(faqs.filter((f) => f.id !== deleteModal.id));
+    toast.success("FAQ Deleted", `FAQ "${deleteModal.question?.slice(0, 30)}..." deleted successfully.`);
     setDeleteModal(null);
   };
 
-  const toggleActive = (id: string) =>
-    setFaqs(faqs.map((f) => f.id === id ? { ...f, isActive: !f.isActive } : f));
+  const toggleActive = (id: string) => {
+    let nextStatus = false;
+    setFaqs(
+      faqs.map((f) => {
+        if (f.id === id) {
+          nextStatus = !f.isActive;
+          return { ...f, isActive: nextStatus };
+        }
+        return f;
+      })
+    );
+    toast.success(
+      nextStatus ? "FAQ Published" : "FAQ Unpublished",
+      `FAQ is now ${nextStatus ? "visible to customers" : "hidden"}.`
+    );
+  };
 
   const moveUp = (id: string) => {
     const sorted = [...faqs].sort((a, b) => a.sortOrder - b.sortOrder);

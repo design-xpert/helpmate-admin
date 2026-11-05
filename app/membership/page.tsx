@@ -52,6 +52,7 @@ import { DataTable, Column } from "@/components/DataTable";
 import { CustomSelect } from "@/components/CustomSelect";
 import { Portal } from "@/components/Portal";
 import { useRbac } from "@/context/RbacContext";
+import { toast } from "@/components/Toast";
 
 const AVAILABLE_SERVICE_CATEGORIES = [
   "AC & Appliance Servicing",
@@ -379,23 +380,32 @@ export default function MembershipManagementPage() {
 
   // Handle Plan Toggle Active
   const togglePlanStatus = (planId: string) => {
+    let nextStatus = "Active";
+    let targetName = "";
     setPlans((prev) =>
       prev.map((p) => {
         if (p.id !== planId) return p;
-        const newStatus = p.status === "Active" ? "Draft" : "Active";
-        return { ...p, status: newStatus };
+        nextStatus = p.status === "Active" ? "Draft" : "Active";
+        targetName = p.name;
+        return { ...p, status: nextStatus as "Active" | "Draft" };
       })
     );
+    toast.success("Plan Status Updated", `Membership plan "${targetName || "Plan"}" is now ${nextStatus === "Active" ? "active" : "draft"}.`);
   };
 
   // Handle Free Offer Toggle Status
   const toggleOfferStatus = (offerId: string) => {
+    let nextStatus = "Active";
+    let targetTitle = "";
     setFreeOffers((prev) =>
       prev.map((o) => {
         if (o.id !== offerId) return o;
-        return { ...o, status: o.status === "Active" ? "Paused" : "Active" };
+        nextStatus = o.status === "Active" ? "Paused" : "Active";
+        targetTitle = o.serviceTitle;
+        return { ...o, status: nextStatus as "Active" | "Paused" };
       })
     );
+    toast.success("Offer Status Updated", `Free offer "${targetTitle || "Offer"}" is now ${nextStatus}.`);
   };
 
   // Open Plan Drawer for Edit or Create
@@ -1233,11 +1243,13 @@ export default function MembershipManagementPage() {
                   <div className="p-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex items-center justify-between">
                     <button
                       type="button"
-                      onClick={() =>
+                      onClick={() => {
+                        const nextStatus = banner.status === "Active" ? "Inactive" : "Active";
                         setMembershipBanners((prev) =>
-                          prev.map((b) => (b.id === banner.id ? { ...b, status: b.status === "Active" ? "Inactive" : "Active" } : b))
-                        )
-                      }
+                          prev.map((b) => (b.id === banner.id ? { ...b, status: nextStatus } : b))
+                        );
+                        toast.success("Banner Status Updated", `Membership banner is now ${nextStatus}.`);
+                      }}
                       className={`px-3 py-1 rounded-xl text-[11px] font-bold transition-colors cursor-pointer ${
                         banner.status === "Active"
                           ? "bg-slate-200 text-slate-700 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-300"
@@ -1249,7 +1261,10 @@ export default function MembershipManagementPage() {
 
                     <button
                       type="button"
-                      onClick={() => setMembershipBanners(membershipBanners.filter((b) => b.id !== banner.id))}
+                      onClick={() => {
+                        setMembershipBanners(membershipBanners.filter((b) => b.id !== banner.id));
+                        toast.success("Banner Deleted", `Membership banner (${banner.bannerFormat}) deleted.`);
+                      }}
                       className="p-1.5 rounded-xl bg-red-50 text-red-600 dark:bg-red-950 dark:text-red-300 border border-red-200 dark:border-red-800 hover:bg-red-100 transition-colors cursor-pointer"
                       title="Delete Banner"
                     >

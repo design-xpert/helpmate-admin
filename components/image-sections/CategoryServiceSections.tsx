@@ -20,6 +20,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { Portal } from "@/components/Portal";
+import { toast } from "@/components/Toast";
 import {
   CategorySectionData,
   SimpleServiceCard,
@@ -461,9 +462,19 @@ export function CategoryServiceSections({
   };
 
   const toggleCategorySection = (id: string) => {
+    let nextStatus = false;
+    let targetTitle = "";
     onUpdateCategorySections((prev) =>
-      prev.map((sec) => (sec.id === id ? { ...sec, isActive: !sec.isActive } : sec))
+      prev.map((sec) => {
+        if (sec.id === id) {
+          nextStatus = !sec.isActive;
+          targetTitle = sec.title;
+          return { ...sec, isActive: nextStatus };
+        }
+        return sec;
+      })
     );
+    toast.success("Section Status Updated", `Category slider "${targetTitle || "Section"}" is now ${nextStatus ? "active" : "inactive"}.`);
   };
 
   const fetchPackagesForAddModal = async (sectionId: string) => {

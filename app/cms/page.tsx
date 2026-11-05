@@ -696,14 +696,24 @@ export default function CmsPage() {
   };
 
   const handleDeleteService = async (serviceId: string) => {
-    if (serviceId.length === 24) {
-      await deletePackageApi(serviceId);
+    try {
+      if (serviceId.length === 24) {
+        const res = await deletePackageApi(serviceId);
+        if (res && res.success === false) {
+          toast.error("Delete Failed", res.message || "Failed to delete package.");
+          return;
+        }
+      }
+      const targetService = services.find((s) => s.id === serviceId);
+      setServices((prev) => {
+        const updated = prev.filter((s) => s.id !== serviceId);
+        setCachedModuleData("cms_services", updated);
+        return updated;
+      });
+      toast.success("Package Deleted", `Service package "${targetService?.title || serviceId}" deleted successfully.`);
+    } catch (err: any) {
+      toast.error("Delete Failed", err?.message || "Failed to delete package.");
     }
-    setServices((prev) => {
-      const updated = prev.filter((s) => s.id !== serviceId);
-      setCachedModuleData("cms_services", updated);
-      return updated;
-    });
   };
 
   const handleBulkDeletePackages = async (ids: string[]) => {
@@ -1005,8 +1015,21 @@ export default function CmsPage() {
   };
 
   const handleToggleTrending = (serviceId: string) => {
+    let nextTrending = false;
+    let targetTitle = "";
     setServices((prev) =>
-      prev.map((srv) => (srv.id === serviceId ? { ...srv, isTrending: !srv.isTrending } : srv))
+      prev.map((srv) => {
+        if (srv.id === serviceId) {
+          nextTrending = !srv.isTrending;
+          targetTitle = srv.title;
+          return { ...srv, isTrending: nextTrending };
+        }
+        return srv;
+      })
+    );
+    toast.success(
+      nextTrending ? "Marked as Trending" : "Removed from Trending",
+      `"${targetTitle || serviceId}" is now ${nextTrending ? "featured in trending" : "removed from trending"}.`
     );
   };
 

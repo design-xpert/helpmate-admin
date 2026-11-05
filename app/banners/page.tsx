@@ -296,14 +296,31 @@ export default function BannersPage() {
     };
 
     setPromoBanners([newBanner, ...promoBanners]);
+    toast.success("Banner Created", `Promotional banner "${newBannerTitle || "New Banner"}" created successfully.`);
     setNewBannerTitle("");
     setIsAddBannerOpen(false);
   };
 
   const togglePromoBannerStatus = (id: string) => {
+    let nextStatus = "Active";
+    let targetTitle = "";
     setPromoBanners((prev) =>
-      prev.map((b) => (b.id === id ? { ...b, status: b.status === "Active" ? "Inactive" : "Active" } : b))
+      prev.map((b) => {
+        if (b.id === id) {
+          nextStatus = b.status === "Active" ? "Inactive" : "Active";
+          targetTitle = b.title;
+          return { ...b, status: nextStatus as "Active" | "Inactive" };
+        }
+        return b;
+      })
     );
+    toast.success("Banner Status Updated", `Banner "${targetTitle || "Item"}" is now ${nextStatus}.`);
+  };
+
+  const handleDeletePromoBanner = (id: string) => {
+    const bannerToDelete = promoBanners.find((b) => b.id === id);
+    setPromoBanners((prev) => prev.filter((b) => b.id !== id));
+    toast.success("Banner Deleted", `Banner "${bannerToDelete?.title || "Item"}" deleted successfully.`);
   };
 
   const copyTargetUrl = () => {
@@ -1272,7 +1289,7 @@ export default function BannersPage() {
                   {canDelete("BANNER") && (
                     <button
                       type="button"
-                      onClick={() => setPromoBanners(promoBanners.filter((b) => b.id !== banner.id))}
+                      onClick={() => handleDeletePromoBanner(banner.id)}
                       className="p-1.5 rounded-xl bg-red-50 text-red-600 dark:bg-red-950 dark:text-red-300 border border-red-200 dark:border-red-800 hover:bg-red-100 transition-colors cursor-pointer ml-auto"
                       title="Delete Banner"
                     >

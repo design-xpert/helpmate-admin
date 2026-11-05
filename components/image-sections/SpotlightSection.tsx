@@ -21,6 +21,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { Portal } from "@/components/Portal";
+import { toast } from "@/components/Toast";
 import {
   SpotlightBanner,
   SpotlightHeader,
@@ -321,12 +322,14 @@ export function SpotlightSection({
     onUpdateSpotlightBanners((prev) =>
       prev.map((b) => (b.id === id ? { ...b, isActive: newStatus } : b))
     );
+    toast.success("Spotlight Status Updated", `Spotlight banner "${banner.title || "Banner"}" is now ${newStatus ? "active" : "inactive"}.`);
     try {
       if (id && !id.startsWith("spotlight-")) {
         await updateSpotlightApi(id, { status: newStatus });
       }
     } catch (err) {
       console.error("Failed to toggle spotlight banner status:", err);
+      toast.error("Status Update Failed", "Failed to update spotlight banner status on server.");
     }
   };
 
