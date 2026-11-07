@@ -2380,6 +2380,257 @@ export async function getDashboardCategoryWiseBookingsApi(params?: ApiDashboardC
   }
 }
 
+export interface ApiActivityLogActor {
+  id: string;
+  name: string;
+  role?: string;
+  type?: "USER" | "SYSTEM" | string;
+}
+
+export interface ApiActivityLogEntity {
+  id?: string;
+  type?: string;
+  name?: string;
+}
+
+export interface ApiActivityLogChange {
+  field: string;
+  oldValue?: any;
+  newValue?: any;
+}
+
+export interface ApiActivityLogContext {
+  ip?: string;
+  userAgent?: string;
+  source?: string;
+}
+
+export interface ApiActivityLogItem {
+  _id: string;
+  tenantId?: string | null;
+  actor: ApiActivityLogActor;
+  action: string;
+  category: string;
+  entity?: ApiActivityLogEntity;
+  description: string;
+  changes?: ApiActivityLogChange[];
+  context?: ApiActivityLogContext;
+  result: "SUCCESS" | "FAILED" | string;
+  createdAt: string;
+}
+
+export interface ApiActivityLogsPagination {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+export interface ApiActivityLogsResponse {
+  success: boolean;
+  message?: string;
+  data: ApiActivityLogItem[];
+  pagination?: ApiActivityLogsPagination;
+}
+
+export interface ApiGlobalActivityLogsParams {
+  page?: number;
+  limit?: number;
+  action?: string;
+  category?: string;
+  result?: "SUCCESS" | "FAILED" | string;
+  actorId?: string;
+  actorType?: "USER" | "SYSTEM" | string;
+  fromDate?: string;
+  toDate?: string;
+  search?: string;
+  forceRefresh?: boolean;
+}
+
+export async function getGlobalActivityLogsApi(
+  params?: ApiGlobalActivityLogsParams
+): Promise<ApiActivityLogsResponse> {
+  const query = new URLSearchParams();
+  if (params?.page) query.append("page", String(params.page));
+  if (params?.limit) query.append("limit", String(params.limit));
+  if (params?.action && params.action !== "All") query.append("action", params.action);
+  if (params?.category && params.category !== "All") query.append("category", params.category);
+  if (params?.result && params.result !== "All") query.append("result", params.result);
+  if (params?.actorId) query.append("actorId", params.actorId);
+  if (params?.actorType && params.actorType !== "All") query.append("actorType", params.actorType);
+  if (params?.fromDate) query.append("fromDate", params.fromDate);
+  if (params?.toDate) query.append("toDate", params.toDate);
+  if (params?.search && params.search.trim()) query.append("search", params.search.trim());
+
+  const qs = query.toString();
+  const cacheKey = `getGlobalActivityLogsApi:${qs}`;
+  const cached = getFromCache(cacheKey, params?.forceRefresh);
+  if (cached) return cached;
+
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/dashboard/activity-logs/global${qs ? `?${qs}` : ""}`);
+    const data = await safeJsonResponse(res);
+    if (data && data.success !== false) {
+      apiCache.set(cacheKey, data);
+    }
+    return data;
+  } catch (error) {
+    console.error("getGlobalActivityLogsApi error:", error);
+    return { success: false, message: "Failed to fetch global activity logs.", data: [] };
+  }
+}
+
+export async function getMyActivityLogsApi(
+  params?: Omit<ApiGlobalActivityLogsParams, "actorId" | "actorType">
+): Promise<ApiActivityLogsResponse> {
+  const query = new URLSearchParams();
+  if (params?.page) query.append("page", String(params.page));
+  if (params?.limit) query.append("limit", String(params.limit));
+  if (params?.action && params.action !== "All") query.append("action", params.action);
+  if (params?.category && params.category !== "All") query.append("category", params.category);
+  if (params?.result && params.result !== "All") query.append("result", params.result);
+  if (params?.fromDate) query.append("fromDate", params.fromDate);
+  if (params?.toDate) query.append("toDate", params.toDate);
+  if (params?.search && params.search.trim()) query.append("search", params.search.trim());
+
+  const qs = query.toString();
+  const cacheKey = `getMyActivityLogsApi:${qs}`;
+  const cached = getFromCache(cacheKey, params?.forceRefresh);
+  if (cached) return cached;
+
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/dashboard/activity-logs${qs ? `?${qs}` : ""}`);
+    const data = await safeJsonResponse(res);
+    if (data && data.success !== false) {
+      apiCache.set(cacheKey, data);
+    }
+    return data;
+  } catch (error) {
+    console.error("getMyActivityLogsApi error:", error);
+    return { success: false, message: "Failed to fetch activity logs.", data: [] };
+  }
+}
+
+export interface ApiNotificationActor {
+  id?: string;
+  name?: string;
+  role?: string;
+  type?: "USER" | "SYSTEM" | string;
+}
+
+export interface ApiNotificationEntity {
+  id?: string;
+  type?: string;
+  name?: string;
+}
+
+export interface ApiNotificationItem {
+  _id: string;
+  recipientId: string;
+  actor?: ApiNotificationActor;
+  action: string;
+  category: string;
+  entity?: ApiNotificationEntity;
+  message: string;
+  isRead: boolean;
+  readAt?: string;
+  createdAt: string;
+}
+
+export interface ApiNotificationsResponse {
+  success: boolean;
+  message?: string;
+  data: ApiNotificationItem[];
+  unreadCount?: number;
+  pagination?: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+export interface ApiGetNotificationsParams {
+  page?: number;
+  limit?: number;
+  isRead?: boolean;
+  forceRefresh?: boolean;
+}
+
+export async function getNotificationsApi(
+  params?: ApiGetNotificationsParams
+): Promise<ApiNotificationsResponse> {
+  const query = new URLSearchParams();
+  if (params?.page) query.append("page", String(params.page));
+  if (params?.limit) query.append("limit", String(params.limit));
+  if (params?.isRead !== undefined) query.append("isRead", String(params.isRead));
+
+  const qs = query.toString();
+  const cacheKey = `getNotificationsApi:${qs}`;
+  const cached = getFromCache(cacheKey, params?.forceRefresh);
+  if (cached) return cached;
+
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/notifications${qs ? `?${qs}` : ""}`);
+    const data = await safeJsonResponse(res);
+    if (data && data.success !== false) {
+      apiCache.set(cacheKey, data);
+    }
+    return data;
+  } catch (error) {
+    console.error("getNotificationsApi error:", error);
+    return { success: false, message: "Failed to fetch notifications.", data: [], unreadCount: 0 };
+  }
+}
+
+export async function getUnreadNotificationCountApi(
+  forceRefresh?: boolean
+): Promise<{ success: boolean; message?: string; data?: { unreadCount: number } }> {
+  const cacheKey = `getUnreadNotificationCountApi`;
+  const cached = getFromCache(cacheKey, forceRefresh);
+  if (cached) return cached;
+
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/notifications/unread-count`);
+    const data = await safeJsonResponse(res);
+    if (data && data.success !== false) {
+      apiCache.set(cacheKey, data);
+    }
+    return data;
+  } catch (error) {
+    console.error("getUnreadNotificationCountApi error:", error);
+    return { success: false, message: "Failed to fetch unread notification count.", data: { unreadCount: 0 } };
+  }
+}
+
+export async function markNotificationAsReadApi(id: string): Promise<any> {
+  clearApiCache("getNotificationsApi");
+  clearApiCache("getUnreadNotificationCountApi");
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/notifications/${id}/read`, {
+      method: "PATCH",
+    });
+    return await safeJsonResponse(res);
+  } catch (error) {
+    console.error("markNotificationAsReadApi error:", error);
+    return { success: false, message: "Failed to mark notification as read." };
+  }
+}
+
+export async function markAllNotificationsAsReadApi(): Promise<any> {
+  clearApiCache("getNotificationsApi");
+  clearApiCache("getUnreadNotificationCountApi");
+  try {
+    const res = await authFetch(`${API_BASE_URL}/api/notifications/read-all`, {
+      method: "PATCH",
+    });
+    return await safeJsonResponse(res);
+  } catch (error) {
+    console.error("markAllNotificationsAsReadApi error:", error);
+    return { success: false, message: "Failed to mark all notifications as read." };
+  }
+}
+
 export async function getBookingDetailsApi(id: string) {
   try {
     let res = await authFetch(`${API_BASE_URL}/api/booking/${id}/details`);

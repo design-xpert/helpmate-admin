@@ -61,6 +61,31 @@ export default function InvoiceDetailPage() {
         const bkRes = await getBookingDetailsApi(invId);
         if (isMounted && bkRes && bkRes.success && bkRes.data) {
           const bData = bkRes.data;
+          const billingObj = bData.billing || {};
+          const addrObj = bData.address || bData.serviceAddress || {};
+          const mappedItems: any[] = [];
+
+          (bData.items || []).forEach((item: any) => {
+            const pkgBasePrice = item.package?.price || item.unitPrice || 0;
+            mappedItems.push({
+              packageName: item.package?.name || item.package?.packageName || item.serviceAction?.name || item.category?.name || "Service Package",
+              quantity: item.quantity || 1,
+              unitPrice: pkgBasePrice,
+              totalPrice: pkgBasePrice * (item.quantity || 1),
+            });
+
+            (item.selectedAddons || []).forEach((a: any) => {
+              const aPrice = a.unitPrice || a.price || 0;
+              const aQty = a.quantity || 1;
+              mappedItems.push({
+                packageName: `Addon: ${a.name || "Add-on Item"}`,
+                quantity: aQty,
+                unitPrice: aPrice,
+                totalPrice: a.totalPrice || (aPrice * aQty),
+              });
+            });
+          });
+
           setInvoiceData({
             invoiceNumber: bData.bookingNumber ? `INV-${bData.bookingNumber}` : `INV-${invId.slice(-6).toUpperCase()}`,
             bookingNumber: bData.bookingNumber || invId,
@@ -69,26 +94,28 @@ export default function InvoiceDetailPage() {
               mobile: bData.customer?.mobile || "",
             },
             address: {
-              serviceAddress: bData.serviceAddress?.serviceAddress || "",
-              localityName: bData.serviceAddress?.localityName || "Varanasi",
-              pincode: bData.serviceAddress?.pincode || "221002",
-              landmark: bData.serviceAddress?.landmark || "",
+              serviceAddress: addrObj.serviceAddress || "",
+              localityName: addrObj.localityName || "Varanasi",
+              pincode: addrObj.pincode || "221002",
+              landmark: addrObj.landmark || "",
             },
-            items: (bData.items || []).map((item: any) => ({
-              packageName: item.package?.name || item.package?.packageName || item.serviceAction?.name || item.category?.name || "Service Package",
-              quantity: item.quantity || 1,
-              unitPrice: item.unitPrice || item.totalPrice || item.package?.price || 0,
-              totalPrice: item.totalPrice || ((item.unitPrice || item.package?.price || 0) * (item.quantity || 1)),
-            })),
+            items: mappedItems.length > 0 ? mappedItems : [
+              {
+                packageName: "Service Package",
+                quantity: 1,
+                unitPrice: billingObj.mrp || bData.amount || 0,
+                totalPrice: billingObj.mrp || bData.amount || 0,
+              }
+            ],
             billing: {
-              mrp: bData.amount || 0,
-              sellingPrice: bData.amount || 0,
-              discount: 0,
-              platformFee: 49,
-              gst: Math.round((bData.amount || 0) * 0.18),
-              totalAmount: bData.amount !== undefined ? bData.amount : 0,
-              paymentMethod: bData.paymentMethod || "UPI / Online",
-              paymentStatus: bData.bookingStatus === "completed" ? "paid" : "pending",
+              mrp: billingObj.mrp ?? bData.amount ?? 0,
+              sellingPrice: billingObj.sellingPrice ?? bData.amount ?? 0,
+              discount: billingObj.discount ?? 0,
+              platformFee: billingObj.platformFee ?? 49,
+              gst: billingObj.gst ?? Math.round((bData.amount || 0) * 0.18),
+              totalAmount: billingObj.totalAmount ?? (bData.amount !== undefined ? bData.amount : 0),
+              paymentMethod: billingObj.payment?.paymentMethod || bData.paymentMethod || "UPI / Online",
+              paymentStatus: billingObj.payment?.paymentStatus || (bData.status === "completed" || bData.bookingStatus === "completed" ? "paid" : "pending"),
             },
             generatedAt: bData.createdAt || new Date().toISOString(),
           });

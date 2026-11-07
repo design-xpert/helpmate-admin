@@ -58,6 +58,13 @@ import {
 } from "lucide-react";
 import { Portal } from "@/components/Portal";
 import { toast } from "@/components/Toast";
+import {
+  getUnopenedBookingIds,
+  addNewBooking,
+  addNewBookings,
+  markBookingAsOpened,
+  subscribeToNewBookings,
+} from "@/lib/newBookingTracker";
 import { BookingWizardModal } from "@/components/bookings/BookingWizardModal";
 import { AssignPartnerModal } from "@/components/bookings/AssignPartnerModal";
 import { InspectionFlowModal } from "@/components/bookings/InspectionFlowModal";
@@ -352,6 +359,40 @@ function BookingsPageContent() {
   useEffect(() => {
     bookingsRef.current = bookings;
   }, [bookings]);
+
+  // Track unopened/new bookings
+  const [unopenedBookingIds, setUnopenedBookingIds] = useState<Set<string>>(() => getUnopenedBookingIds());
+
+  useEffect(() => {
+    setUnopenedBookingIds(getUnopenedBookingIds());
+    return subscribeToNewBookings(() => {
+      setUnopenedBookingIds(getUnopenedBookingIds());
+    });
+  }, []);
+
+  // Set of category names / IDs (lowercased) that currently have unopened new bookings
+  const categoriesWithUnopened = useMemo(() => {
+    if (unopenedBookingIds.size === 0) return new Set<string>();
+    const set = new Set<string>();
+    bookings.forEach((b) => {
+      const isUnopened =
+        unopenedBookingIds.has(String(b.id)) ||
+        (b.bookingNumber && unopenedBookingIds.has(String(b.bookingNumber))) ||
+        ((b as any)._id && unopenedBookingIds.has(String((b as any)._id)));
+      if (isUnopened) {
+        if (b.category) {
+          set.add(b.category.toLowerCase().trim());
+        }
+        if ((b as any).categoryName) {
+          set.add(String((b as any).categoryName).toLowerCase().trim());
+        }
+        if ((b as any).categoryId) {
+          set.add(String((b as any).categoryId).toLowerCase().trim());
+        }
+      }
+    });
+    return set;
+  }, [bookings, unopenedBookingIds]);
   const [apiCategories, setApiCategories] = useState<ApiBookingCategoryStat[]>(() => initialCachedCats || []);
   const [allCategoryStats, setAllCategoryStats] = useState<any>(() => initialCachedAllStats || null);
   const [isLoadingData, setIsLoadingData] = useState(() => !(
@@ -682,6 +723,14 @@ function BookingsPageContent() {
             const newBookings = mergedList.filter((b) => !prevIds.has(b.id) && !(b as any).isLocalOptimistic);
 
             if (newBookings.length > 0 && prev.length > 0) {
+              const newIds = newBookings.flatMap((b) =>
+                [
+                  String(b.id),
+                  b.bookingNumber ? String(b.bookingNumber) : null,
+                  (b as any)._id ? String((b as any)._id) : null,
+                ].filter(Boolean) as string[]
+              );
+              addNewBookings(newIds);
               toast.dismissAll();
               toast.success(
                 "New Booking Received",
@@ -878,6 +927,25 @@ function BookingsPageContent() {
     setChannelFilter("ALL");
     setActiveStatusFilter("All");
     setSelectedCategory(catName);
+
+    // When a category card is opened, mark all unopened bookings in this category as opened
+    if (catName && catName !== "All") {
+      const catLower = catName.toLowerCase().trim();
+      const idsToMark = bookings
+        .filter((b) => {
+          const bCat = (b.category || (b as any).categoryName || "").toLowerCase().trim();
+          const bCatId = String((b as any).categoryId || "").toLowerCase().trim();
+          return bCat === catLower || (bCatId && bCatId === catLower);
+        })
+        .flatMap((b) => [
+          String(b.id),
+          b.bookingNumber ? String(b.bookingNumber) : null,
+          (b as any)._id ? String((b as any)._id) : null,
+        ])
+        .filter(Boolean) as string[];
+
+      idsToMark.forEach((id) => markBookingAsOpened(id));
+    }
 
     const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
     if (catName) {
@@ -1292,6 +1360,9 @@ function BookingsPageContent() {
     }
 
     preStoreBookingDetail(bookingWithFlag);
+    if (bookingWithFlag.id) addNewBooking(String(bookingWithFlag.id));
+    if (bookingWithFlag.bookingNumber) addNewBooking(String(bookingWithFlag.bookingNumber));
+    if ((bookingWithFlag as any)._id) addNewBooking(String((bookingWithFlag as any)._id));
     setIsWizardOpen(false);
     setCreatedBookingToast(bookingWithFlag);
 
@@ -1448,17 +1519,32 @@ function BookingsPageContent() {
         className: "w-[140px] min-w-[140px] max-w-[140px]",
         accessor: (row) => {
           const displayId = row.bookingNumber || row.jobId || row.id;
+          const isNew =
+            unopenedBookingIds.has(String(row.id)) ||
+            (row.bookingNumber && unopenedBookingIds.has(String(row.bookingNumber))) ||
+            ((row as any)._id && unopenedBookingIds.has(String((row as any)._id)));
           return (
-            <button
-              type="button"
-              onClick={() => {
-                preStoreBookingDetail(row);
-                router.push(`/bookings/${row.id}?from=${encodeURIComponent(getReturnUrl())}`);
-              }}
-              className="font-mono font-semibold text-brand-600 dark:text-brand-400 hover:underline cursor-pointer text-xs"
-            >
-              {displayId}
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  markBookingAsOpened(row.id);
+                  if (row.bookingNumber) markBookingAsOpened(row.bookingNumber);
+                  if ((row as any)._id) markBookingAsOpened((row as any)._id);
+                  preStoreBookingDetail(row);
+                  router.push(`/bookings/${row.id}?from=${encodeURIComponent(getReturnUrl())}`);
+                }}
+                className="font-mono font-semibold text-brand-600 dark:text-brand-400 hover:underline cursor-pointer text-xs"
+              >
+                {displayId}
+              </button>
+              {isNew && (
+                <span
+                  className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0 shadow-xs"
+                  title="New Booking Received"
+                />
+              )}
+            </div>
           );
         },
         sortable: true,
@@ -1728,6 +1814,9 @@ function BookingsPageContent() {
                     label: "View Details",
                     icon: Eye,
                     onClick: () => {
+                      markBookingAsOpened(row.id);
+                      if (row.bookingNumber) markBookingAsOpened(row.bookingNumber);
+                      if ((row as any)._id) markBookingAsOpened((row as any)._id);
                       preStoreBookingDetail(row);
                       router.push(`/bookings/${row.id}?from=${encodeURIComponent(getReturnUrl())}`);
                     },
@@ -1774,6 +1863,9 @@ function BookingsPageContent() {
                           label: "View",
                           icon: Eye,
                           onClick: () => {
+                            markBookingAsOpened(row.id);
+                            if (row.bookingNumber) markBookingAsOpened(row.bookingNumber);
+                            if ((row as any)._id) markBookingAsOpened((row as any)._id);
                             preStoreBookingDetail(row);
                             router.push(`/bookings/${row.id}?from=${encodeURIComponent(getReturnUrl())}`);
                           },
@@ -1820,7 +1912,7 @@ function BookingsPageContent() {
       },
     ];
     return baseCols;
-  }, [isOfficeAdmin, selectedCategory, router, getReturnUrl]);
+  }, [isOfficeAdmin, selectedCategory, router, getReturnUrl, unopenedBookingIds]);
 
   const showTableView = Boolean(selectedCategory || bookingTypeParam || statusParam);
 
@@ -2082,17 +2174,31 @@ function BookingsPageContent() {
                 })
                 .map((cat) => {
                   const isPinned = Boolean(cat.isPinned);
+                  const isCatUnopened =
+                    categoriesWithUnopened.has((cat.name || "").toLowerCase().trim()) ||
+                    (cat.id ? categoriesWithUnopened.has(String(cat.id).toLowerCase().trim()) : false);
 
                   return (
                     <div
                       key={cat.name}
                       onClick={() => handleSelectCategory(cat.name)}
-                      className={`p-3.5 sm:p-4 rounded-2xl border transition-all duration-200 cursor-pointer group ${
+                      className={`relative p-3.5 sm:p-4 rounded-2xl border transition-all duration-200 cursor-pointer group ${
                         isPinned
                           ? "bg-gradient-to-br from-amber-50/30 via-white to-white dark:from-amber-950/25 dark:via-slate-900 dark:to-slate-900 border-amber-300 dark:border-amber-700/70 hover:border-amber-500 hover:shadow-md shadow-2xs"
                           : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-brand-500 hover:shadow-md"
                       }`}
                     >
+                      {/* Indicator dot at right side top corner, half outside */}
+                      {isCatUnopened && (
+                        <span
+                          className="absolute -top-1.5 -right-1.5 flex h-3.5 w-3.5 z-10"
+                          title="New Booking in this Category"
+                        >
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                          <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-500 ring-2 ring-white dark:ring-slate-900 shadow-md" />
+                        </span>
+                      )}
+
                       {/* Header Row: Icon + Title/Pinned (in place of Service Category to reduce space) & Orders Count + Pin Button */}
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2.5 min-w-0 flex-1">
@@ -2335,6 +2441,12 @@ function BookingsPageContent() {
                                 <div className="min-w-0 truncate">
                                   <div className="flex items-center gap-1.5">
                                     <span className="truncate font-semibold">{cat.name}</span>
+                                    {categoriesWithUnopened.has((cat.name || "").toLowerCase().trim()) && (
+                                      <span
+                                        className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0 shadow-xs"
+                                        title="New Booking Received"
+                                      />
+                                    )}
                                     {isPinned && (
                                       <span title="Pinned Category">
                                         <Pin className="w-2.5 h-2.5 text-amber-500 fill-current shrink-0" />
@@ -2462,6 +2574,9 @@ function BookingsPageContent() {
               onSelectCategory={handleSelectCategory}
               onSelectBooking={(b) => {
                 const targetId = b.id || (b as any)._id;
+                markBookingAsOpened(targetId);
+                if (b.bookingNumber) markBookingAsOpened(b.bookingNumber);
+                if (b.id) markBookingAsOpened(b.id);
                 preStoreBookingDetail(b);
                 router.push(`/bookings/${targetId}?from=${encodeURIComponent(getReturnUrl())}`);
               }}

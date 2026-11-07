@@ -36,6 +36,11 @@ import {
   ApiSearchResults,
   ApiSearchShortcut,
   handleGlobalLogout,
+  getNotificationsApi,
+  getUnreadNotificationCountApi,
+  markNotificationAsReadApi,
+  markAllNotificationsAsReadApi,
+  type ApiNotificationItem,
 } from "@/lib/api";
 
 type SearchCategory = "all" | "bookings" | "customers" | "partners" | "invoices";
@@ -240,38 +245,77 @@ export function Header({ onOpenMobileSidebar }: HeaderProps) {
     "Support Agent",
   ];
 
-  const notifications = [
-    {
-      id: "n-1",
-      jobStatus: "Assigned",
-      title: isPartner ? "New Assigned Booking #BK-VAR-8821" : "Job #BK-VAR-8821 Assigned",
-      desc: isPartner
-        ? "Split AC Power Jet requested at Sigra, Varanasi (Customer: Rajesh Agrawal)"
-        : "Assigned Ramesh Yadav to Split AC Jet Wash at Sigra, Varanasi",
-      time: "2 mins ago",
-    },
-    {
-      id: "n-2",
-      jobStatus: "En Route",
-      title: "Partner En Route to Location",
-      desc: "Partner Ramesh Yadav is traveling to customer site at Sigra, Varanasi (Est. arrival: 12 mins)",
-      time: "8 mins ago",
-    },
-    {
-      id: "n-3",
-      jobStatus: "In Progress",
-      title: "Work Started on Site",
-      desc: "Partner reached site and started Split AC Foam Jet Wash for Alok Verma (#BK-VAR-8819)",
-      time: "20 mins ago",
-    },
-    {
-      id: "n-4",
-      jobStatus: "Completed",
-      title: "Job Completed & OTP Verified",
-      desc: "4-Digit closure OTP 8821 verified for Sunita Devi. Receipt generated.",
-      time: "35 mins ago",
-    },
-  ];
+  const [headerNotifications, setHeaderNotifications] = useState<ApiNotificationItem[]>([]);
+  const [unreadCount, setUnreadCount] = useState<number>(0);
+
+  // Poll notifications and unread count every 10 seconds in the background
+  useEffect(() => {
+    let isMounted = true;
+
+    const pollNotifications = async () => {
+      try {
+        const [notifRes, countRes] = await Promise.all([
+          getNotificationsApi({ limit: 10, forceRefresh: true }),
+          getUnreadNotificationCountApi(true),
+        ]);
+
+        if (isMounted) {
+          if (notifRes && notifRes.success && Array.isArray(notifRes.data)) {
+            setHeaderNotifications(notifRes.data);
+          }
+          if (countRes && countRes.success && countRes.data) {
+            setUnreadCount(countRes.data.unreadCount ?? 0);
+          } else if (typeof notifRes?.unreadCount === "number") {
+            setUnreadCount(notifRes.unreadCount);
+          }
+        }
+      } catch (err) {
+        // silent background poll
+      }
+    };
+
+    // Initial fetch immediately on mount
+    pollNotifications();
+
+    // 10-second polling interval
+    const interval = setInterval(pollNotifications, 10000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  const handleMarkOneRead = async (id: string) => {
+    setHeaderNotifications((prev) =>
+      prev.map((n) => (n._id === id ? { ...n, isRead: true } : n))
+    );
+    setUnreadCount((c) => Math.max(c - 1, 0));
+    await markNotificationAsReadApi(id);
+  };
+
+  const handleMarkAllRead = async () => {
+    setHeaderNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    setUnreadCount(0);
+    await markAllNotificationsAsReadApi();
+  };
+
+  const formatHeaderRelativeTime = (dateString: string) => {
+    try {
+      const d = new Date(dateString);
+      const diffSec = Math.floor((Date.now() - d.getTime()) / 1000);
+      if (diffSec < 60) return "Just now";
+      const diffMin = Math.floor(diffSec / 60);
+      if (diffMin < 60) return `${diffMin}m ago`;
+      const diffHour = Math.floor(diffMin / 60);
+      if (diffHour < 24) return `${diffHour}h ago`;
+      const diffDay = Math.floor(diffHour / 24);
+      if (diffDay < 7) return `${diffDay}d ago`;
+      return d.toLocaleDateString("en-IN", { month: "short", day: "numeric" });
+    } catch {
+      return dateString;
+    }
+  };
 
   const handleLinkClick = (href: string) => {
     if (pathname === href) {
@@ -380,7 +424,9 @@ export function Header({ onOpenMobileSidebar }: HeaderProps) {
             className="w-8 sm:w-9 h-8 sm:h-9 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-400 relative cursor-pointer shrink-0 transition-colors"
           >
             <Bell className="w-4 h-4" />
-            <span className="w-2 h-2 rounded-full bg-brand-500 absolute top-1.5 right-1.5 ring-2 ring-white dark:ring-slate-900" />
+            {unreadCount > 0 && (
+              <span className="w-2 h-2 rounded-full bg-brand-500 absolute top-1.5 right-1.5 ring-2 ring-white dark:ring-slate-900" />
+            )}
           </button>
 
           {isNotificationsOpen && (
@@ -388,57 +434,81 @@ export function Header({ onOpenMobileSidebar }: HeaderProps) {
               <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
                 <div className="flex items-center gap-2">
                   <h4 className="text-xs font-black text-slate-900 dark:text-white">Notifications</h4>
-                  <span className="px-2 py-0.5 rounded-full bg-brand-500 text-white font-extrabold text-[10px]">
-                    3 New
-                  </span>
+                  {unreadCount > 0 && (
+                    <span className="px-2 py-0.5 rounded-full bg-brand-500 text-white font-extrabold text-[10px]">
+                      {unreadCount} New
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
+                  {unreadCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleMarkAllRead}
+                      className="text-[10px] font-bold text-slate-400 hover:text-brand-600 underline cursor-pointer"
+                    >
+                      Mark read
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => setIsNotificationsOpen(false)}
-                    className="text-[10px] font-bold text-slate-400 hover:text-brand-600 underline"
-                  >
-                    Mark read
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsNotificationsOpen(false)}
-                    className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-white"
+                    className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-white cursor-pointer"
                   >
                     <X className="w-4 h-4" />
                   </button>
                 </div>
               </div>
 
+              {/* Notifications Body: Immediate display without shimmer */}
               <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                {notifications.map((n) => (
-                  <div
-                    key={n.id}
-                    className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 text-left space-y-1 hover:border-brand-300 transition-colors"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span
-                        className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded border ${n.jobStatus === "Assigned"
-                            ? "bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-300 border-sky-200 dark:border-sky-800"
-                            : n.jobStatus === "En Route"
-                              ? "bg-purple-50 text-purple-700 dark:bg-purple-950 dark:text-purple-300 border-purple-200 dark:border-purple-800"
-                              : n.jobStatus === "In Progress"
-                                ? "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300 border-amber-200 dark:border-amber-800"
-                                : n.jobStatus === "Completed"
-                                  ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800"
-                                  : "bg-rose-50 text-rose-700 dark:bg-rose-950 dark:text-rose-300 border-rose-200 dark:border-rose-800"
-                          }`}
-                      >
-                        {n.jobStatus || "ORDER UPDATE"}
-                      </span>
-                      <span className="text-[10px] text-slate-400 font-medium">{n.time}</span>
-                    </div>
-                    <span className="text-xs font-extrabold text-slate-900 dark:text-white block leading-tight">
-                      {n.title}
-                    </span>
-                    <p className="text-[11px] text-slate-500 leading-snug">{n.desc}</p>
+                {headerNotifications.length === 0 ? (
+                  <div className="p-6 text-center text-slate-400 text-xs">
+                    No notifications right now
                   </div>
-                ))}
+                ) : (
+                  headerNotifications.map((n) => (
+                    <div
+                      key={n._id}
+                      onClick={() => !n.isRead && handleMarkOneRead(n._id)}
+                      className={`p-3 rounded-2xl border text-left space-y-1 transition-colors cursor-pointer ${
+                        !n.isRead
+                          ? "bg-brand-50/40 dark:bg-brand-950/30 border-brand-200 dark:border-brand-800/60 hover:border-brand-400"
+                          : "bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700/80 hover:border-slate-300 dark:hover:border-slate-600"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded border ${
+                              n.category === "BOOKING"
+                                ? "bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-300 border-sky-200 dark:border-sky-800"
+                                : n.category === "PARTNER"
+                                ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800"
+                                : n.category === "PAYMENT"
+                                ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800"
+                                : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200"
+                            }`}
+                          >
+                            {n.category || "UPDATE"}
+                          </span>
+                          {!n.isRead && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-brand-500" />
+                          )}
+                        </div>
+                        <span className="text-[10px] text-slate-400 font-medium">
+                          {formatHeaderRelativeTime(n.createdAt)}
+                        </span>
+                      </div>
+                      <span className="text-xs font-extrabold text-slate-900 dark:text-white block leading-tight">
+                        {n.action || n.category}
+                      </span>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug line-clamp-2">
+                        {n.message}
+                      </p>
+                    </div>
+                  ))
+                )}
               </div>
 
               <div className="pt-2 border-t border-slate-100 dark:border-slate-800">

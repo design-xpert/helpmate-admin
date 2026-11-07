@@ -326,6 +326,8 @@ export interface SelectedServiceItem {
   serviceCode?: string; // Unique Service Item Code e.g. HM-SRV-101
   title: string;
   price: number;
+  packagePrice?: number;
+  totalPrice?: number;
   quantity: number;
   category?: string;
   duration?: string;
@@ -334,6 +336,7 @@ export interface SelectedServiceItem {
   serviceActionId?: string;
   rawServiceId?: string;
   packageId?: string;
+  selectedAddons?: any[];
   addons?: any[];
 }
 
@@ -343,6 +346,7 @@ export interface SelectedAddOnItem {
   id: string;
   name: string;
   price: number;
+  quantity?: number;
   gstRate: number; // e.g. 0.18 for 18% GST or 0 for 0%
   gstAmount: number;
   totalPrice: number;
@@ -397,6 +401,8 @@ export interface Booking {
   addOnsBaseTotal?: number;
   addOnsGstTotal?: number;
   addOnsFinalTotal?: number;
+  items?: any[];
+  raw?: any;
   addressRecipientType?: AddressRecipientType;
   recipientName?: string;
   recipientPhone?: string;

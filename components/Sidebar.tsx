@@ -425,7 +425,6 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, initialState }: S
           title: "Notifications Hub",
           icon: MessageSquare,
           href: "/notifications",
-          badge: "Coming Soon",
         },
         {
           title: "Settings & Analytics",

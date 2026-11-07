@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { markBookingAsOpened } from "@/lib/newBookingTracker";
 import {
   X,
   User,
@@ -48,6 +49,14 @@ export function BookingDetailsDrawer({
   const isOfficeAdmin = role === "Office Admin";
   const [activeTab, setActiveTab] = useState<"general" | "timeline" | "payment" | "invoice">("general");
   const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (isOpen && booking) {
+      if (booking.id) markBookingAsOpened(String(booking.id));
+      if (booking.bookingNumber) markBookingAsOpened(String(booking.bookingNumber));
+      if ((booking as any)._id) markBookingAsOpened(String((booking as any)._id));
+    }
+  }, [isOpen, booking]);
 
   if (!isOpen || !booking) return null;
 
@@ -151,6 +160,59 @@ export function BookingDetailsDrawer({
             {/* GENERAL TAB */}
             {activeTab === "general" && (
               <div className="space-y-4">
+                {/* Service Package & Selected Add-ons */}
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Service Package</span>
+                    {booking.category && (
+                      <span className="text-[10px] font-extrabold text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-950 px-2 py-0.5 rounded border border-brand-200 dark:border-brand-800">
+                        {booking.category}
+                      </span>
+                    )}
+                  </div>
+                  <div className="space-y-0.5">
+                    <div className="font-extrabold text-sm text-slate-900 dark:text-white">{booking.serviceTitle}</div>
+                    {booking.subCategory && (
+                      <div className="text-xs text-slate-500 font-medium">{booking.subCategory}</div>
+                    )}
+                  </div>
+
+                  {/* Add-ons List if any */}
+                  {((booking.completedAddOns && booking.completedAddOns.length > 0) || (booking.addons && booking.addons.length > 0)) && (
+                    <div className="pt-2.5 border-t border-slate-200 dark:border-slate-700 space-y-2">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
+                        Selected Add-ons ({booking.completedAddOns?.length || booking.addons?.length || 0})
+                      </span>
+                      <div className="space-y-1.5">
+                        {booking.completedAddOns && booking.completedAddOns.length > 0 ? (
+                          booking.completedAddOns.map((addon, idx) => (
+                            <div key={addon.id || idx} className="flex items-center justify-between p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs">
+                              <span className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
+                                <span>{addon.name}</span>
+                                {(addon.quantity ?? 1) > 1 && <span className="text-[10px] text-slate-400 font-normal">×{addon.quantity}</span>}
+                              </span>
+                              <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">+₹{addon.totalPrice || addon.price || 0}</span>
+                            </div>
+                          ))
+                        ) : (
+                          booking.addons?.map((addonName, idx) => (
+                            <div key={idx} className="flex items-center justify-between p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs">
+                              <span className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
+                                <span>{typeof addonName === "string" ? addonName : (addonName as any).name || "Addon"}</span>
+                              </span>
+                              {(addonName as any).price && (
+                                <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">+₹{(addonName as any).price}</span>
+                              )}
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {/* Customer Details */}
                 {(() => {
                   const custBookings = initialBookings.filter(
@@ -338,21 +400,42 @@ export function BookingDetailsDrawer({
             )}
 
             {/* PAYMENT TAB */}
-            {activeTab === "payment" && (
-              <div className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3">
-                <h4 className="font-black text-slate-900 dark:text-white">Financial Breakdown</h4>
-                <div className="flex justify-between text-slate-600 dark:text-slate-400"><span>Base Fare</span><span className="font-bold text-slate-900 dark:text-white">₹{base}</span></div>
-                <div className="flex justify-between text-slate-600 dark:text-slate-400"><span>Convenience Fee</span><span className="font-bold text-slate-900 dark:text-white">₹{convenienceFee}</span></div>
-                <div className="flex justify-between text-slate-600 dark:text-slate-400"><span>CGST (9%) + SGST (9%)</span><span className="font-bold text-slate-900 dark:text-white">₹{cgst + sgst}</span></div>
-                <div className="border-t border-slate-200 dark:border-slate-700 pt-2 flex justify-between text-sm font-black text-brand-600 dark:text-brand-400">
-                  <span>Total Amount Billed</span>
-                  <span>₹{finalTotal}</span>
+            {activeTab === "payment" && (() => {
+              const addonsTotal = booking.addOnsFinalTotal || (booking.completedAddOns?.reduce((acc: number, a: any) => acc + (a.totalPrice || a.price || 0), 0) ?? 0);
+              const packageBase = (addonsTotal > 0 && base > addonsTotal) ? (base - addonsTotal) : base;
+              return (
+                <div className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3">
+                  <h4 className="font-black text-slate-900 dark:text-white">Financial Breakdown</h4>
+                  <div className="flex justify-between text-slate-600 dark:text-slate-400">
+                    <span>Base Service Package</span>
+                    <span className="font-bold text-slate-900 dark:text-white">₹{packageBase}</span>
+                  </div>
+                  {addonsTotal > 0 && (
+                    <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-semibold">
+                      <span>Add-On Services ({booking.completedAddOns?.length || booking.addons?.length || 0})</span>
+                      <span className="font-bold font-mono">+₹{addonsTotal}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-slate-600 dark:text-slate-400">
+                    <span>Convenience Fee</span>
+                    <span className="font-bold text-slate-900 dark:text-white">₹{convenienceFee}</span>
+                  </div>
+                  {(cgst + sgst > 0) && (
+                    <div className="flex justify-between text-slate-600 dark:text-slate-400">
+                      <span>CGST (9%) + SGST (9%)</span>
+                      <span className="font-bold text-slate-900 dark:text-white">₹{cgst + sgst}</span>
+                    </div>
+                  )}
+                  <div className="border-t border-slate-200 dark:border-slate-700 pt-2 flex justify-between text-sm font-black text-brand-600 dark:text-brand-400">
+                    <span>Total Amount Billed</span>
+                    <span>₹{finalTotal}</span>
+                  </div>
+                  <div className="pt-2 text-slate-500 font-medium border-t border-slate-200 dark:border-slate-700">
+                    Payment Method: <span className="font-bold text-slate-900 dark:text-white">{booking.paymentMethod || "UPI"}</span>
+                  </div>
                 </div>
-                <div className="pt-2 text-slate-500 font-medium border-t border-slate-200 dark:border-slate-700">
-                  Payment Method: <span className="font-bold text-slate-900 dark:text-white">{booking.paymentMethod || "UPI"}</span>
-                </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* INVOICE TAB */}
             {activeTab === "invoice" && (

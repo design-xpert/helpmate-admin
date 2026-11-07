@@ -75,17 +75,44 @@ export function mapApiBooking(b: any): Booking {
 
   const bookingIdDisplay = b.bookingNumber || (b._id ? `BK-${b._id.slice(-6).toUpperCase()}` : "BK-UNKNOWN");
 
+  // Extract all selected addons across all items
+  const allSelectedAddons = (b.items || []).flatMap((it: any) => it.selectedAddons || it.addons || []);
+  const mappedCompletedAddOns = allSelectedAddons.map((a: any, idx: number) => ({
+    id: a._id || a.addonId || a.id || String(idx),
+    name: a.name || a.title || "Add-on Item",
+    price: a.unitPrice ?? a.price ?? 0,
+    quantity: a.quantity ?? 1,
+    gstRate: 0,
+    gstAmount: a.gstAmount || 0,
+    totalPrice: a.totalPrice ?? ((a.unitPrice ?? a.price ?? 0) * (a.quantity ?? 1)),
+    isUnlisted: Boolean(a.isUnlisted),
+  }));
+
+  const addOnsFinalTotal = mappedCompletedAddOns.reduce((acc: number, a: any) => acc + (a.totalPrice || 0), 0);
+
   // Map all items into servicesList
   const servicesList = (b.items || []).map((item: any, idx: number) => {
     const itemTitle = item.package?.name || item.package?.packageName || item.serviceAction?.name || "Service";
+    const itemAddons = (item.selectedAddons || item.addons || []).map((a: any, aIdx: number) => ({
+      id: a._id || a.addonId || a.id || `${idx}-${aIdx}`,
+      name: a.name || a.title || "Add-on",
+      price: a.unitPrice ?? a.price ?? 0,
+      quantity: a.quantity ?? 1,
+      totalPrice: a.totalPrice ?? ((a.unitPrice ?? a.price ?? 0) * (a.quantity ?? 1)),
+    }));
+
     return {
       id: item.package?.id || item.package?._id || item.serviceAction?.id || item._id || String(idx),
       serviceCode: `${bookingIdDisplay}-${String(idx + 1).padStart(2, "0")}`,
       title: itemTitle,
-      price: item.totalPrice || item.unitPrice || item.package?.price || 0,
+      price: item.package?.price || item.unitPrice || item.totalPrice || 0,
+      packagePrice: item.package?.price || item.unitPrice || 0,
+      totalPrice: item.totalPrice || 0,
       quantity: item.quantity || 1,
       category: item.category?.name,
       duration: item.package?.duration ? `${item.package.duration} mins` : undefined,
+      selectedAddons: itemAddons,
+      addons: itemAddons,
     };
   });
 
@@ -199,8 +226,13 @@ export function mapApiBooking(b: any): Booking {
     category: catName,
     subCategory: subCatName,
     packageTitle: pkgTitle,
-    addons: (item0?.selectedAddons || []).map((a: any) => a.name || a.title || "Addon"),
+    addons: allSelectedAddons.map((a: any) => a.name || a.title || "Addon"),
     servicesList: servicesList,
+    completedAddOns: mappedCompletedAddOns,
+    addOnsFinalTotal: addOnsFinalTotal,
+    addOnsBaseTotal: addOnsFinalTotal,
+    items: b.items,
+    raw: b,
     basePrice: basePriceVal,
     convenienceFee: convenienceFeeVal,
     discountAmount: billingObj.discount || 0,

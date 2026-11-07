@@ -64,10 +64,6 @@ export const COMING_SOON_CONFIGS: Record<string, ComingSoonModuleConfig> = {
     path: "/coupons",
     title: "Coupons",
   },
-  "/notifications": {
-    path: "/notifications",
-    title: "Notifications Hub",
-  },
   "/reports": {
     path: "/reports",
     title: "Reports & Exports",

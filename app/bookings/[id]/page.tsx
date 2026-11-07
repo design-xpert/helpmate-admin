@@ -8,6 +8,7 @@ import { Booking, Technician, SelectedAddOnItem } from "@/lib/mockData";
 import { mapApiBooking } from "@/lib/bookingMapper";
 import { getBookingDetailsApi, getBookingsApi, archiveBookingApi, restoreBookingApi, cancelBookingApi } from "@/lib/api";
 import { toast } from "@/components/Toast";
+import { markBookingAsOpened } from "@/lib/newBookingTracker";
 import {
   ArrowLeft,
   CalendarCheck,
@@ -115,6 +116,26 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
   const [isLoading, setIsLoading] = useState<boolean>(() => !initialCached);
 
   useEffect(() => {
+    if (bookingId) {
+      markBookingAsOpened(bookingId);
+    }
+  }, [bookingId]);
+
+  useEffect(() => {
+    if (bookings && bookings.length > 0) {
+      const b = bookings[0];
+      if (b.id) markBookingAsOpened(String(b.id));
+      if (b.bookingNumber) markBookingAsOpened(String(b.bookingNumber));
+      if ((b as any)._id) markBookingAsOpened(String((b as any)._id));
+    }
+    if (rawBooking) {
+      if (rawBooking._id) markBookingAsOpened(String(rawBooking._id));
+      if (rawBooking.bookingNumber) markBookingAsOpened(String(rawBooking.bookingNumber));
+      if (rawBooking.id) markBookingAsOpened(String(rawBooking.id));
+    }
+  }, [bookings, rawBooking]);
+
+  useEffect(() => {
     let isMounted = true;
     const cached = getStoredBookingDetail(bookingId);
     if (cached && (cached.mapped || cached.raw)) {
@@ -123,11 +144,13 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
         if (cached.mapped) setBookings([cached.mapped]);
         setIsLoading(false);
       }
-      return; // DO NOT CALL API WHEN REVISITING SAME DETAIL PAGE
+      // Revalidate in background to fetch fresh booking details with addons
     }
 
     const fetchBooking = async () => {
-      setIsLoading(true);
+      if (!cached) {
+        setIsLoading(true);
+      }
       try {
         const detailsRes = await getBookingDetailsApi(bookingId);
         const bookingObj =
@@ -520,6 +543,7 @@ function syncBookingToModuleCache(updated: Booking) {
     id?: string;
     name?: string;
     price?: number;
+    quantity?: number;
     gstAmount?: number;
     totalPrice?: number;
     isUnlisted?: boolean;
@@ -530,19 +554,45 @@ function syncBookingToModuleCache(updated: Booking) {
     if (currentBooking?.completedAddOns && currentBooking.completedAddOns.length > 0) {
       return currentBooking.completedAddOns;
     }
-    const itemAddons = (rawBooking?.items || []).flatMap((it: any) => it.selectedAddons || []);
+    const itemAddons = (rawBooking?.items || []).flatMap((it: any) => it.selectedAddons || it.addons || []);
     if (itemAddons.length > 0) {
       return itemAddons.map((a: any, idx: number) => ({
-        id: a._id || a.addonId || String(idx),
-        name: a.name || "Add-on Item",
-        price: a.unitPrice || a.price || 0,
+        id: a._id || a.addonId || a.id || String(idx),
+        name: a.name || a.title || "Add-on Item",
+        price: a.unitPrice ?? a.price ?? 0,
+        quantity: a.quantity ?? 1,
         gstAmount: 0,
-        totalPrice: a.totalPrice || ((a.unitPrice || a.price || 0) * (a.quantity || 1)) || 0,
-        isUnlisted: false,
+        totalPrice: a.totalPrice ?? ((a.unitPrice ?? a.price ?? 0) * (a.quantity ?? 1)),
+        isUnlisted: Boolean(a.isUnlisted),
       }));
+    }
+    if (currentBooking?.servicesList && currentBooking.servicesList.length > 0) {
+      const fromServices = currentBooking.servicesList.flatMap((s: any) => s.selectedAddons || s.addons || []);
+      if (fromServices.length > 0) {
+        return fromServices.map((a: any, idx: number) => ({
+          id: a.id || a._id || a.addonId || String(idx),
+          name: a.name || a.title || "Add-on Item",
+          price: a.price ?? a.unitPrice ?? 0,
+          quantity: a.quantity ?? 1,
+          gstAmount: 0,
+          totalPrice: a.totalPrice ?? ((a.price ?? a.unitPrice ?? 0) * (a.quantity ?? 1)),
+          isUnlisted: Boolean(a.isUnlisted),
+        }));
+      }
     }
     return [];
   }, [currentBooking, rawBooking]);
+
+  const totalAddonsAmount = useMemo(() => {
+    return displayAddons.reduce((sum, item) => sum + (item.totalPrice || ((item.price || 0) * (item.quantity || 1))), 0);
+  }, [displayAddons]);
+
+  // If base includes addons (e.g. billing.sellingPrice = 1097 while mrp = 699), separate base package and addons
+  const packageBasePrice = rawBooking?.billing?.mrp
+    ? rawBooking.billing.mrp
+    : totalAddonsAmount > 0 && base > totalAddonsAmount
+      ? base - totalAddonsAmount
+      : base;
 
   // Section visibility checks: If API has no data for a section, do not show it
   const hasInspectionData = Boolean(
@@ -1162,24 +1212,66 @@ function syncBookingToModuleCache(updated: Booking) {
 
                 <div className="space-y-3 text-xs">
                   {currentBooking.servicesList && currentBooking.servicesList.length > 0 ? (
-                    currentBooking.servicesList.map((item, idx) => (
-                      <div key={item.id || idx} className="p-3.5 rounded-2xl bg-slate-50/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                        <div className="space-y-1">
-                          <div className="font-extrabold text-slate-900 dark:text-white text-xs flex items-center gap-2 flex-wrap">
-                            <span className="break-words">{idx + 1}. {item.title}</span>
-                            {item.category && (
-                              <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-brand-100 text-brand-700 dark:bg-brand-950 dark:text-brand-300 shrink-0">
-                                {item.category}
-                              </span>
-                            )}
+                    currentBooking.servicesList.map((item, idx) => {
+                      const itemAddons = item.selectedAddons || item.addons || [];
+                      const itemBasePrice = (item as any).packagePrice ?? item.price;
+                      return (
+                        <div key={item.id || idx} className="p-3.5 rounded-2xl bg-slate-50/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 space-y-2.5">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div className="space-y-1">
+                              <div className="font-extrabold text-slate-900 dark:text-white text-xs flex items-center gap-2 flex-wrap">
+                                <span className="break-words">{idx + 1}. {item.title}</span>
+                                {item.category && (
+                                  <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-brand-100 text-brand-700 dark:bg-brand-950 dark:text-brand-300 shrink-0">
+                                    {item.category}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-slate-500">
+                                Qty: {item.quantity} • ₹{itemBasePrice.toLocaleString()} each {item.duration ? `• ${item.duration}` : ""}
+                              </p>
+                            </div>
+                            <div className="text-left sm:text-right font-black text-slate-900 dark:text-white text-sm font-mono shrink-0">
+                              ₹{(item.totalPrice || (itemBasePrice * item.quantity)).toLocaleString()}
+                            </div>
                           </div>
-                          <p className="text-[11px] text-slate-500">Qty: {item.quantity} • ₹{item.price} each</p>
+
+                          {/* Nested Selected Add-ons under this Package item */}
+                          {itemAddons.length > 0 && (
+                            <div className="mt-2 pt-2 border-t border-slate-200/70 dark:border-slate-700/70 space-y-1.5">
+                              <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">
+                                Selected Add-ons ({itemAddons.length})
+                              </span>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                {itemAddons.map((addon: any, aIdx: number) => {
+                                  const aName = addon.name || addon.title || "Add-on";
+                                  const aQty = addon.quantity ?? 1;
+                                  const aPrice = addon.price ?? addon.unitPrice ?? 0;
+                                  const aTotal = addon.totalPrice ?? (aPrice * aQty);
+                                  return (
+                                    <div
+                                      key={addon.id || aIdx}
+                                      className="flex items-center justify-between p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px]"
+                                    >
+                                      <div className="flex items-center gap-1.5 min-w-0 pr-2">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                                        <span className="font-semibold text-slate-800 dark:text-slate-200 truncate">{aName}</span>
+                                        {aQty > 1 && (
+                                          <span className="text-[10px] text-slate-400 shrink-0">×{aQty}</span>
+                                        )}
+                                      </div>
+                                      <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 shrink-0">
+                                        +₹{aTotal.toLocaleString()}
+                                      </span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
                         </div>
-                        <div className="text-left sm:text-right font-black text-slate-900 dark:text-white text-sm font-mono shrink-0">
-                          ₹{(item.price * item.quantity).toLocaleString()}
-                        </div>
-                      </div>
-                    ))
+                      );
+                    })
                   ) : (
                     <div className="p-3.5 rounded-2xl bg-slate-50/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                       <div className="space-y-1">
@@ -1196,12 +1288,15 @@ function syncBookingToModuleCache(updated: Booking) {
                 </div>
               </div>
 
-              {/* Card 3: Job Completion Add-On Products & Services (Rendered only if Add-ons exist in API) */}
-              {displayAddons.length > 0 && (
+              {/* Card 3: Selected Add-On Services & Spares (Rendered only if Add-ons exist in API) */}
+              {/* {displayAddons.length > 0 && (
                 <div className="p-4 sm:p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4 shadow-xs">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
                     <span className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
-                      <Package className="w-4 h-4 text-emerald-600 shrink-0" /> Completed Job Add-On Products & Spares ({displayAddons.length})
+                      <Package className="w-4 h-4 text-emerald-600 shrink-0" /> Selected Add-On Services & Spares ({displayAddons.length})
+                    </span>
+                    <span className="text-xs font-extrabold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950 px-2.5 py-0.5 rounded-lg border border-emerald-200 dark:border-emerald-800 w-fit">
+                      Total: ₹{totalAddonsAmount.toLocaleString()}
                     </span>
                   </div>
 
@@ -1211,24 +1306,31 @@ function syncBookingToModuleCache(updated: Booking) {
                         <div className="space-y-1">
                           <div className="font-extrabold text-slate-900 dark:text-white text-xs flex items-center gap-2 flex-wrap">
                             <span className="break-words">{item.name}</span>
+                            {item.isUnlisted && (
+                              <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300 shrink-0">
+                                Custom/Unlisted
+                              </span>
+                            )}
                           </div>
-                          <p className="text-[11px] text-slate-500">Price: ₹{item.price}</p>
+                          <p className="text-[11px] text-slate-500">
+                            Qty: {item.quantity || 1} • ₹{(item.price || 0).toLocaleString()} each
+                          </p>
                         </div>
                         <div className="text-left sm:text-right font-black text-emerald-700 dark:text-emerald-300 text-sm font-mono shrink-0">
-                          ₹{item.totalPrice}
+                          ₹{(item.totalPrice || ((item.price || 0) * (item.quantity || 1))).toLocaleString()}
                         </div>
                       </div>
                     ))}
 
-                    <div className="p-3 rounded-xl bg-slate-900 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-1 font-extrabold text-xs mt-2">
+                    <div className="p-3 rounded-xl bg-slate-900 dark:bg-slate-800 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-1 font-extrabold text-xs mt-2">
                       <span>Total Add-On Charges:</span>
                       <span className="font-mono text-emerald-400 text-sm">
-                        ₹{currentBooking.addOnsFinalTotal || displayAddons.reduce((acc: number, i: any) => acc + (i.totalPrice || 0), 0)}
+                        ₹{totalAddonsAmount.toLocaleString()}
                       </span>
                     </div>
                   </div>
                 </div>
-              )}
+              )} */}
 
               {/* Card 4: Assigned Service Partner */}
               <div className="p-4 sm:p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4 shadow-xs">
@@ -1467,9 +1569,18 @@ function syncBookingToModuleCache(updated: Booking) {
                 {/* Price Breakdown */}
                 <div className="space-y-2 text-xs pt-1">
                   <div className="flex justify-between text-slate-600 dark:text-slate-400">
-                    <span>Base Service Amount</span>
-                    <span className="font-mono font-semibold text-slate-900 dark:text-white">₹{base.toLocaleString()}</span>
+                    <span>Base Service Package</span>
+                    <span className="font-mono font-semibold text-slate-900 dark:text-white">
+                      ₹{packageBasePrice.toLocaleString()}
+                    </span>
                   </div>
+
+                  {totalAddonsAmount > 0 && (
+                    <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-semibold">
+                      <span>Add-On Services & Spares ({displayAddons.length})</span>
+                      <span className="font-mono font-bold">+₹{totalAddonsAmount.toLocaleString()}</span>
+                    </div>
+                  )}
 
                   {convenienceFee > 0 && (
                     <div className="flex justify-between text-slate-600 dark:text-slate-400">
@@ -1501,9 +1612,9 @@ function syncBookingToModuleCache(updated: Booking) {
                 <button
                   type="button"
                   onClick={() => router.push(`/billing/${currentBooking.id}`)}
-                  className="w-full py-2.5 rounded-xl bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs cursor-pointer"
+                  className="w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs border border-slate-200 dark:border-slate-700 flex items-center justify-center gap-2 shadow-xs cursor-pointer transition-colors"
                 >
-                  <FileText className="w-4 h-4 text-brand-400 shrink-0" />
+                  <FileText className="w-4 h-4 text-brand-600 dark:text-brand-400 shrink-0" />
                   <span>Open Tax Invoice Details</span>
                 </button>
               </div>
@@ -1713,10 +1824,10 @@ function syncBookingToModuleCache(updated: Booking) {
                   <td className="py-2">
                     <div className="font-extrabold text-xs">{currentBooking.serviceTitle}</div>
                   </td>
-                  <td className="py-2 text-right font-mono font-bold text-xs">₹{base}</td>
+                  <td className="py-2 text-right font-mono font-bold text-xs">₹{packageBasePrice}</td>
                   {gst > 0 && <td className="py-2 text-right font-mono text-slate-700 text-xs">₹{gst}</td>}
                   <td className="py-2 text-right font-mono font-extrabold text-slate-900 text-xs">
-                    ₹{base + gst}
+                    ₹{packageBasePrice + (gst > 0 ? gst : 0)}
                   </td>
                 </tr>
                 {displayAddons.map((addon: any, aIdx: number) => (
@@ -1726,7 +1837,7 @@ function syncBookingToModuleCache(updated: Booking) {
                     </td>
                     <td className="py-2 text-right font-mono font-bold text-xs">₹{addon.price}</td>
                     {gst > 0 && <td className="py-2 text-right font-mono text-slate-700 text-xs">₹{addon.gstAmount || 0}</td>}
-                    <td className="py-2 text-right font-mono font-extrabold text-slate-900 text-xs">₹{addon.totalPrice}</td>
+                    <td className="py-2 text-right font-mono font-extrabold text-slate-900 text-xs">₹{addon.totalPrice || ((addon.price || 0) * (addon.quantity || 1))}</td>
                   </tr>
                 ))}
                 {convenienceFee > 0 && (
@@ -1736,7 +1847,7 @@ function syncBookingToModuleCache(updated: Booking) {
                     </td>
                     <td className="py-2 text-right font-mono font-bold text-xs">₹{convenienceFee}</td>
                     {gst > 0 && <td className="py-2 text-right font-mono text-slate-700 text-xs">₹0</td>}
-                    <td className="py-2 text-right font-mono font-bold text-xs">₹{convenienceFee}</td>
+                    <td className="py-2 text-right font-mono font-extrabold text-slate-900 text-xs">₹{convenienceFee}</td>
                   </tr>
                 )}
               </tbody>
@@ -1748,7 +1859,7 @@ function syncBookingToModuleCache(updated: Booking) {
             <div className="w-60 p-2.5 rounded-xl bg-slate-50 border border-slate-300 space-y-1 text-xs">
               <div className="flex justify-between py-0.5 border-b border-slate-300 text-slate-800 text-[11px]">
                 <span>Base Subtotal</span>
-                <span className="font-mono font-bold">₹{base + convenienceFee + (currentBooking.addOnsBaseTotal || 0)}</span>
+                <span className="font-mono font-bold">₹{packageBasePrice + convenienceFee + totalAddonsAmount}</span>
               </div>
               {gst > 0 && (
                 <div className="flex justify-between py-0.5 border-b border-slate-300 text-slate-800 text-[11px]">

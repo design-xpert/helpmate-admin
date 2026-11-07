@@ -32,6 +32,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { CustomSelect, CustomSelectOption } from "@/components/CustomSelect";
+import { getUnopenedBookingIds, subscribeToNewBookings } from "@/lib/newBookingTracker";
 
 export type CalendarViewMode = "month" | "week" | "day";
 
@@ -193,6 +194,15 @@ export function BookingCalendarView({
   });
   const [statusFilter, setStatusFilter] = useState<string>("All");
   const [searchQuery, setSearchQuery] = useState<string>("");
+
+  const [unopenedBookingIds, setUnopenedBookingIds] = useState<Set<string>>(() => getUnopenedBookingIds());
+
+  useEffect(() => {
+    setUnopenedBookingIds(getUnopenedBookingIds());
+    return subscribeToNewBookings(() => {
+      setUnopenedBookingIds(getUnopenedBookingIds());
+    });
+  }, []);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -738,6 +748,10 @@ export function BookingCalendarView({
                   <div className="space-y-1 overflow-hidden flex-1">
                     {dayBookingsList.slice(0, 2).map((booking) => {
                       const theme = getStatusTheme(booking.status);
+                      const isNew =
+                        unopenedBookingIds.has(String(booking.id)) ||
+                        (booking.bookingNumber && unopenedBookingIds.has(String(booking.bookingNumber))) ||
+                        ((booking as any)._id && unopenedBookingIds.has(String((booking as any)._id)));
                       return (
                         <div
                           key={booking.id}
@@ -745,11 +759,19 @@ export function BookingCalendarView({
                             e.stopPropagation();
                             onSelectBooking(booking);
                           }}
-                          className={`px-1.5 py-0.5 rounded-lg border-l-2 text-[10px] font-semibold truncate transition-all cursor-pointer ${theme.card} hover:scale-[1.02]`}
+                          className={`px-1.5 py-0.5 rounded-lg border-l-2 text-[10px] font-semibold truncate transition-all cursor-pointer ${theme.card} hover:scale-[1.02] flex items-center justify-between gap-1`}
                           title={`#${booking.bookingNumber || booking.id} • ${booking.customerName} • ${booking.serviceTitle} (${booking.timeSlot})`}
                         >
-                          <span className="font-extrabold mr-1">{booking.timeSlot?.split("-")[0]?.trim()}</span>
-                          <span className="truncate">{booking.customerName}</span>
+                          <div className="flex items-center min-w-0 truncate">
+                            <span className="font-extrabold mr-1 shrink-0">{booking.timeSlot?.split("-")[0]?.trim()}</span>
+                            <span className="truncate">{booking.customerName}</span>
+                          </div>
+                          {isNew && (
+                            <span
+                              className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0"
+                              title="New Booking Received"
+                            />
+                          )}
                         </div>
                       );
                     })}
@@ -852,6 +874,10 @@ export function BookingCalendarView({
                     >
                       {hourBookings.map((b) => {
                         const theme = getStatusTheme(b.status);
+                        const isNew =
+                          unopenedBookingIds.has(String(b.id)) ||
+                          (b.bookingNumber && unopenedBookingIds.has(String(b.bookingNumber))) ||
+                          ((b as any)._id && unopenedBookingIds.has(String((b as any)._id)));
                         return (
                           <div
                             key={b.id}
@@ -859,7 +885,15 @@ export function BookingCalendarView({
                             className={`p-1.5 rounded-xl border-l-2 text-[10px] shadow-2xs transition-all cursor-pointer ${theme.card} hover:scale-[1.02]`}
                           >
                             <div className="flex items-center justify-between gap-1">
-                              <span className="font-extrabold truncate">{b.customerName}</span>
+                              <span className="font-extrabold truncate flex items-center gap-1">
+                                <span className="truncate">{b.customerName}</span>
+                                {isNew && (
+                                  <span
+                                    className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0"
+                                    title="New Booking Received"
+                                  />
+                                )}
+                              </span>
                               <span className="font-mono text-[9px] opacity-80">₹{b.totalAmount}</span>
                             </div>
                             <span className="truncate block opacity-90 text-[9.5px]">
@@ -905,6 +939,10 @@ export function BookingCalendarView({
                     ) : (
                       hourBookings.map((booking) => {
                         const theme = getStatusTheme(booking.status);
+                        const isNew =
+                          unopenedBookingIds.has(String(booking.id)) ||
+                          (booking.bookingNumber && unopenedBookingIds.has(String(booking.bookingNumber))) ||
+                          ((booking as any)._id && unopenedBookingIds.has(String((booking as any)._id)));
                         return (
                           <div
                             key={booking.id}
@@ -913,8 +951,14 @@ export function BookingCalendarView({
                             {/* Left: Info */}
                             <div className="space-y-1 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
-                                <span className="font-extrabold text-xs text-slate-900 dark:text-white">
-                                  #{booking.bookingNumber || booking.id}
+                                <span className="font-extrabold text-xs text-slate-900 dark:text-white flex items-center gap-1.5">
+                                  <span>#{booking.bookingNumber || booking.id}</span>
+                                  {isNew && (
+                                    <span
+                                      className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0 shadow-xs"
+                                      title="New Booking Received"
+                                    />
+                                  )}
                                 </span>
                                 <span className={`text-[9.5px] font-extrabold uppercase px-2 py-0.5 rounded-full border ${theme.badge}`}>
                                   {booking.status}
