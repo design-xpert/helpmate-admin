@@ -2192,10 +2192,11 @@ export async function getBookingCategoriesApi(forceRefresh?: boolean) {
 
 export async function getBookingsApi(
   params?:
-    | { categoryId?: string; search?: string; status?: string; bookingType?: string; archived?: boolean | string; page?: number; limit?: number; forceRefresh?: boolean }
+    | { categoryId?: string; category?: string; search?: string; status?: string; bookingType?: string; archived?: boolean | string; page?: number; limit?: number; forceRefresh?: boolean }
     | boolean
 ) {
   let categoryId = "";
+  let category = "";
   let search = "";
   let status = "";
   let bookingType = "";
@@ -2208,6 +2209,7 @@ export async function getBookingsApi(
     forceRefresh = params;
   } else if (params && typeof params === "object") {
     categoryId = params.categoryId || "";
+    category = params.category || "";
     search = params.search || "";
     status = params.status || "";
     bookingType = params.bookingType || "";
@@ -2217,13 +2219,28 @@ export async function getBookingsApi(
     forceRefresh = !!params.forceRefresh;
   }
 
-  const cacheKey = `getBookingsApi:${JSON.stringify({ categoryId, search, status, bookingType, archived, page, limit })}`;
+  const cacheKey = `getBookingsApi:${JSON.stringify({ categoryId, category, search, status, bookingType, archived, page, limit })}`;
   const cached = getFromCache(cacheKey, forceRefresh);
   if (cached) return cached;
 
   try {
     const query = new URLSearchParams();
-    if (categoryId) query.append("categoryId", categoryId);
+    const isObjectId = (val?: string) => Boolean(val && /^[0-9a-fA-F]{24}$/.test(val.trim()));
+
+    if (isObjectId(categoryId)) {
+      query.append("categoryId", categoryId.trim());
+      if (category && category !== "All") {
+        query.append("category", category.trim());
+      }
+    } else if (isObjectId(category)) {
+      query.append("categoryId", category.trim());
+    } else {
+      const catVal = category || categoryId;
+      if (catVal && catVal !== "All") {
+        query.append("category", catVal.trim());
+      }
+    }
+
     if (search) query.append("search", search);
     if (status) query.append("status", status);
     if (bookingType) query.append("bookingType", bookingType);

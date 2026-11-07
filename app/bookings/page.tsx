@@ -406,6 +406,176 @@ function BookingsPageContent() {
   const [archiveTargetBooking, setArchiveTargetBooking] = useState<Booking | null>(null);
   const [cancelTargetBooking, setCancelTargetBooking] = useState<Booking | null>(null);
 
+  // Category-specific bookings cache & loading state
+  const [categoryBookingsCache, setCategoryBookingsCache] = useState<Record<string, Booking[]>>(() => {
+    const initialMap: Record<string, Booking[]> = {};
+    if (typeof window !== "undefined") {
+      const store = (window as any).__helpmate_module_cache__;
+      if (store instanceof Map) {
+        for (const [key, entry] of store.entries()) {
+          if (typeof key === "string" && key.startsWith("bookings_category_") && entry && Array.isArray(entry.data)) {
+            const catKey = key.replace("bookings_category_", "").toLowerCase().trim();
+            initialMap[catKey] = entry.data;
+          }
+        }
+      }
+    }
+    return initialMap;
+  });
+  const categoryBookingsCacheRef = useRef<Record<string, Booking[]>>(categoryBookingsCache);
+  useEffect(() => {
+    categoryBookingsCacheRef.current = categoryBookingsCache;
+  }, [categoryBookingsCache]);
+
+  const [isCategoryLoading, setIsCategoryLoading] = useState<boolean>(false);
+  const fetchedCategoriesRef = useRef<Set<string>>(new Set());
+  const isFetchingCategoryRef = useRef<Record<string, boolean>>({});
+
+  const resolveCategory = useCallback(
+    (catNameOrId: string | null) => {
+      if (!catNameOrId || catNameOrId === "All") return null;
+      const normalized = catNameOrId.toLowerCase().trim();
+
+      const foundApi = apiCategories.find((c: any) => {
+        const name = (c.categoryName || c.name || "").toLowerCase().trim();
+        const id = String(c._id || c.id || "").toLowerCase().trim();
+        return name === normalized || id === normalized;
+      });
+      if (foundApi) {
+        return {
+          id: String(foundApi._id || (foundApi as any).id || ""),
+          name: String(foundApi.categoryName || (foundApi as any).name || catNameOrId),
+        };
+      }
+
+      return {
+        id: /^[0-9a-fA-F]{24}$/.test(catNameOrId) ? catNameOrId : "",
+        name: catNameOrId,
+      };
+    },
+    [apiCategories]
+  );
+
+  const fetchCategoryBookings = useCallback(
+    async (catNameOrId: string, force: boolean = false, overrideCatId?: string) => {
+      if (!catNameOrId || catNameOrId === "All") return;
+      const resolved = resolveCategory(catNameOrId);
+      const catId = overrideCatId || resolved?.id || (/^[0-9a-fA-F]{24}$/.test(catNameOrId) ? catNameOrId : "");
+      const catName = resolved?.name || catNameOrId;
+      const catKey = (catId || catName).toLowerCase().trim();
+      const catNameKey = catName.toLowerCase().trim();
+      const catIdKey = catId ? catId.toLowerCase().trim() : "";
+
+      // Check cache: in-memory ref first, then moduleCache
+      const inStateCache =
+        categoryBookingsCacheRef.current[catKey] ||
+        categoryBookingsCacheRef.current[catNameKey] ||
+        (catIdKey ? categoryBookingsCacheRef.current[catIdKey] : undefined);
+
+      const inModuleCache =
+        getStoredModuleData<Booking[]>(`bookings_category_${catKey}`) ||
+        getStoredModuleData<Booking[]>(`bookings_category_${catNameKey}`) ||
+        (catIdKey ? getStoredModuleData<Booking[]>(`bookings_category_${catIdKey}`) : null);
+
+      const cached = inStateCache || inModuleCache;
+      const hasCachedData = Array.isArray(cached);
+
+      const alreadyFetched =
+        fetchedCategoriesRef.current.has(catKey) ||
+        fetchedCategoriesRef.current.has(catNameKey) ||
+        (catIdKey ? fetchedCategoriesRef.current.has(catIdKey) : false);
+
+      // ON RECLICK / BACK: DO NOT call API, use stored data immediately!
+      if (!force && (hasCachedData || alreadyFetched)) {
+        if (hasCachedData && !categoryBookingsCacheRef.current[catKey]) {
+          categoryBookingsCacheRef.current[catKey] = cached;
+          categoryBookingsCacheRef.current[catNameKey] = cached;
+          if (catIdKey) categoryBookingsCacheRef.current[catIdKey] = cached;
+          setCategoryBookingsCache((prev) => ({
+            ...prev,
+            [catKey]: cached,
+            [catNameKey]: cached,
+            ...(catIdKey ? { [catIdKey]: cached } : {}),
+          }));
+        }
+        setIsCategoryLoading(false);
+        return;
+      }
+
+      if (isFetchingCategoryRef.current[catKey]) return;
+      isFetchingCategoryRef.current[catKey] = true;
+      setIsCategoryLoading(true);
+
+      try {
+        const res = await getBookingsApi({
+          categoryId: catId || undefined,
+          category: catName || undefined,
+          forceRefresh: force,
+        });
+
+        if (res && res.success && Array.isArray(res.data)) {
+          const mappedList: Booking[] = res.data.map(mapApiBooking);
+
+          // Store in moduleCache and state
+          setCachedModuleData(`bookings_category_${catKey}`, mappedList);
+          setCachedModuleData(`bookings_category_${catNameKey}`, mappedList);
+          if (catIdKey) {
+            setCachedModuleData(`bookings_category_${catIdKey}`, mappedList);
+          }
+
+          fetchedCategoriesRef.current.add(catKey);
+          fetchedCategoriesRef.current.add(catNameKey);
+          if (catIdKey) fetchedCategoriesRef.current.add(catIdKey);
+
+          categoryBookingsCacheRef.current[catKey] = mappedList;
+          categoryBookingsCacheRef.current[catNameKey] = mappedList;
+          if (catIdKey) categoryBookingsCacheRef.current[catIdKey] = mappedList;
+
+          setCategoryBookingsCache((prev) => ({
+            ...prev,
+            [catKey]: mappedList,
+            [catNameKey]: mappedList,
+            ...(catIdKey ? { [catIdKey]: mappedList } : {}),
+          }));
+
+          // Merge into global bookings so search/All view also includes these bookings
+          setBookings((prevAll) => {
+            const existingIds = new Set(prevAll.map((b) => String(b.id || (b as any)._id || b.bookingNumber)));
+            const newToAdd = mappedList.filter((b) => !existingIds.has(String(b.id || (b as any)._id || b.bookingNumber)));
+            return newToAdd.length > 0 ? [...newToAdd, ...prevAll] : prevAll;
+          });
+        } else {
+          // Empty result: mark fetched and cache empty array to avoid re-calling
+          fetchedCategoriesRef.current.add(catKey);
+          fetchedCategoriesRef.current.add(catNameKey);
+          if (catIdKey) fetchedCategoriesRef.current.add(catIdKey);
+          setCachedModuleData(`bookings_category_${catKey}`, []);
+          categoryBookingsCacheRef.current[catKey] = [];
+          categoryBookingsCacheRef.current[catNameKey] = [];
+          if (catIdKey) categoryBookingsCacheRef.current[catIdKey] = [];
+          setCategoryBookingsCache((prev) => ({
+            ...prev,
+            [catKey]: [],
+            [catNameKey]: [],
+            ...(catIdKey ? { [catIdKey]: [] } : {}),
+          }));
+        }
+      } catch (err) {
+        console.error(`Error fetching bookings for category "${catName}":`, err);
+      } finally {
+        isFetchingCategoryRef.current[catKey] = false;
+        setIsCategoryLoading(false);
+      }
+    },
+    [resolveCategory]
+  );
+
+  useEffect(() => {
+    if (selectedCategory && selectedCategory !== "All") {
+      fetchCategoryBookings(selectedCategory);
+    }
+  }, [selectedCategory, fetchCategoryBookings]);
+
   useEffect(() => {
     setIsCalendarView(viewParam === "calendar");
   }, [viewParam]);
@@ -691,6 +861,13 @@ function BookingsPageContent() {
         if (!isSilent && bookingsRef.current.length === 0) {
           setIsLoadingData(true);
         }
+
+        // If a specific category is selected, only sync that category!
+        if (selectedCategory && selectedCategory !== "All") {
+          await fetchCategoryBookings(selectedCategory, force);
+          return;
+        }
+
         const bookingsRes = await getBookingsApi({
           status: statusParam || undefined,
           forceRefresh: true,
@@ -780,11 +957,14 @@ function BookingsPageContent() {
         setIsLoadingData(false);
       }
     },
-    [cacheKey, statusParam]
+    [cacheKey, statusParam, selectedCategory, fetchCategoryBookings]
   );
 
   const refreshBookingsFromBackend = async () => {
     setIsLoadingData(true);
+    if (selectedCategory && selectedCategory !== "All") {
+      await fetchCategoryBookings(selectedCategory, true);
+    }
     await Promise.all([
       checkAndSyncBookings(false, true),
       fetchArchivedBookings(true),
@@ -922,11 +1102,15 @@ function BookingsPageContent() {
     return b.paymentMethod === "Online" || b.paymentMethod === "Card";
   };
 
-  const handleSelectCategory = (catName: string | null) => {
+  const handleSelectCategory = (catName: string | null, catId?: string) => {
     setCardFilter("ALL");
     setChannelFilter("ALL");
     setActiveStatusFilter("All");
     setSelectedCategory(catName);
+
+    if (catName && catName !== "All") {
+      fetchCategoryBookings(catName, false, catId);
+    }
 
     // When a category card is opened, mark all unopened bookings in this category as opened
     if (catName && catName !== "All") {
@@ -1227,15 +1411,65 @@ function BookingsPageContent() {
     return Object.values(catMap);
   }, [apiCategories, roleFilteredBookings]);
 
-  // 1. Filter by selected category
+  // 1. Filter by selected category (using dedicated category bookings if fetched/cached)
   const categoryBookings = useMemo(() => {
     if (!selectedCategory || selectedCategory === "All") return roleFilteredBookings;
-    const sel = selectedCategory.toLowerCase().trim();
+    const resolved = resolveCategory(selectedCategory);
+    const catNameLower = (resolved?.name || selectedCategory).toLowerCase().trim();
+    const catIdLower = String(resolved?.id || "").toLowerCase().trim();
+    const catKey = (resolved?.id || resolved?.name || selectedCategory).toLowerCase().trim();
+
+    // Check if dedicated category bookings exist in cache
+    const dedicated =
+      categoryBookingsCache[catKey] ||
+      categoryBookingsCache[catNameLower] ||
+      (catIdLower ? categoryBookingsCache[catIdLower] : undefined) ||
+      getStoredModuleData<Booking[]>(`bookings_category_${catKey}`) ||
+      getStoredModuleData<Booking[]>(`bookings_category_${catNameLower}`) ||
+      (catIdLower ? getStoredModuleData<Booking[]>(`bookings_category_${catIdLower}`) : null);
+
+    if (dedicated && Array.isArray(dedicated)) {
+      const bookingsById = new Map<string, Booking>();
+      roleFilteredBookings.forEach((b) => {
+        const id = String(b.id || (b as any)._id || b.bookingNumber);
+        bookingsById.set(id, b);
+      });
+
+      const updatedDedicated = dedicated.map((b) => {
+        const id = String(b.id || (b as any)._id || b.bookingNumber);
+        const latest = bookingsById.get(id);
+        return latest ? { ...b, ...latest } : b;
+      });
+
+      // Merge with any local optimistic bookings for this category that aren't yet in dedicated list
+      const dedicatedIds = new Set(updatedDedicated.map((b) => String(b.id || (b as any)._id || b.bookingNumber)));
+      const localMatches = roleFilteredBookings.filter((b) => {
+        const idStr = String(b.id || (b as any)._id || b.bookingNumber);
+        if (dedicatedIds.has(idStr)) return false;
+        const bCat = (b.category || "").toLowerCase().trim();
+        const bCatId = String((b as any).categoryId || "").toLowerCase().trim();
+        return (
+          bCat === catNameLower ||
+          (catIdLower && bCatId === catIdLower) ||
+          bCat.includes(catNameLower) ||
+          catNameLower.includes(bCat)
+        );
+      });
+      return [...localMatches, ...updatedDedicated];
+    }
+
+    // Fallback to filtering all loaded bookings if category API hasn't resolved yet
     return roleFilteredBookings.filter((b) => {
       const bCat = (b.category || "General").toLowerCase().trim();
-      return bCat === sel || bCat.includes(sel) || sel.includes(bCat);
+      const bCatId = String((b as any).categoryId || "").toLowerCase().trim();
+      return (
+        bCat === catNameLower ||
+        (catIdLower && bCatId === catIdLower) ||
+        bCat.includes(catNameLower) ||
+        catNameLower.includes(bCat)
+      );
     });
-  }, [roleFilteredBookings, selectedCategory]);
+  }, [roleFilteredBookings, selectedCategory, categoryBookingsCache, resolveCategory]);
 
   // 2. Filter by card status & dropdown status
   const filteredBookings = useMemo(() => {
@@ -1284,6 +1518,19 @@ function BookingsPageContent() {
       setCachedModuleData("bookings", updated);
       return updated;
     });
+
+    if (newBooking.category) {
+      const catKey = newBooking.category.toLowerCase().trim();
+      setCategoryBookingsCache((prev) => {
+        const cur = prev[catKey] || [];
+        const nextList = [bookingWithFlag, ...cur.filter((b) => b.id !== bookingWithFlag.id)];
+        setCachedModuleData(`bookings_category_${catKey}`, nextList);
+        return {
+          ...prev,
+          [catKey]: nextList,
+        };
+      });
+    }
 
     // Update allCategoryStats in-memory immediately so KPI cards reflect the new count without API delay
     setAllCategoryStats((prev: any) => {
@@ -2181,7 +2428,7 @@ function BookingsPageContent() {
                   return (
                     <div
                       key={cat.name}
-                      onClick={() => handleSelectCategory(cat.name)}
+                      onClick={() => handleSelectCategory(cat.name, cat.id)}
                       className={`relative p-3.5 sm:p-4 rounded-2xl border transition-all duration-200 cursor-pointer group ${
                         isPinned
                           ? "bg-gradient-to-br from-amber-50/30 via-white to-white dark:from-amber-950/25 dark:via-slate-900 dark:to-slate-900 border-amber-300 dark:border-amber-700/70 hover:border-amber-500 hover:shadow-md shadow-2xs"
@@ -2403,7 +2650,7 @@ function BookingsPageContent() {
                               key={cat.name}
                               type="button"
                               onClick={() => {
-                                handleSelectCategory(cat.name);
+                                handleSelectCategory(cat.name, cat.id);
                                 setIsCategoryDropdownOpen(false);
                               }}
                               className={`w-full text-left px-3.5 py-2.5 flex items-center justify-between gap-2.5 text-xs font-bold transition-colors cursor-pointer ${
@@ -2703,12 +2950,12 @@ function BookingsPageContent() {
           <DataTable
             columns={columns}
             data={filteredBookings}
-            isLoading={isLoadingData}
+            isLoading={isLoadingData || isCategoryLoading}
             enableColumnCustomization={true}
             tableKey="booking"
             columnStorageKey="helpmate_booking_columns_view"
             onRefresh={refreshBookingsFromBackend}
-            isRefreshing={isLoadingData}
+            isRefreshing={isLoadingData || isCategoryLoading}
             pinnedColumnsNotice="Booking ID & Actions are pinned"
             searchPlaceholder="Search order #, customer, partner, or phone..."
             extraFilters={

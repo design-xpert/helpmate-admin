@@ -330,7 +330,7 @@ export function Header({ onOpenMobileSidebar }: HeaderProps) {
       className="h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-2.5 sm:px-4 lg:px-6 flex items-center justify-between sticky top-0 z-50 transition-colors duration-200 shadow-xs shrink-0"
     >
       {/* Mobile Hamburger & Header Breadcrumbs / Brand Navigation */}
-      <div className="flex items-center gap-1.5 sm:gap-2.5 lg:gap-3 min-w-0 shrink max-w-[52%] sm:max-w-[58%] md:max-w-xs lg:max-w-sm xl:max-w-md">
+      <div className="flex items-center gap-1.5 sm:gap-2.5 lg:gap-3 min-w-0 md:flex-1 justify-start">
         <button
           type="button"
           onClick={onOpenMobileSidebar}
@@ -369,7 +369,7 @@ export function Header({ onOpenMobileSidebar }: HeaderProps) {
       </div>
 
       {/* Center: Global Search Launcher Button (Desktop & Tablet >= md) */}
-      <div className="flex-1 max-w-[170px] sm:max-w-[210px] md:max-w-[240px] lg:max-w-xs xl:max-w-md mx-2 lg:mx-4 relative hidden md:block">
+      <div className="hidden md:flex items-center justify-center w-full max-w-xs lg:max-w-md xl:max-w-lg px-2 lg:px-4 shrink-0">
         <button
           type="button"
           onClick={() => setIsSearchOpen(true)}
@@ -386,7 +386,7 @@ export function Header({ onOpenMobileSidebar }: HeaderProps) {
       </div>
 
       {/* Right Action Icons & Controls */}
-      <div className="flex items-center gap-1 sm:gap-2 lg:gap-2.5 shrink-0 ml-auto">
+      <div className="flex items-center gap-1 sm:gap-2 lg:gap-2.5 shrink-0 md:flex-1 justify-end ml-auto">
         {/* Mobile Search Toggle Button (shown on phones < md) */}
         <button
           type="button"
