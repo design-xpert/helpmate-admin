@@ -518,11 +518,16 @@ function syncBookingToModuleCache(updated: Booking) {
   const paymentTransactionId = rawBooking?.billing?.payment?.paymentId || rawBooking?.billing?.payment?.transactionId || "";
 
   // Financial Calculations directly from API values
-  const base = currentBooking?.basePrice !== undefined ? currentBooking.basePrice : (rawBooking?.billing?.sellingPrice ?? rawBooking?.billing?.mrp ?? 0);
-  const convenienceFee = currentBooking?.convenienceFee !== undefined ? currentBooking.convenienceFee : (rawBooking?.billing?.platformFee ?? 0);
-  const discount = currentBooking?.discountAmount || rawBooking?.billing?.discount || 0;
-  const gst = currentBooking?.gst !== undefined ? currentBooking.gst : (rawBooking?.billing?.gst ?? 0);
-  const finalTotal = currentBooking?.totalAmount !== undefined ? currentBooking.totalAmount : (rawBooking?.billing?.totalAmount ?? (base + convenienceFee + gst - discount));
+  const base = rawBooking?.billing?.sellingPrice ?? rawBooking?.billing?.mrp ?? currentBooking?.basePrice ?? 0;
+  const convenienceFee = rawBooking?.billing?.platformFee ?? currentBooking?.convenienceFee ?? 0;
+  const discount = rawBooking?.billing?.discount ?? currentBooking?.discountAmount ?? 0;
+  // Strictly display GST only if explicitly present in the API response
+  const gst = rawBooking?.billing?.gst !== undefined && rawBooking?.billing?.gst !== null
+    ? Number(rawBooking.billing.gst)
+    : (rawBooking ? 0 : (currentBooking?.gst !== undefined && currentBooking?.gst !== null ? Number(currentBooking.gst) : 0));
+  const finalTotal = rawBooking?.billing?.totalAmount !== undefined && rawBooking?.billing?.totalAmount !== null
+    ? Number(rawBooking.billing.totalAmount)
+    : (currentBooking?.totalAmount !== undefined ? currentBooking.totalAmount : (base + convenienceFee + gst - discount));
 
   const rawPaymentStatus = (paymentStatus || "").toLowerCase().trim();
   const isPaid = rawPaymentStatus === "paid" || rawPaymentStatus === "success" || currentBooking?.status === "Completed";

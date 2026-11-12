@@ -253,13 +253,22 @@ export function Header({ onOpenMobileSidebar }: HeaderProps) {
     let isMounted = true;
 
     const pollNotifications = async () => {
+      if (typeof window !== "undefined") {
+        const token = localStorage.getItem("helpmate_admin_token");
+        if (!token) return;
+        if (document.visibilityState === "hidden") return;
+      }
+
       try {
-        const [notifRes, countRes] = await Promise.all([
+        const [notifResult, countResult] = await Promise.allSettled([
           getNotificationsApi({ limit: 10, forceRefresh: true }),
           getUnreadNotificationCountApi(true),
         ]);
 
         if (isMounted) {
+          const notifRes = notifResult.status === "fulfilled" ? notifResult.value : null;
+          const countRes = countResult.status === "fulfilled" ? countResult.value : null;
+
           if (notifRes && notifRes.success && Array.isArray(notifRes.data)) {
             setHeaderNotifications(notifRes.data);
           }

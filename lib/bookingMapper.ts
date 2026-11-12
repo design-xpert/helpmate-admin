@@ -157,11 +157,11 @@ export function mapApiBooking(b: any): Booking {
   // Financial / Billing mapping
   const billingObj = b.billing || {};
   const basePriceVal = billingObj.sellingPrice ?? billingObj.mrp ?? item0?.totalPrice ?? item0?.unitPrice ?? b.amount ?? 0;
-  const convenienceFeeVal = billingObj.platformFee ?? b.convenienceFee ?? 49;
+  const convenienceFeeVal = billingObj.platformFee ?? b.convenienceFee ?? 0;
   const totalAmountVal = billingObj.totalAmount ?? b.amount ?? (basePriceVal + convenienceFeeVal);
-  const gstVal = billingObj.gst ?? (basePriceVal + convenienceFeeVal) * 0.18;
-  const cgstVal = Number((gstVal / 2).toFixed(2));
-  const sgstVal = Number((gstVal - cgstVal).toFixed(2));
+  const gstVal = billingObj.gst !== undefined && billingObj.gst !== null ? Number(billingObj.gst) : 0;
+  const cgstVal = billingObj.cgst !== undefined && billingObj.cgst !== null ? Number(billingObj.cgst) : (gstVal > 0 ? Number((gstVal / 2).toFixed(2)) : 0);
+  const sgstVal = billingObj.sgst !== undefined && billingObj.sgst !== null ? Number(billingObj.sgst) : (gstVal > 0 ? Number((gstVal - cgstVal).toFixed(2)) : 0);
 
   const paymentObj = billingObj.payment || {};
   const rawPayMethod = paymentObj.paymentMethod || b.paymentMethod || "";

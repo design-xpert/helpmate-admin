@@ -74,12 +74,12 @@ export function BookingDetailsDrawer({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const base = booking.basePrice || 699;
-  const convenienceFee = booking.convenienceFee || 49;
+  const base = booking.basePrice || 0;
+  const convenienceFee = booking.convenienceFee || 0;
   const taxableAmount = base + convenienceFee;
-  const cgst = booking.cgst || Math.round(taxableAmount * 0.09);
-  const sgst = booking.sgst || Math.round(taxableAmount * 0.09);
-  const finalTotal = booking.totalAmount || taxableAmount + cgst + sgst;
+  const cgst = booking.cgst || 0;
+  const sgst = booking.sgst || 0;
+  const finalTotal = booking.totalAmount || (taxableAmount + cgst + sgst);
 
   return (
     <Portal>

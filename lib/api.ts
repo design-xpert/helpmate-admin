@@ -119,16 +119,33 @@ export async function authFetch(url: string, options: RequestInit = {}): Promise
 
   const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
   const headers = getAuthHeaders(options.headers as Record<string, string>, isFormData);
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
 
-  if (response.status === 401) {
-    handleGlobalLogout();
+  try {
+    const response = await fetch(url, {
+      ...options,
+      headers,
+    });
+
+    if (response.status === 401) {
+      handleGlobalLogout();
+    }
+
+    return response;
+  } catch (error: any) {
+    console.warn(`[authFetch] Network connection error on ${url}:`, error?.message || error);
+    return new Response(
+      JSON.stringify({
+        success: false,
+        message: "Failed to connect to the server. Please check your connection or backend server status.",
+        isNetworkError: true,
+      }),
+      {
+        status: 503,
+        statusText: "Service Unavailable",
+        headers: { "Content-Type": "application/json" },
+      }
+    );
   }
-
-  return response;
 }
 
 export async function getAdminMeApi() {
